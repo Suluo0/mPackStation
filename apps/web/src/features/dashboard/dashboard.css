@@ -366,6 +366,29 @@ body {
 @media (max-width: 1050px) { .db-hero-stage { grid-template-columns: 1fr; max-width: 760px; }.db-hero-copy { text-align: center; padding-left: 0; }.db-hero-title, .db-hero-sub { margin-inline: auto; }.db-hero-actions { justify-content: center; }.db-hero-proof { margin-top: 22px; }.db-hero-art { min-height: 300px; }.db-onboard-grid-redraw { grid-template-columns: 1fr; }.db-checklist { order: -1; }}
 @media (max-width: 620px) { .db-hero-stage { padding-top: 12px; }.db-hero-title { font-size: 39px; }.db-hero-art { transform: scale(.9); margin: -10px -30px; }.db-entry-row-redraw { grid-template-columns: 1fr; grid-template-rows: auto; }.db-entry-card-feature { grid-row: auto; min-height: 210px !important; }.db-entry-card-compact { min-height: 150px !important; } }
 
+/* 参考图的版心关系：侧栏更宽，清单悬挂到首屏右侧留白。 */
+:root { --mc-sider-w: 220px; }
+.db-onboard-grid-redraw { position: relative; }
+@media (min-width: 1051px) {
+  .db-hero-stage { grid-template-columns: minmax(390px, .95fr) minmax(430px, 1.05fr) 300px; max-width: none; margin-left: 0; margin-right: 0; min-height: 360px; align-items: center; }
+  .db-checklist-hero { align-self: center; justify-self: end; }
+  .db-onboard-grid-redraw { grid-template-columns: 1fr; }
+}
+
+/* Hero 内部的垂直节奏和页面填充：标题、说明、动作各自拥有呼吸空间。 */
+.db-hero-copy .db-eyebrow { margin-bottom: 18px; }
+.db-hero-title { margin-bottom: 0; }
+.db-hero-sub { margin-top: 22px; margin-bottom: 28px; }
+.db-hero-actions { margin-bottom: 0; }
+.db-hero-proof { margin-top: 30px; }
+.db-page { min-height: calc(100vh - 136px); }
+.db-entry-row-redraw { min-height: 290px; }
+.db-entry-card-feature { min-height: 290px !important; }
+.db-entry-card-compact { min-height: 139px !important; }
+.db-starter-section { margin-top: 4px; }
+.db-capability-strip { flex: 1 1 auto; margin-top: 18px; min-height: 126px; box-sizing: border-box; align-content: center; }
+@media (max-width: 1050px) { .db-page { min-height: 0; }.db-hero-stage { min-height: 330px; }.db-entry-row-redraw { min-height: 0; }.db-entry-card-feature { min-height: 210px !important; }.db-entry-card-compact { min-height: 150px !important; }.db-capability-strip { margin-top: 0; } }
+
 /* 首屏密度：保留内容，收紧顶部空间和模块高度 */
 .db-hero-stage { min-height: 292px; margin-top: -12px; padding-top: 0; padding-bottom: 0; gap: clamp(24px, 3.5vw, 54px); }
 .db-hero-copy .db-eyebrow { margin-bottom: 12px; }

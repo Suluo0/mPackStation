@@ -26,7 +26,10 @@ export function AppShell() {
       <aside className="app-sider">
         <div className="app-brand">
           <span className="app-brand-logo"><CodeSandboxOutlined/></span>
-          <span className="app-brand-name">整合包工作台</span>
+          <div className="app-brand-copy">
+            <span className="app-brand-name">整合包工作台</span>
+            <span className="app-brand-sub"><i /> WORKBENCH <i /></span>
+          </div>
         </div>
         <div className="app-workbench-settings"><SettingOutlined/><span>工作台设置</span></div>
         <nav className="app-nav">

@@ -15,14 +15,17 @@
 }
 .app-shell-collapsed .app-sider { width: var(--mc-sider-w-fold); }
 
-.app-brand { display: flex; align-items: center; gap: var(--mc-sp-sm); padding: var(--mc-sp) var(--mc-sp) var(--mc-sp-sm); }
+.app-brand { display: flex; align-items: center; justify-content: center; min-height: 106px; padding: 18px 16px 14px; border-bottom: 1px solid color-mix(in srgb, var(--mc-line) 70%, transparent); }
 .app-brand-logo {
-  display: grid; place-items: center; width: 36px; height: 36px; flex: none;
+  display: none; place-items: center; width: 36px; height: 36px; flex: none;
   border-radius: 10px; color: #fff; font-size: 20px;
   background: linear-gradient(135deg, var(--mc-brand-from), var(--mc-brand-to));
   box-shadow: 0 4px 10px var(--mc-brand-shadow);
 }
-.app-brand-name { font-size: 16px; font-weight: 700; color: var(--mc-text); white-space: nowrap; }
+.app-brand-copy { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.app-brand-name { font-size: 21px; font-weight: 800; letter-spacing: -.045em; color: var(--mc-text); white-space: nowrap; }
+.app-brand-sub { display: flex; align-items: center; gap: 8px; color: var(--mc-text-2); font-family: ui-sans-serif, Arial, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .13em; line-height: 1; }
+.app-brand-sub i { display: block; width: 27px; height: 1px; background: var(--mc-text-2); opacity: .85; }
 .app-workbench-settings { display: flex; align-items: center; gap: 10px; margin: 8px 14px 10px; padding: 12px 13px; border: 1px solid var(--mc-line); border-radius: 10px; color: var(--mc-text-2); background: color-mix(in srgb, var(--mc-bg) 76%, var(--mc-fill)); font-size: 13px; font-weight: 600; }
 .app-workbench-settings svg { color: var(--mc-primary); font-size: 16px; }
 
@@ -48,7 +51,8 @@
 .app-sider-fold:hover { background: var(--mc-hover); color: var(--mc-primary); }
 
 .app-shell-collapsed .app-nav-label,
-.app-shell-collapsed .app-brand-name { display: none; }
+.app-shell-collapsed .app-brand-copy { display: none; }
+.app-shell-collapsed .app-brand-logo { display: grid; }
 .app-shell-collapsed .app-nav-item,
 .app-shell-collapsed .app-sider-fold { justify-content: center; }
 

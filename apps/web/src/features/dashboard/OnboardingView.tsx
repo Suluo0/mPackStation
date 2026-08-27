@@ -56,6 +56,23 @@ export function OnboardingView({onboarding, onCreate, onImport, onDemo, onSettin
           <div className="db-art-float db-art-float-top"><span>✓</span> 依赖已锁定</div>
           <div className="db-art-float db-art-float-bottom"><span>24</span> 个模组正在设计</div>
         </div>
+        {onboarding && !stepsDone && (
+          <WorkbenchCard className="db-checklist db-checklist-hero">
+            <span className="db-eyebrow">准备工作 / 03</span>
+            <h2 className="db-h2" style={{margin: '7px 0 5px'}}>上手三步</h2>
+            <p className="db-muted" style={{margin: '0 0 12px'}}>完成这些设置，工作台就绪。</p>
+            {checklist.map((item, i) => {
+              const done = onboarding.steps[item.key];
+              return (
+                <div key={item.key} className={done ? 'db-check-item db-check-item-done' : 'db-check-item'}>
+                  <Checkbox checked={done} disabled/>
+                  <div style={{flex: 1}}><div className="db-check-text">{i + 1} {item.title}</div><div className="db-check-desc">{item.desc}</div></div>
+                  {!done && item.action && <button className="db-link" onClick={onSettings}>{item.action}</button>}
+                </div>
+              );
+            })}
+          </WorkbenchCard>
+        )}
       </section>
 
       <div className="db-onboard-grid db-onboard-grid-redraw">
@@ -79,23 +96,6 @@ export function OnboardingView({onboarding, onCreate, onImport, onDemo, onSettin
             <WorkbenchButton tone="quiet" className="mc-btn-green">查看 <ArrowRightOutlined/></WorkbenchButton>
           </WorkbenchCard>
         </div>
-        {onboarding && !stepsDone && (
-          <WorkbenchCard className="db-checklist">
-            <span className="db-eyebrow">准备工作 / 03</span>
-            <h2 className="db-h2" style={{margin: '6px 0 4px'}}>上手三步</h2>
-            <p className="db-muted" style={{margin: '0 0 10px'}}>完成这些设置，工作台就绪。</p>
-            {checklist.map((item, i) => {
-              const done = onboarding.steps[item.key];
-              return (
-                <div key={item.key} className={done ? 'db-check-item db-check-item-done' : 'db-check-item'}>
-                  <Checkbox checked={done} disabled/>
-                  <div style={{flex: 1}}><div className="db-check-text">{i + 1} {item.title}</div><div className="db-check-desc">{item.desc}</div></div>
-                  {!done && item.action && <button className="db-link" onClick={onSettings}>{item.action}</button>}
-                </div>
-              );
-            })}
-          </WorkbenchCard>
-        )}
       </div>
 
       <section className="db-starter-section" aria-labelledby="starter-title">
