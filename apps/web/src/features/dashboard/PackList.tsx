@@ -4,6 +4,7 @@ import {MoreOutlined, PlayCircleOutlined} from '@ant-design/icons';
 import type {DashboardPack} from './types';
 import {AlertSignals, ConflictSignal, relativeTime} from './signals';
 import {PackCover, loaderLabel} from './ContinueCard';
+import {WorkbenchCard, WorkbenchSectionHeader} from '../../ui/workbench/Workbench';
 
 /* 整合包行式列表：每包一行的健康一览，默认按最后编辑倒序，支持「只看待处理」。 */
 
@@ -33,14 +34,11 @@ export function PackList({packs, onOpen, onDelete}: {
   };
 
   return (
-    <div className="db-card db-packlist">
-      <div className="db-section-head">
-        <h2 className="db-h2">全部整合包</h2>
-        <label className="db-muted" style={{cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 8}}>
+    <WorkbenchCard className="db-packlist">
+      <WorkbenchSectionHeader title="全部整合包" action={<label className="db-muted" style={{cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 8}}>
           只看待处理
           <Switch size="small" checked={onlyPending} onChange={setOnlyPending}/>
-        </label>
-      </div>
+        </label>}/>
       <div className="db-pack-grid db-pack-row-head">
         <span>整合包</span>
         <span className="db-col-hide-sm">环境</span>
@@ -96,6 +94,6 @@ export function PackList({packs, onOpen, onDelete}: {
         </div>
       ))}
       {rows.length === 0 && <div className="db-muted" style={{padding: 'var(--mc-sp) 0'}}>没有待处理的整合包。</div>}
-    </div>
+    </WorkbenchCard>
   );
 }

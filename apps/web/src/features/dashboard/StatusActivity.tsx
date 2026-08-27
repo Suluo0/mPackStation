@@ -1,5 +1,6 @@
 import type {DashboardActivity, SystemStatus} from './types';
 import {formatBytes, relativeTime} from './signals';
+import {WorkbenchCard} from '../../ui/workbench/Workbench';
 
 /* 环境与动态（弱存在区）：环境状态卡 + 最近动态卡。 */
 
@@ -9,7 +10,7 @@ export function StatusActivity({status, activities}: {
 }) {
   return (
     <div className="db-bottom-row">
-      <div className="db-card db-status-card">
+      <WorkbenchCard className="db-status-card">
         <h2 className="db-h2" style={{marginBottom: 'var(--mc-sp-sm)'}}>环境状态</h2>
         {status === null ? (
           <span className="db-muted">状态未知 -</span>
@@ -27,8 +28,8 @@ export function StatusActivity({status, activities}: {
             <div className="db-status-line db-muted">存储剩余 <span className="db-status-num">{formatBytes(status.storageFreeBytes)}</span></div>
           </>
         )}
-      </div>
-      <div className="db-card db-activity-card">
+      </WorkbenchCard>
+      <WorkbenchCard className="db-activity-card">
         <h2 className="db-h2" style={{marginBottom: 'var(--mc-sp-sm)'}}>最近动态</h2>
         {activities.length === 0 && <span className="db-muted">还没有动态，去创建第一个整合包吧。</span>}
         {activities.map(a => (
@@ -38,7 +39,7 @@ export function StatusActivity({status, activities}: {
             <span>{a.text}</span>
           </div>
         ))}
-      </div>
+      </WorkbenchCard>
     </div>
   );
 }

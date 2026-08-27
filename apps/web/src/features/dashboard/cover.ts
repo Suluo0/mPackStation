@@ -14,5 +14,10 @@ export function packCoverGradient(id: string): string {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
   const [from, to] = palettes[hash % palettes.length];
-  return `linear-gradient(160deg, ${from}, ${to})`;
+  return [
+    `linear-gradient(165deg, ${from} 0%, ${from} 42%, ${to} 100%)`,
+    'linear-gradient(145deg, transparent 0 52%, rgba(24,30,27,.42) 53% 70%, transparent 71%)',
+    'linear-gradient(175deg, transparent 0 66%, rgba(20,35,28,.52) 67% 100%)',
+    'radial-gradient(circle at 72% 22%, rgba(255,238,186,.72) 0 7%, transparent 8%)',
+  ].join(', ');
 }

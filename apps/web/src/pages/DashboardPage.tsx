@@ -16,7 +16,7 @@ import {CreatePackModal, ImportPackModal} from '../features/dashboard/PackModals
 
 /* 看板页：迎新（空态）/ 数据总览（有包态）二态页面。 */
 
-export function DashboardPage() {
+export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
   const {message} = App.useApp();
   const navigate = useNavigate();
 
@@ -100,8 +100,10 @@ export function DashboardPage() {
     );
   }
 
-  const isEmpty = dashboard.packs.length === 0;
-  const lastEdited = dashboard.packs.find(p => p.id === dashboard.lastEditedPackId) ?? dashboard.packs[0];
+  const visiblePacks = forceEmpty ? [] : dashboard.packs;
+  const isEmpty = visiblePacks.length === 0;
+  const lastEdited = visiblePacks.find(p => p.id === dashboard.lastEditedPackId) ?? visiblePacks[0];
+  const visibleOnboarding = forceEmpty ? {steps: {curseforgeKey: false, firstPack: false, firstMod: false}} : onboarding;
 
   return (
     <div className="db-page">
@@ -109,7 +111,7 @@ export function DashboardPage() {
 
       {isEmpty ? (
         <OnboardingView
-          onboarding={onboarding}
+          onboarding={visibleOnboarding}
           onCreate={() => setCreateOpen(true)}
           onImport={() => setImportOpen(true)}
           onDemo={() => message.info('示例包将在后续版本提供')}
@@ -120,7 +122,7 @@ export function DashboardPage() {
           <div className="db-header-row">
             <div>
               <h1 className="db-h1">工作台</h1>
-              <span className="db-muted">{dashboard.packs.length} 个整合包 · 今日已解决 {dashboard.todayResolvedCount} 个问题</span>
+              <span className="db-muted">{visiblePacks.length} 个整合包 · 今日已解决 {dashboard.todayResolvedCount} 个问题</span>
             </div>
             <div className="db-header-actions">
               <Button icon={<ImportOutlined/>} onClick={() => setImportOpen(true)}>导入整合包</Button>
@@ -132,7 +134,7 @@ export function DashboardPage() {
             <div className="db-dash-main">
               {lastEdited && <ContinueCard pack={lastEdited} onOpen={openPack}/>}
 
-              <PackList packs={dashboard.packs} onOpen={openPack} onDelete={deletePack}/>
+              <PackList packs={visiblePacks} onOpen={openPack} onDelete={deletePack}/>
 
               <StatusActivity status={status} activities={activities ?? []}/>
             </div>
@@ -142,7 +144,7 @@ export function DashboardPage() {
         </>
       )}
 
-      <CreatePackModal open={createOpen} existing={dashboard.packs} onClose={() => setCreateOpen(false)} onCreated={onCreated}/>
+      <CreatePackModal open={createOpen} existing={visiblePacks} onClose={() => setCreateOpen(false)} onCreated={onCreated}/>
       <ImportPackModal open={importOpen} onClose={() => setImportOpen(false)} onImported={onImported}/>
     </div>
   );

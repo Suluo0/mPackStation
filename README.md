@@ -67,6 +67,7 @@ data/           运行期生成（数据库 / 缓存），不入库
 ## 文档
 
 - [看板页面规格与视觉规范](docs/dashboard-page-prompt.md)
+- [产品 UI Design System](docs/design-system.md)
 - [项目交接 HANDOFF](docs/project-state/HANDOFF.md)（持续更新）
 
 ## License

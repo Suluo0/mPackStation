@@ -3,6 +3,7 @@ import {useState} from 'react';
 import {DatabaseOutlined, ImportOutlined, RocketOutlined, SyncOutlined} from '@ant-design/icons';
 import type {ReactNode} from 'react';
 import type {DashboardTask} from './types';
+import {WorkbenchCard, WorkbenchSectionHeader} from '../../ui/workbench/Workbench';
 
 /* 后台任务区（右列卡）：仅存在任务时渲染；进行中可暂停/取消，失败可重试/查看错误。 */
 
@@ -39,11 +40,8 @@ export function TaskPanel({tasks}: {tasks: DashboardTask[]}) {
   const showAll = () => message.info('任务中心将在后续版本提供');
 
   return (
-    <div className="db-card db-tasks">
-      <div className="db-section-head">
-        <h2 className="db-h2">后台任务</h2>
-        <button className="db-link" onClick={showAll}>全部任务 ›</button>
-      </div>
+    <WorkbenchCard className="db-tasks">
+      <WorkbenchSectionHeader title="后台任务" action={<button className="db-link" onClick={showAll}>全部任务 ›</button>}/>
       {tasks.map(task => (
         <div key={task.id} className="db-task-row">
           <span className={task.status === 'failed' ? 'db-task-icon db-task-icon-failed' : 'db-task-icon'}>
@@ -85,6 +83,6 @@ export function TaskPanel({tasks}: {tasks: DashboardTask[]}) {
         <p className="db-h2" style={{marginBottom: 8}}>{errorOf?.title}</p>
         <pre style={{whiteSpace: 'pre-wrap', color: 'var(--mc-fail)'}}>{errorOf?.error ?? '无错误信息'}</pre>
       </Drawer>
-    </div>
+    </WorkbenchCard>
   );
 }

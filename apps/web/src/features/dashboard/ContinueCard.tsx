@@ -1,8 +1,9 @@
-import {Button, Progress} from 'antd';
+import {Progress} from 'antd';
 import {ArrowRightOutlined, StarOutlined} from '@ant-design/icons';
 import type {DashboardPack} from './types';
 import {AlertSignals, ConflictSignal, EditCounts, SignalGroup, relativeTime} from './signals';
 import {packCoverGradient} from './cover';
+import {WorkbenchCard, WorkbenchButton} from '../../ui/workbench/Workbench';
 
 /* 继续工作卡：最近编辑的包，全页视觉权重最高。 */
 
@@ -16,7 +17,7 @@ export function PackCover({id, small}: {id: string; small?: boolean}) {
 export function ContinueCard({pack, onOpen}: {pack: DashboardPack; onOpen: (id: string) => void}) {
   const progress = pack.modCount.total > 0 ? Math.round((pack.modCount.installed / pack.modCount.total) * 100) : 0;
   return (
-    <div className="db-card db-continue">
+    <WorkbenchCard className="db-continue">
       <div className="db-continue-info">
         <PackCover id={pack.id}/>
         <div className="db-continue-info-text">
@@ -42,12 +43,12 @@ export function ContinueCard({pack, onOpen}: {pack: DashboardPack; onOpen: (id: 
         </SignalGroup>
       </div>
       <div className="db-continue-action">
-        <Button type="primary" size="large" className="mc-btn-cta" onClick={() => onOpen(pack.id)}>继续设计 <ArrowRightOutlined/></Button>
+        <WorkbenchButton tone="primary" size="large" onClick={() => onOpen(pack.id)}>继续设计 <ArrowRightOutlined/></WorkbenchButton>
         <div className="db-continue-meta"><span>上次编辑：{relativeTime(pack.lastEditedAt)}</span></div>
         <div className="db-continue-meta"><span>模组安装</span><span>{pack.modCount.installed}/{pack.modCount.total} · {progress}%</span></div>
         <Progress percent={progress} size="small" showInfo={false}/>
       </div>
-    </div>
+    </WorkbenchCard>
   );
 }
 

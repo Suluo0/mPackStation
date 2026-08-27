@@ -5,6 +5,7 @@ import {BrowserRouter, Navigate, Route, Routes, useParams} from 'react-router-do
 import {AppShell, ModulePlaceholder} from './app/AppShell';
 import {DashboardPage} from './pages/DashboardPage';
 import './features/dashboard/dashboard.css';
+import './ui/workbench/workbench.css';
 
 /* 整合包工作台占位：页面将在独立里程碑按提示词文档实现，此处仅保证导航可达。 */
 function PackWorkbenchPlaceholder() {
@@ -20,18 +21,18 @@ function PackWorkbenchPlaceholder() {
 createRoot(document.getElementById('root')!).render(
   <ConfigProvider locale={zhCN} theme={{
     token: {
-      colorPrimary: '#7B5CFF',
-      colorInfo: '#7B5CFF',
-      colorLink: '#7B5CFF',
-      borderRadius: 12,
-      colorBgLayout: '#F3F1FA',
-      colorText: '#232042',
-      colorTextSecondary: '#8A87A6',
+      colorPrimary: '#C9783B',
+      colorInfo: '#4E8C86',
+      colorLink: '#B96335',
+      borderRadius: 10,
+      colorBgLayout: '#F4F0E8',
+      colorText: '#252522',
+      colorTextSecondary: '#77736B',
     },
     components: {
-      Button: {borderRadius: 10, controlHeight: 36, primaryShadow: '0 4px 12px rgba(123, 92, 255, 0.3)'},
-      Progress: {defaultColor: '#7B5CFF'},
-      Switch: {colorPrimary: '#7B5CFF', colorPrimaryHover: '#8F76FF'},
+      Button: {borderRadius: 9, controlHeight: 36, primaryShadow: '0 4px 12px rgba(91, 63, 39, 0.18)'},
+      Progress: {defaultColor: '#C9783B'},
+      Switch: {colorPrimary: '#C9783B', colorPrimaryHover: '#B96335'},
     },
   }}>
     <AntApp>
@@ -39,6 +40,7 @@ createRoot(document.getElementById('root')!).render(
         <Routes>
           <Route element={<AppShell/>}>
             <Route path="/" element={<DashboardPage/>}/>
+            <Route path="/welcome" element={<DashboardPage forceEmpty/>}/>
             <Route path="/packs" element={<ModulePlaceholder title="整合包"/>}/>
             <Route path="/packs/:id" element={<PackWorkbenchPlaceholder/>}/>
             <Route path="/mods" element={<ModulePlaceholder title="模组搜索"/>}/>

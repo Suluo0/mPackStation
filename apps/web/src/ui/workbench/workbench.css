@@ -1,0 +1,11 @@
+/* Reusable Taster workbench primitives. Feature styles may add layout classes, but
+   surface, type, shape and action treatments stay here. */
+.wb-card { background: var(--mc-fill); border: 1px solid var(--mc-line); border-radius: var(--mc-radius-lg); box-shadow: var(--mc-shadow); }
+.wb-title { margin: 0; color: var(--mc-text); font-size: 16px; font-weight: 700; line-height: 1.35; letter-spacing: -.01em; }
+.wb-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mc-sp); margin-bottom: var(--mc-sp); }
+.wb-btn-primary.ant-btn-primary { background: var(--mc-primary); border-color: var(--mc-primary); color: #fffdf8; box-shadow: 0 4px 10px var(--mc-brand-shadow); font-weight: 700; }
+.wb-btn-primary.ant-btn-primary:hover { background: var(--mc-primary-deep); border-color: var(--mc-primary-deep); }
+.wb-btn-secondary { border-color: var(--mc-line); color: var(--mc-text); background: var(--mc-fill); font-weight: 600; }
+.wb-btn-secondary:hover { border-color: var(--mc-primary); color: var(--mc-primary-deep); }
+.wb-btn-quiet { border-color: transparent; color: var(--mc-text-2); background: transparent; }
+.wb-btn-quiet:hover { border-color: var(--mc-line); color: var(--mc-primary-deep); background: var(--mc-primary-bg); }
