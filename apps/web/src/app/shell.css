@@ -52,35 +52,9 @@
 .app-shell-collapsed .app-nav-item,
 .app-shell-collapsed .app-sider-fold { justify-content: center; }
 
-/* ===== 顶栏与内容区 ===== */
+/* ===== 内容区 ===== */
 .app-body { flex: 1; min-width: 0; margin-left: var(--mc-sider-w); transition: margin 150ms ease; }
 .app-shell-collapsed .app-body { margin-left: var(--mc-sider-w-fold); }
-
-.app-topbar {
-  position: sticky; top: 0; z-index: 10;
-  display: flex; align-items: center; justify-content: flex-end; gap: var(--mc-sp-sm);
-  height: 60px; padding: 0 var(--mc-sp-xl);
-  background: color-mix(in srgb, var(--mc-fill) 78%, var(--mc-bg)); border-bottom: 1px solid color-mix(in srgb, var(--mc-line) 72%, transparent);
-  box-shadow: 0 1px 0 rgba(255,255,255,.65), 0 4px 16px rgba(64,50,33,.035);
-}
-.app-topbar-icon {
-  display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--mc-radius-pill);
-  color: var(--mc-text-2); font-size: 16px; cursor: pointer;
-  transition: background var(--mc-dur) var(--mc-ease), color var(--mc-dur) var(--mc-ease);
-}
-.app-topbar-icon:hover { background: var(--mc-hover); color: var(--mc-primary); }
-.app-user {
-  display: flex; align-items: center; gap: var(--mc-sp-xs); cursor: pointer;
-  padding: 4px 10px 4px 4px; border-radius: var(--mc-radius-pill);
-  transition: background var(--mc-dur) var(--mc-ease);
-}
-.app-user:hover { background: var(--mc-hover); }
-.app-avatar {
-  display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--mc-radius-pill);
-  color: #fff; font-size: 13px; font-weight: 700;
-  background: linear-gradient(135deg, var(--mc-brand-from), var(--mc-brand-to));
-}
-.app-user-name { font-size: 13px; color: var(--mc-text); }
 
 .app-content { position: relative; box-sizing: border-box; min-height: 100vh; padding: var(--mc-sp-lg) var(--mc-sp-lg) 136px; background-color: var(--mc-bg); background-image: url('/paper-noise.svg'), radial-gradient(ellipse at 75% 7%, rgba(255,255,255,.58), transparent 42%), radial-gradient(ellipse at 8% 76%, rgba(158,108,54,.07), transparent 38%), repeating-linear-gradient(2deg, rgba(105,80,49,.018) 0, rgba(105,80,49,.018) 1px, transparent 1px, transparent 7px); background-size: 180px 180px, 100% 100%, 100% 100%, 100% 100%; background-blend-mode: soft-light, screen, multiply, multiply; }
 
