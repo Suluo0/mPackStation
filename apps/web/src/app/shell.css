@@ -1,0 +1,78 @@
+/* 应用外壳样式 —— 颜色/圆角/间距引用 dashboard.css 中的设计令牌。 */
+
+.app-shell { display: flex; min-height: 100vh; background: var(--mc-bg); }
+
+/* ===== 侧边栏 ===== */
+.app-sider {
+  position: fixed; inset: 0 auto 0 0; width: var(--mc-sider-w); z-index: 20;
+  display: flex; flex-direction: column;
+  background: var(--mc-fill); border-right: 1px solid var(--mc-line);
+  transition: width 150ms ease;
+}
+.app-shell-collapsed .app-sider { width: var(--mc-sider-w-fold); }
+
+.app-brand { display: flex; align-items: center; gap: var(--mc-sp-sm); padding: var(--mc-sp) var(--mc-sp) var(--mc-sp-sm); }
+.app-brand-logo {
+  display: grid; place-items: center; width: 36px; height: 36px; flex: none;
+  border-radius: 10px; color: #fff; font-size: 20px;
+  background: linear-gradient(135deg, var(--mc-brand-from), var(--mc-brand-to));
+  box-shadow: 0 4px 10px var(--mc-brand-shadow);
+}
+.app-brand-name { font-size: 16px; font-weight: 700; color: var(--mc-text); white-space: nowrap; }
+
+.app-nav { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: var(--mc-sp-xs) var(--mc-sp-sm); overflow-y: auto; }
+.app-nav-item {
+  display: flex; align-items: center; gap: var(--mc-sp-sm);
+  padding: 10px var(--mc-sp-sm); border-radius: var(--mc-radius-pill);
+  color: var(--mc-text-2); font-size: 14px; text-decoration: none; white-space: nowrap;
+  transition: background var(--mc-dur) var(--mc-ease), color var(--mc-dur) var(--mc-ease);
+}
+.app-nav-item:hover { background: var(--mc-hover); color: var(--mc-primary); }
+.app-nav-item:active { transform: scale(0.98); }
+.app-nav-item-active, .app-nav-item-active:hover { background: var(--mc-primary-bg); color: var(--mc-primary); font-weight: 600; }
+.app-nav-icon { font-size: 16px; display: grid; place-items: center; width: 20px; flex: none; }
+
+.app-sider-fold {
+  display: flex; align-items: center; gap: var(--mc-sp-sm);
+  margin: var(--mc-sp-sm); padding: 10px var(--mc-sp-sm);
+  border: none; background: none; cursor: pointer; border-radius: var(--mc-radius-pill);
+  color: var(--mc-muted); font-size: 13px; white-space: nowrap;
+  transition: background var(--mc-dur) var(--mc-ease), color var(--mc-dur) var(--mc-ease);
+}
+.app-sider-fold:hover { background: var(--mc-hover); color: var(--mc-primary); }
+
+.app-shell-collapsed .app-nav-label,
+.app-shell-collapsed .app-brand-name { display: none; }
+.app-shell-collapsed .app-nav-item,
+.app-shell-collapsed .app-sider-fold { justify-content: center; }
+
+/* ===== 顶栏与内容区 ===== */
+.app-body { flex: 1; min-width: 0; margin-left: var(--mc-sider-w); transition: margin 150ms ease; }
+.app-shell-collapsed .app-body { margin-left: var(--mc-sider-w-fold); }
+
+.app-topbar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--mc-sp-sm);
+  height: 60px; padding: 0 var(--mc-sp-xl);
+  background: var(--mc-bg); border-bottom: 1px solid var(--mc-line);
+}
+.app-topbar-icon {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--mc-radius-pill);
+  color: var(--mc-text-2); font-size: 16px; cursor: pointer;
+  transition: background var(--mc-dur) var(--mc-ease), color var(--mc-dur) var(--mc-ease);
+}
+.app-topbar-icon:hover { background: var(--mc-hover); color: var(--mc-primary); }
+.app-user {
+  display: flex; align-items: center; gap: var(--mc-sp-xs); cursor: pointer;
+  padding: 4px 10px 4px 4px; border-radius: var(--mc-radius-pill);
+  transition: background var(--mc-dur) var(--mc-ease);
+}
+.app-user:hover { background: var(--mc-hover); }
+.app-avatar {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--mc-radius-pill);
+  color: #fff; font-size: 13px; font-weight: 700;
+  background: linear-gradient(135deg, var(--mc-brand-from), var(--mc-brand-to));
+}
+.app-user-name { font-size: 13px; color: var(--mc-text); }
+
+.app-content { padding: var(--mc-sp-lg) var(--mc-sp-lg) 48px; }
