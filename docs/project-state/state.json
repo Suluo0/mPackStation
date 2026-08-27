@@ -13,8 +13,10 @@
   },
   "repository": {
     "path": "D:\\workIn\\mPackStation",
-    "is_git": false,
-    "structure": "monorepo：apps/web（React19+TS+Vite7+antd6+zod4）、apps/server（Go+SQLite）、docs/、data/（运行期）、.tools/（便携 Go 1.27.0）、.shots/（验收截图）"
+    "is_git": true,
+    "initial_commit": "0c6edbe",
+    "remote": null,
+    "structure": "monorepo：apps/web（React19+TS+Vite7+antd6+zod4）、apps/server（Go+SQLite）、docs/、data/（运行期，gitignore）、.tools/（便携 Go 1.27.0，gitignore）、.shots/（验收截图）"
   },
   "tasks": [
     {
