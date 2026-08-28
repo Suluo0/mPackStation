@@ -228,6 +228,14 @@ func NewRouterWithService(app *service.API, version string) http.Handler {
 		}
 		WriteJSON(w, http.StatusOK, v)
 	})
+	mux.HandleFunc("POST /api/packs/{packId}/unarchive", func(w http.ResponseWriter, r *http.Request) {
+		v, err := app.UnarchivePack(r.Context(), r.PathValue("packId"), RequestID(r.Context()))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, v)
+	})
 	mux.HandleFunc("DELETE /api/packs/{packId}", func(w http.ResponseWriter, r *http.Request) {
 		if err := app.DeletePack(r.Context(), r.PathValue("packId"), RequestID(r.Context())); err != nil {
 			writeServiceError(w, r, err)

@@ -23,25 +23,26 @@ func TestP3FrontendRoutesAreBackedByHandlers(t *testing.T) {
 	defer db.Close()
 
 	routes := []struct {
-		method string
-		path   string
+		method       string
+		path         string
+		notFoundCode string
 	}{
-		{http.MethodGet, "/api/dashboard"},
-		{http.MethodGet, "/api/tasks?recent=20"},
-		{http.MethodGet, "/api/activities?limit=10"},
-		{http.MethodGet, "/api/system/health"},
-		{http.MethodGet, "/api/system/status"},
-		{http.MethodGet, "/api/onboarding"},
-		{http.MethodPut, "/api/onboarding"},
-		{http.MethodGet, "/api/meta/mc-versions"},
-		{http.MethodGet, "/api/packs"},
-		{http.MethodPost, "/api/packs"},
-		{http.MethodGet, "/api/packs/p3-missing"},
-		{http.MethodPatch, "/api/packs/p3-missing"},
-		{http.MethodPost, "/api/packs/p3-missing/duplicate"},
-		{http.MethodPost, "/api/packs/p3-missing/archive"},
-		{http.MethodPost, "/api/packs/p3-missing/unarchive"},
-		{http.MethodDelete, "/api/packs/p3-missing"},
+		{http.MethodGet, "/api/dashboard", ""},
+		{http.MethodGet, "/api/tasks?recent=20", ""},
+		{http.MethodGet, "/api/activities?limit=10", ""},
+		{http.MethodGet, "/api/system/health", ""},
+		{http.MethodGet, "/api/system/status", ""},
+		{http.MethodGet, "/api/onboarding", ""},
+		{http.MethodPut, "/api/onboarding", ""},
+		{http.MethodGet, "/api/meta/mc-versions", ""},
+		{http.MethodGet, "/api/packs", ""},
+		{http.MethodPost, "/api/packs", ""},
+		{http.MethodGet, "/api/packs/p3-missing", "pack_not_found"},
+		{http.MethodPatch, "/api/packs/p3-missing", "pack_not_found"},
+		{http.MethodPost, "/api/packs/p3-missing/duplicate", ""},
+		{http.MethodPost, "/api/packs/p3-missing/archive", "pack_not_found"},
+		{http.MethodPost, "/api/packs/p3-missing/unarchive", "pack_not_found"},
+		{http.MethodDelete, "/api/packs/p3-missing", "pack_not_found"},
 	}
 
 	for _, route := range routes {
@@ -49,8 +50,14 @@ func TestP3FrontendRoutesAreBackedByHandlers(t *testing.T) {
 			req := p3Request(t, route.method, route.path, nil)
 			res := httptest.NewRecorder()
 			handler.ServeHTTP(res, req)
-			if res.Code == http.StatusNotFound || res.Code == http.StatusMethodNotAllowed {
+			if res.Code == http.StatusMethodNotAllowed {
 				t.Fatalf("P3-HTTP-001 missing route: %s %s (status=%d)", route.method, route.path, res.Code)
+			}
+			if res.Code == http.StatusNotFound && route.notFoundCode == "" {
+				t.Fatalf("P3-HTTP-001 missing route: %s %s (status=%d)", route.method, route.path, res.Code)
+			}
+			if res.Code == http.StatusNotFound && route.notFoundCode != "" {
+				p3RequireError(t, res, route.notFoundCode)
 			}
 		})
 	}

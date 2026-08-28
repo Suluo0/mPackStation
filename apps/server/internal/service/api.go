@@ -341,6 +341,37 @@ func (a *API) ArchivePack(ctx context.Context, id, requestID string) (Pack, erro
 	p.LastEditedAt = at
 	return a.pack(p, "0.1.0"), nil
 }
+
+// UnarchivePack restores an archived pack to the active dashboard scope.
+func (a *API) UnarchivePack(ctx context.Context, id, requestID string) (Pack, error) {
+	if err := a.ready(); err != nil {
+		return Pack{}, err
+	}
+	p, err := a.repo.GetPack(ctx, id)
+	if err != nil {
+		return Pack{}, err
+	}
+	at := a.now().UnixMilli()
+	err = a.repo.WithTx(ctx, func(tx *store.Repository) error {
+		if err := tx.SetPackStatus(ctx, id, "active", at); err != nil {
+			return err
+		}
+		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: id, Kind: "pack", Action: "edit", Text: fmt.Sprintf("恢复了整合包「%s」", p.Name), At: at}, nil, requestID); err != nil {
+			return err
+		}
+		if err := tx.AddOutbox(ctx, newID("event"), id, "pack", id, "pack.unarchived", map[string]any{"packId": id}, at); err != nil {
+			return err
+		}
+		return tx.AddAudit(ctx, newID("audit"), id, "pack.unarchive", requestID, nil, at)
+	})
+	if err != nil {
+		return Pack{}, err
+	}
+	p.Status = "active"
+	p.UpdatedAt = at
+	p.LastEditedAt = at
+	return a.pack(p, "0.1.0"), nil
+}
 func (a *API) DeletePack(ctx context.Context, id, requestID string) error {
 	if err := a.ready(); err != nil {
 		return err
@@ -496,6 +527,11 @@ func (a *API) Onboarding(ctx context.Context) (Onboarding, error) {
 func (a *API) AcknowledgeOnboarding(ctx context.Context, steps map[string]bool, requestID string) error {
 	if err := a.ready(); err != nil {
 		return err
+	}
+	for step, acknowledged := range steps {
+		if acknowledged && step != "curseforgeKey" && step != "firstPack" && step != "firstMod" {
+			return fmt.Errorf("%w: unknown onboarding step", ErrInvalidArgument)
+		}
 	}
 	for _, step := range []string{"curseforgeKey", "firstPack", "firstMod"} {
 		if !steps[step] {

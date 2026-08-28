@@ -17,20 +17,24 @@ func TestP4TaskControlRoutesAreBackedByHandlers(t *testing.T) {
 	defer db.Close()
 
 	for _, route := range []struct {
-		method string
-		path   string
+		method       string
+		path         string
+		notFoundCode string
 	}{
-		{http.MethodGet, "/api/tasks/p4-missing"},
-		{http.MethodPost, "/api/tasks/p4-missing/pause"},
-		{http.MethodPost, "/api/tasks/p4-missing/resume"},
-		{http.MethodPost, "/api/tasks/p4-missing/cancel"},
-		{http.MethodPost, "/api/tasks/p4-missing/retry"},
-		{http.MethodGet, "/api/tasks/p4-missing/log"},
+		{http.MethodGet, "/api/tasks/p4-missing", "task_not_found"},
+		{http.MethodPost, "/api/tasks/p4-missing/pause", "task_not_found"},
+		{http.MethodPost, "/api/tasks/p4-missing/resume", "task_not_found"},
+		{http.MethodPost, "/api/tasks/p4-missing/cancel", "task_not_found"},
+		{http.MethodPost, "/api/tasks/p4-missing/retry", "task_not_found"},
+		{http.MethodGet, "/api/tasks/p4-missing/log", "task_not_found"},
 	} {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
 			res := p3Do(t, handler, route.method, route.path, nil)
-			if res.Code == http.StatusNotFound || res.Code == http.StatusMethodNotAllowed {
+			if res.Code == http.StatusMethodNotAllowed {
 				t.Fatalf("P4-HTTP-001 missing task route: %s %s (status=%d)", route.method, route.path, res.Code)
+			}
+			if res.Code == http.StatusNotFound {
+				p3RequireError(t, res, route.notFoundCode)
 			}
 		})
 	}
