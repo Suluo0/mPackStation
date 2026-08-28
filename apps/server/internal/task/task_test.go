@@ -53,14 +53,14 @@ func TestTaskStateMachineAndFencing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Status != StatusCanceled || current.LeaseOwner != "" || current.LeaseEpoch != 2 {
+	if current.Status != StatusCanceled || current.LeaseOwner != "" || current.LeaseEpoch != 0 || current.LeaseExpiresAt != nil {
 		t.Fatalf("canceled task = %#v", current)
 	}
 	events, err := queue.Events(context.Background(), task.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 4 || events[0].Sequence != 1 || events[len(events)-1].Status != StatusCanceled {
+	if len(events) != 5 || events[0].Sequence != 1 || events[len(events)-1].Status != StatusCanceled {
 		t.Fatalf("task events = %#v", events)
 	}
 }
@@ -123,8 +123,8 @@ func TestTaskRetryBackoffAndRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lease after backoff: %v", err)
 	}
-	if lease.LeaseEpoch != 2 {
-		t.Fatalf("second epoch = %d, want 2", lease.LeaseEpoch)
+	if lease.LeaseEpoch != 1 {
+		t.Fatalf("second epoch = %d, want 1 after the previous lease was cleared", lease.LeaseEpoch)
 	}
 	if err := queue.Begin(context.Background(), item.ID, "worker-b", lease.LeaseEpoch); err != nil {
 		t.Fatal(err)
@@ -188,8 +188,8 @@ func TestTaskRegistryRunner(t *testing.T) {
 
 type fakeClock struct{ now time.Time }
 
-func (c *fakeClock) Now() time.Time { return c.now }
-func (c *fakeClock) NowClock() Clock { return c }
+func (c *fakeClock) Now() time.Time                 { return c.now }
+func (c *fakeClock) NowClock() Clock                { return c }
 func (c *fakeClock) Advance(duration time.Duration) { c.now = c.now.Add(duration) }
 
 func sequenceIDs() IDGenerator {
@@ -219,7 +219,9 @@ CREATE TABLE tasks (
  max_attempts INTEGER NOT NULL DEFAULT 3, recover_count INTEGER NOT NULL DEFAULT 0,
  lease_owner TEXT, lease_epoch INTEGER, lease_expires_at INTEGER,
  idempotency_key TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
- started_at INTEGER, finished_at INTEGER
+ started_at INTEGER, finished_at INTEGER,
+ CHECK ((status IN ('leased','running') AND lease_owner IS NOT NULL AND lease_epoch IS NOT NULL AND lease_expires_at IS NOT NULL)
+     OR (status NOT IN ('leased','running') AND lease_owner IS NULL AND lease_epoch IS NULL AND lease_expires_at IS NULL))
 );
 CREATE TABLE task_events (
  id TEXT PRIMARY KEY, task_id TEXT, sequence INTEGER NOT NULL,

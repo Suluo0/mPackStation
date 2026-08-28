@@ -64,11 +64,15 @@ func apiError(w http.ResponseWriter, r *http.Request, status int, code, message 
 // NewRouter assembles the local API. source is intentionally opaque here so
 // this package cannot import database/sql; service owns database composition.
 func NewRouter(source any, version string) http.Handler {
-	return NewRouterWithService(service.NewFromSource(source), version)
+	return newRouter(service.NewFromSource(source), service.NewTaskAPI(source), version)
 }
 
 // NewRouterWithService is useful to tests and future composition roots.
 func NewRouterWithService(app *service.API, version string) http.Handler {
+	return newRouter(app, nil, version)
+}
+
+func newRouter(app *service.API, taskAPI *service.TaskAPI, version string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": version})
@@ -115,6 +119,99 @@ func NewRouterWithService(app *service.API, version string) http.Handler {
 			writeServiceError(w, r, err)
 		} else {
 			WriteJSON(w, http.StatusOK, v)
+		}
+	})
+	mux.HandleFunc("GET /api/tasks/{taskId}", func(w http.ResponseWriter, r *http.Request) {
+		if taskAPI == nil {
+			apiError(w, r, http.StatusServiceUnavailable, "not_ready", "task service is not ready")
+			return
+		}
+		v, err := taskAPI.Get(r.Context(), r.PathValue("taskId"))
+		if err != nil {
+			writeTaskError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, v)
+	})
+	mux.HandleFunc("POST /api/tasks/{taskId}/pause", func(w http.ResponseWriter, r *http.Request) {
+		if taskAPI == nil {
+			apiError(w, r, http.StatusServiceUnavailable, "not_ready", "task service is not ready")
+			return
+		}
+		if err := taskAPI.Pause(r.Context(), r.PathValue("taskId")); err != nil {
+			writeTaskError(w, r, err)
+			return
+		}
+		v, err := taskAPI.Get(r.Context(), r.PathValue("taskId"))
+		if err != nil {
+			writeTaskError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, v)
+	})
+	mux.HandleFunc("POST /api/tasks/{taskId}/resume", func(w http.ResponseWriter, r *http.Request) {
+		if taskAPI == nil {
+			apiError(w, r, http.StatusServiceUnavailable, "not_ready", "task service is not ready")
+			return
+		}
+		if err := taskAPI.Resume(r.Context(), r.PathValue("taskId")); err != nil {
+			writeTaskError(w, r, err)
+			return
+		}
+		v, err := taskAPI.Get(r.Context(), r.PathValue("taskId"))
+		if err != nil {
+			writeTaskError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, v)
+	})
+	mux.HandleFunc("POST /api/tasks/{taskId}/cancel", func(w http.ResponseWriter, r *http.Request) {
+		if taskAPI == nil {
+			apiError(w, r, http.StatusServiceUnavailable, "not_ready", "task service is not ready")
+			return
+		}
+		if err := taskAPI.Cancel(r.Context(), r.PathValue("taskId")); err != nil {
+			writeTaskError(w, r, err)
+			return
+		}
+		v, err := taskAPI.Get(r.Context(), r.PathValue("taskId"))
+		if err != nil {
+			writeTaskError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, v)
+	})
+	mux.HandleFunc("POST /api/tasks/{taskId}/retry", func(w http.ResponseWriter, r *http.Request) {
+		if taskAPI == nil {
+			apiError(w, r, http.StatusServiceUnavailable, "not_ready", "task service is not ready")
+			return
+		}
+		if err := taskAPI.Retry(r.Context(), r.PathValue("taskId")); err != nil {
+			writeTaskError(w, r, err)
+			return
+		}
+		v, err := taskAPI.Get(r.Context(), r.PathValue("taskId"))
+		if err != nil {
+			writeTaskError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, v)
+	})
+	mux.HandleFunc("GET /api/tasks/{taskId}/log", func(w http.ResponseWriter, r *http.Request) {
+		if taskAPI == nil {
+			apiError(w, r, http.StatusServiceUnavailable, "not_ready", "task service is not ready")
+			return
+		}
+		events, err := taskAPI.Events(r.Context(), r.PathValue("taskId"))
+		if err != nil {
+			writeTaskError(w, r, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
+		for _, event := range events {
+			if err := json.NewEncoder(w).Encode(event); err != nil {
+				return
+			}
 		}
 	})
 	mux.HandleFunc("GET /api/activities", func(w http.ResponseWriter, r *http.Request) {
@@ -297,6 +394,33 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, service.ErrUnavailable):
 		apiError(w, r, http.StatusServiceUnavailable, "not_ready", "service is not ready")
 	default:
+		apiError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
+	}
+}
+
+func writeTaskError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case service.IsTaskNotFound(err):
+		apiError(w, r, http.StatusNotFound, "task_not_found", "task not found")
+	case service.IsTaskInvalidTransition(err):
+		apiError(w, r, http.StatusConflict, "task_invalid_transition", "task state transition is not allowed")
+	case service.IsTaskLeaseLost(err):
+		apiError(w, r, http.StatusConflict, "task_lease_lost", "task lease is no longer valid")
+	case service.IsTaskNotAvailable(err):
+		apiError(w, r, http.StatusConflict, "task_not_available", "task is not available")
+	case service.IsTaskIdempotencyConflict(err):
+		apiError(w, r, http.StatusConflict, "idempotency_conflict", "idempotency key was already used with different input")
+	case service.IsTaskIdempotencyConsumed(err):
+		apiError(w, r, http.StatusConflict, "idempotency_consumed", "idempotency key was already consumed")
+	case service.IsTaskUnknownKind(err):
+		apiError(w, r, http.StatusInternalServerError, "task_unknown_kind", "task kind is not registered")
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		apiError(w, r, http.StatusRequestTimeout, "request_canceled", "task request was canceled")
+	default:
+		if service.IsTaskUnavailable(err) {
+			apiError(w, r, http.StatusServiceUnavailable, "not_ready", "task service is not ready")
+			return
+		}
 		apiError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 	}
 }

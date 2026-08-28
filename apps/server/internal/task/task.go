@@ -437,6 +437,9 @@ func (q *Queue) Lease(ctx context.Context, workerID string) (*Task, error) {
 
 // Begin transitions a leased task to running, fenced by owner and epoch.
 func (q *Queue) Begin(ctx context.Context, id, workerID string, epoch int64) error {
+	if err := q.preflightLease(ctx, id, workerID, epoch); err != nil {
+		return err
+	}
 	now := q.clock.Now().UnixMilli()
 	tx, err := q.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -461,6 +464,9 @@ func (q *Queue) Begin(ctx context.Context, id, workerID string, epoch int64) err
 
 // Heartbeat extends a live lease. It accepts leased and running states.
 func (q *Queue) Heartbeat(ctx context.Context, id, workerID string, epoch int64) error {
+	if err := q.preflightLease(ctx, id, workerID, epoch); err != nil {
+		return err
+	}
 	now := q.clock.Now().UnixMilli()
 	result, err := q.db.ExecContext(ctx, `UPDATE tasks SET lease_expires_at=?, updated_at=? WHERE id=? AND status IN ('leased','running') AND lease_owner=? AND lease_epoch=? AND lease_expires_at>?`, now+q.leaseTTL.Milliseconds(), now, id, workerID, epoch, now)
 	if err != nil {
@@ -476,6 +482,9 @@ func (q *Queue) Heartbeat(ctx context.Context, id, workerID string, epoch int64)
 func (q *Queue) Progress(ctx context.Context, id, workerID string, epoch int64, progress float64, message string) error {
 	if progress < 0 || progress > 100 {
 		return errors.New("task progress must be between 0 and 100")
+	}
+	if err := q.preflightLease(ctx, id, workerID, epoch); err != nil {
+		return err
 	}
 	now := q.clock.Now().UnixMilli()
 	tx, err := q.db.BeginTx(ctx, nil)
@@ -520,7 +529,8 @@ func (q *Queue) Fail(ctx context.Context, id, workerID string, epoch int64, task
 }
 
 // Cancel cooperatively cancels a queued, leased, running or paused task and
-// increments the fencing epoch so an old worker can no longer write.
+// clears its lease so an old worker can no longer write. The canonical schema
+// requires all lease columns to be NULL outside leased/running states.
 func (q *Queue) Cancel(ctx context.Context, id string) error {
 	now := q.clock.Now().UnixMilli()
 	tx, err := q.db.BeginTx(ctx, nil)
@@ -528,12 +538,12 @@ func (q *Queue) Cancel(ctx context.Context, id string) error {
 		return fmt.Errorf("begin cancel: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	result, err := tx.ExecContext(ctx, `UPDATE tasks SET status='canceled', lease_owner=NULL, lease_epoch=COALESCE(lease_epoch,0)+1, lease_expires_at=NULL, finished_at=?, updated_at=? WHERE id=? AND status IN ('queued','leased','running','paused')`, now, now, id)
+	result, err := tx.ExecContext(ctx, `UPDATE tasks SET status='canceled', lease_owner=NULL, lease_epoch=NULL, lease_expires_at=NULL, finished_at=?, updated_at=? WHERE id=? AND status IN ('queued','leased','running','paused')`, now, now, id)
 	if err != nil {
 		return fmt.Errorf("cancel task: %w", err)
 	}
 	if n, _ := result.RowsAffected(); n != 1 {
-		return q.taskTransitionStatus(ctx, id)
+		return q.taskTransitionStatusTx(ctx, tx, id)
 	}
 	if err := q.appendEvent(ctx, tx, id, StatusCanceled, "canceled", []byte(`{}`), now); err != nil {
 		return err
@@ -554,13 +564,16 @@ func (q *Queue) Pause(ctx context.Context, id, workerID string, epoch int64) err
 	if task.Kind == KindPublish {
 		return fmt.Errorf("%w: publish cannot be paused", ErrInvalidTransition)
 	}
+	if err := q.preflightLease(ctx, id, workerID, epoch); err != nil {
+		return err
+	}
 	now := q.clock.Now().UnixMilli()
 	tx, err := q.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin pause: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	result, err := tx.ExecContext(ctx, `UPDATE tasks SET status='paused', lease_owner=NULL, lease_epoch=COALESCE(lease_epoch,0)+1, lease_expires_at=NULL, updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_epoch=? AND lease_expires_at>?`, now, id, workerID, epoch, now)
+	result, err := tx.ExecContext(ctx, `UPDATE tasks SET status='paused', lease_owner=NULL, lease_epoch=NULL, lease_expires_at=NULL, updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_epoch=? AND lease_expires_at>?`, now, id, workerID, epoch, now)
 	if err != nil {
 		return fmt.Errorf("pause task: %w", err)
 	}
@@ -601,7 +614,7 @@ func (q *Queue) Resume(ctx context.Context, id string) error {
 	return nil
 }
 
-// Retry requeues a failed task as a fresh logical attempt while retaining its history.
+// Retry requeues a failed or canceled task as a fresh logical attempt while retaining its history.
 func (q *Queue) Retry(ctx context.Context, id string) error {
 	now := q.clock.Now().UnixMilli()
 	tx, err := q.db.BeginTx(ctx, nil)
@@ -609,7 +622,7 @@ func (q *Queue) Retry(ctx context.Context, id string) error {
 		return fmt.Errorf("begin retry: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	result, err := tx.ExecContext(ctx, `UPDATE tasks SET status='queued', progress=0, message='queued', error_code='', error_message='', attempt=0, recover_count=0, lease_owner=NULL, lease_epoch=COALESCE(lease_epoch,0)+1, lease_expires_at=NULL, started_at=NULL, finished_at=NULL, updated_at=? WHERE id=? AND status='failed'`, now, id)
+	result, err := tx.ExecContext(ctx, `UPDATE tasks SET status='queued', progress=0, message='queued', error_code='', error_message='', attempt=0, recover_count=0, lease_owner=NULL, lease_epoch=NULL, lease_expires_at=NULL, started_at=NULL, finished_at=NULL, updated_at=? WHERE id=? AND status IN ('failed','canceled')`, now, id)
 	if err != nil {
 		return fmt.Errorf("retry task: %w", err)
 	}
@@ -640,10 +653,10 @@ func (q *Queue) Recover(ctx context.Context) (int, error) {
 	}
 	defer rows.Close()
 	type expired struct {
-		id string
-		status Status
+		id           string
+		status       Status
 		recoverCount int
-		startedAt sql.NullInt64
+		startedAt    sql.NullInt64
 	}
 	var expiredTasks []expired
 	for rows.Next() {
@@ -665,14 +678,14 @@ func (q *Queue) Recover(ctx context.Context) (int, error) {
 			if deadlineExceeded {
 				code, message = "task_deadline_exceeded", "task deadline exceeded"
 			}
-			if _, err := tx.ExecContext(ctx, `UPDATE tasks SET status='failed', recover_count=?, lease_owner=NULL, lease_epoch=COALESCE(lease_epoch,0)+1, lease_expires_at=NULL, error_code=?, error_message=?, finished_at=?, updated_at=? WHERE id=? AND status IN ('leased','running') AND lease_expires_at<=?`, newCount, code, message, now, now, item.id, now); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE tasks SET status='failed', recover_count=?, lease_owner=NULL, lease_epoch=NULL, lease_expires_at=NULL, error_code=?, error_message=?, finished_at=?, updated_at=? WHERE id=? AND status IN ('leased','running') AND lease_expires_at<=?`, newCount, code, message, now, now, item.id, now); err != nil {
 				return 0, fmt.Errorf("fail recovered task %s: %w", item.id, err)
 			}
 			if err := q.appendEvent(ctx, tx, item.id, StatusFailed, message, jsonDetail("recover_count", newCount), now); err != nil {
 				return 0, err
 			}
 		} else {
-			if _, err := tx.ExecContext(ctx, `UPDATE tasks SET status='queued', recover_count=?, lease_owner=NULL, lease_epoch=COALESCE(lease_epoch,0)+1, lease_expires_at=NULL, message='recovered', updated_at=? WHERE id=? AND status IN ('leased','running') AND lease_expires_at<=?`, newCount, now, item.id, now); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE tasks SET status='queued', recover_count=?, lease_owner=NULL, lease_epoch=NULL, lease_expires_at=NULL, message='recovered', updated_at=? WHERE id=? AND status IN ('leased','running') AND lease_expires_at<=?`, newCount, now, item.id, now); err != nil {
 				return 0, fmt.Errorf("requeue recovered task %s: %w", item.id, err)
 			}
 			if err := q.appendEvent(ctx, tx, item.id, StatusQueued, "recovered", jsonDetail("recover_count", newCount), now); err != nil {
@@ -768,13 +781,16 @@ func (q *Queue) stopRunning(id string) {
 }
 
 func (q *Queue) finish(ctx context.Context, id, workerID string, epoch int64, status Status, code, errMessage, message string) error {
+	if err := q.preflightLease(ctx, id, workerID, epoch); err != nil {
+		return err
+	}
 	now := q.clock.Now().UnixMilli()
 	tx, err := q.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin finish: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	result, err := tx.ExecContext(ctx, `UPDATE tasks SET status=?, progress=?, message=?, error_code=?, error_message=?, lease_owner=NULL, lease_expires_at=NULL, finished_at=?, updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_epoch=? AND lease_expires_at>?`, status, map[bool]float64{true: 100, false: 0}[status == StatusSucceeded], message, code, errMessage, now, now, id, workerID, epoch, now)
+	result, err := tx.ExecContext(ctx, `UPDATE tasks SET status=?, progress=?, message=?, error_code=?, error_message=?, lease_owner=NULL, lease_epoch=NULL, lease_expires_at=NULL, finished_at=?, updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_epoch=? AND lease_expires_at>?`, status, map[bool]float64{true: 100, false: 0}[status == StatusSucceeded], message, code, errMessage, now, now, id, workerID, epoch, now)
 	if err != nil {
 		return fmt.Errorf("finish task: %w", err)
 	}
@@ -791,6 +807,9 @@ func (q *Queue) finish(ctx context.Context, id, workerID string, epoch int64, st
 }
 
 func (q *Queue) failWithRetry(ctx context.Context, id, workerID string, epoch int64, taskErr *TaskError) error {
+	if err := q.preflightLease(ctx, id, workerID, epoch); err != nil {
+		return err
+	}
 	now := q.clock.Now().UnixMilli()
 	tx, err := q.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -819,9 +838,9 @@ func (q *Queue) failWithRetry(ctx context.Context, id, workerID string, epoch in
 	}
 	var query string
 	if retry {
-		query = `UPDATE tasks SET status='queued', message=?, error_code=?, error_message=?, lease_owner=NULL, lease_epoch=COALESCE(lease_epoch,0)+1, lease_expires_at=NULL, updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_epoch=? AND lease_expires_at>?`
+		query = `UPDATE tasks SET status='queued', message=?, error_code=?, error_message=?, lease_owner=NULL, lease_epoch=NULL, lease_expires_at=NULL, updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_epoch=? AND lease_expires_at>?`
 	} else {
-		query = `UPDATE tasks SET status='failed', message=?, error_code=?, error_message=?, lease_owner=NULL, lease_expires_at=NULL, finished_at=?, updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_epoch=? AND lease_expires_at>?`
+		query = `UPDATE tasks SET status='failed', message=?, error_code=?, error_message=?, lease_owner=NULL, lease_epoch=NULL, lease_expires_at=NULL, finished_at=?, updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_epoch=? AND lease_expires_at>?`
 	}
 	var result sql.Result
 	if retry {
@@ -862,7 +881,9 @@ func (q *Queue) appendEvent(ctx context.Context, tx *sql.Tx, taskID string, stat
 	return nil
 }
 
-func (q *Queue) loadTask(ctx context.Context, queryer interface{ QueryRowContext(context.Context, string, ...any) *sql.Row }, id string) (*Task, error) {
+func (q *Queue) loadTask(ctx context.Context, queryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, id string) (*Task, error) {
 	var task Task
 	var packID, payloadPath, errorCode, errorMessage, idem sql.NullString
 	var leaseOwner sql.NullString
@@ -882,32 +903,100 @@ func (q *Queue) loadTask(ctx context.Context, queryer interface{ QueryRowContext
 		task.PackID = &value
 	}
 	task.Payload = json.RawMessage(payload)
-	if payloadPath.Valid { task.PayloadPath = payloadPath.String }
-	if errorCode.Valid { task.ErrorCode = errorCode.String }
-	if errorMessage.Valid { task.ErrorMessage = errorMessage.String }
-	if idem.Valid { task.IdempotencyKey = idem.String }
-	if leaseOwner.Valid { task.LeaseOwner = leaseOwner.String }
-	if leaseEpoch.Valid { task.LeaseEpoch = leaseEpoch.Int64 }
-	if leaseExpires.Valid { t := time.UnixMilli(leaseExpires.Int64); task.LeaseExpiresAt = &t }
+	if payloadPath.Valid {
+		task.PayloadPath = payloadPath.String
+	}
+	if errorCode.Valid {
+		task.ErrorCode = errorCode.String
+	}
+	if errorMessage.Valid {
+		task.ErrorMessage = errorMessage.String
+	}
+	if idem.Valid {
+		task.IdempotencyKey = idem.String
+	}
+	if leaseOwner.Valid {
+		task.LeaseOwner = leaseOwner.String
+	}
+	if leaseEpoch.Valid {
+		task.LeaseEpoch = leaseEpoch.Int64
+	}
+	if leaseExpires.Valid {
+		t := time.UnixMilli(leaseExpires.Int64)
+		task.LeaseExpiresAt = &t
+	}
 	task.CreatedAt, task.UpdatedAt = time.UnixMilli(created), time.UnixMilli(updated)
-	if started.Valid { t := time.UnixMilli(started.Int64); task.StartedAt = &t }
-	if finished.Valid { t := time.UnixMilli(finished.Int64); task.FinishedAt = &t }
+	if started.Valid {
+		t := time.UnixMilli(started.Int64)
+		task.StartedAt = &t
+	}
+	if finished.Valid {
+		t := time.UnixMilli(finished.Int64)
+		task.FinishedAt = &t
+	}
 	return &task, nil
 }
 
 func (q *Queue) fencedResult(ctx context.Context, id, workerID string, epoch int64) error {
 	task, err := q.Get(ctx, id)
-	if errors.Is(err, ErrNotFound) { return ErrNotFound }
-	if err != nil { return err }
-	if task.LeaseOwner != workerID || task.LeaseEpoch != epoch { return ErrLeaseLost }
+	if errors.Is(err, ErrNotFound) {
+		return ErrNotFound
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return ErrLeaseLost
+	}
+	if err != nil {
+		return err
+	}
+	if task.LeaseOwner != workerID || task.LeaseEpoch != epoch {
+		return ErrLeaseLost
+	}
 	return ErrInvalidTransition
 }
 
-func (q *Queue) fencedResultTx(ctx context.Context, tx *sql.Tx, id, workerID string, epoch int64) error {
+// preflightLease rejects stale or foreign workers before they enter a state
+// transaction. This makes a fencing failure deterministic and prevents a
+// caller with an old epoch from waiting behind unrelated database work.
+func (q *Queue) preflightLease(ctx context.Context, id, workerID string, epoch int64) error {
+	var status Status
 	var owner sql.NullString
 	var currentEpoch sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT lease_owner, lease_epoch FROM tasks WHERE id=?`, id).Scan(&owner, &currentEpoch); errors.Is(err, sql.ErrNoRows) { return ErrNotFound } else if err != nil { return err }
-	if !owner.Valid || owner.String != workerID || !currentEpoch.Valid || currentEpoch.Int64 != epoch { return ErrLeaseLost }
+	var expires sql.NullInt64
+	err := q.db.QueryRowContext(ctx, `SELECT status, lease_owner, lease_epoch, lease_expires_at FROM tasks WHERE id=?`, id).Scan(&status, &owner, &currentEpoch, &expires)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return ErrLeaseLost
+	}
+	if err != nil {
+		return fmt.Errorf("check task lease: %w", err)
+	}
+	if status != StatusLeased && status != StatusRunning {
+		return ErrLeaseLost
+	}
+	if !owner.Valid || owner.String != workerID || !currentEpoch.Valid || currentEpoch.Int64 != epoch || !expires.Valid || expires.Int64 <= q.clock.Now().UnixMilli() {
+		return ErrLeaseLost
+	}
+	return nil
+}
+
+func (q *Queue) fencedResultTx(ctx context.Context, tx *sql.Tx, id, workerID string, epoch int64) error {
+	var status Status
+	var owner sql.NullString
+	var currentEpoch sql.NullInt64
+	var expires sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT status, lease_owner, lease_epoch, lease_expires_at FROM tasks WHERE id=?`, id).Scan(&status, &owner, &currentEpoch, &expires); errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	if status != StatusLeased && status != StatusRunning {
+		return ErrLeaseLost
+	}
+	if !owner.Valid || owner.String != workerID || !currentEpoch.Valid || currentEpoch.Int64 != epoch || !expires.Valid || expires.Int64 <= q.clock.Now().UnixMilli() {
+		return ErrLeaseLost
+	}
 	return ErrInvalidTransition
 }
 
@@ -919,42 +1008,78 @@ func (q *Queue) taskTransitionStatusTx(ctx context.Context, tx *sql.Tx, id strin
 	return q.taskTransitionStatusQuery(ctx, tx, id)
 }
 
-func (q *Queue) taskTransitionStatusQuery(ctx context.Context, queryer interface{ QueryRowContext(context.Context, string, ...any) *sql.Row }, id string) error {
+func (q *Queue) taskTransitionStatusQuery(ctx context.Context, queryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, id string) error {
 	var status Status
-	if err := queryer.QueryRowContext(ctx, `SELECT status FROM tasks WHERE id=?`, id).Scan(&status); errors.Is(err, sql.ErrNoRows) { return ErrNotFound } else if err != nil { return err }
-	if status == StatusSucceeded || status == StatusFailed || status == StatusCanceled { return ErrInvalidTransition }
+	if err := queryer.QueryRowContext(ctx, `SELECT status FROM tasks WHERE id=?`, id).Scan(&status); errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	if status == StatusSucceeded || status == StatusFailed || status == StatusCanceled {
+		return ErrInvalidTransition
+	}
 	return ErrInvalidTransition
 }
 
 func validateSubmit(request SubmitRequest) error {
-	if !validKind(request.Kind) { return fmt.Errorf("invalid task kind %q", request.Kind) }
-	if request.Title == "" { return errors.New("task title is empty") }
-	if len(request.IdempotencyKey) > 256 { return errors.New("idempotency key exceeds 256 bytes") }
-	if request.MaxAttempts < 0 || request.MaxAttempts > 16 { return errors.New("max attempts must be between 1 and 16") }
-	if len(request.Payload) == 0 { request.Payload = []byte(`{}`) }
-	if !json.Valid(request.Payload) { return errors.New("task payload is not valid JSON") }
+	if !validKind(request.Kind) {
+		return fmt.Errorf("invalid task kind %q", request.Kind)
+	}
+	if request.Title == "" {
+		return errors.New("task title is empty")
+	}
+	if len(request.IdempotencyKey) > 256 {
+		return errors.New("idempotency key exceeds 256 bytes")
+	}
+	if request.MaxAttempts < 0 || request.MaxAttempts > 16 {
+		return errors.New("max attempts must be between 1 and 16")
+	}
+	if len(request.Payload) == 0 {
+		request.Payload = []byte(`{}`)
+	}
+	if !json.Valid(request.Payload) {
+		return errors.New("task payload is not valid JSON")
+	}
 	return nil
 }
 
 func validKind(kind Kind) bool {
-	switch kind { case KindResolve, KindDownload, KindIndex, KindBuild, KindPublish, KindImport, KindCacheGC: return true }
+	switch kind {
+	case KindResolve, KindDownload, KindIndex, KindBuild, KindPublish, KindImport, KindCacheGC:
+		return true
+	}
 	return false
 }
 
 func canonicalPayload(payload []byte) ([]byte, string, error) {
-	if len(payload) == 0 { payload = []byte(`{}`) }
+	if len(payload) == 0 {
+		payload = []byte(`{}`)
+	}
 	var value any
-	if err := json.Unmarshal(payload, &value); err != nil { return nil, "", fmt.Errorf("decode task payload: %w", err) }
+	if err := json.Unmarshal(payload, &value); err != nil {
+		return nil, "", fmt.Errorf("decode task payload: %w", err)
+	}
 	canonical, err := json.Marshal(value)
-	if err != nil { return nil, "", fmt.Errorf("canonicalize task payload: %w", err) }
+	if err != nil {
+		return nil, "", fmt.Errorf("canonicalize task payload: %w", err)
+	}
 	hash := sha256.Sum256(canonical)
 	return canonical, hex.EncodeToString(hash[:]), nil
 }
 
-func nullString(value string) any { if value == "" { return nil }; return value }
+func nullString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
 
 func jsonDetail(key string, value any) []byte {
 	data, err := json.Marshal(map[string]any{key: value})
-	if err != nil { return []byte(`{}`) }
+	if err != nil {
+		return []byte(`{}`)
+	}
 	return data
 }

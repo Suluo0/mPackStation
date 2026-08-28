@@ -232,6 +232,11 @@ func TestP4CancelPauseResumeRetryAndRecoveryAreExplicitTransitions(t *testing.T)
 	if err != nil || retried.Status != StatusQueued {
 		t.Fatalf("retried task=%v err=%v, want queued", retried, err)
 	}
+	// The explicit retry leaves the first fixture queued. Cancel it so FIFO
+	// scheduling cannot steal the lease intended for recoveryRow below.
+	if err := q.Cancel(ctx, row.ID); err != nil {
+		t.Fatalf("cancel retry fixture: %v", err)
+	}
 
 	recoveryRow, _, err := q.Submit(ctx, SubmitRequest{Kind: KindImport, Title: "recovery fixture"})
 	if err != nil {
