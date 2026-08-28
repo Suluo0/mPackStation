@@ -1,0 +1,569 @@
+// Package service contains the application use-cases exposed by HTTP. It is
+// deliberately independent of transport details; all SQL is delegated to
+// store.Repository.
+package service
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"database/sql"
+	"mpackstation/internal/store"
+)
+
+var ErrUnavailable = errors.New("service unavailable")
+
+// ErrInvalidArgument is returned when a request cannot satisfy a domain
+// invariant. The HTTP layer maps it to the stable invalid_argument code.
+var ErrInvalidArgument = errors.New("invalid argument")
+
+// IsNotFound and IsConflict keep transport mapping independent from the store
+// package while preserving stable domain error semantics.
+func IsNotFound(err error) bool { return errors.Is(err, store.ErrNotFound) }
+func IsConflict(err error) bool { return errors.Is(err, store.ErrConflict) }
+
+// API is the stable application boundary consumed by httpapi.
+type API struct {
+	repo    *store.Repository
+	now     func() time.Time
+	dataDir string
+}
+
+// New creates the local single-instance service.
+func New(db *sql.DB) *API {
+	api := &API{now: time.Now}
+	if db == nil {
+		return api
+	}
+	api.repo = store.NewRepository(db)
+	if dir, err := api.repo.DatabaseDir(context.Background()); err == nil {
+		api.dataDir = dir
+	}
+	return api
+}
+
+// NewFromSource is a compatibility assembly hook for the current process
+// entrypoint. HTTP only passes an opaque source; database knowledge stays here.
+func NewFromSource(source any) *API {
+	if db, ok := source.(*sql.DB); ok {
+		return New(db)
+	}
+	return New(nil)
+}
+
+func (a *API) ready() error {
+	if a == nil || a.repo == nil {
+		return ErrUnavailable
+	}
+	return nil
+}
+
+type Dashboard struct {
+	Packs              []DashboardPack `json:"packs"`
+	LastEditedPackID   *string         `json:"lastEditedPackId"`
+	TodayResolvedCount int             `json:"todayResolvedCount"`
+}
+type DashboardPack struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	IconURL     *string `json:"iconUrl"`
+	MCVersion   string  `json:"mcVersion"`
+	Loader      string  `json:"loader"`
+	PackVersion string  `json:"packVersion"`
+	ModCount    struct {
+		Total     int `json:"total"`
+		Installed int `json:"installed"`
+		Selected  int `json:"selected"`
+	} `json:"modCount"`
+	Conflicts struct {
+		Resolved int `json:"resolved"`
+		Pending  int `json:"pending"`
+	} `json:"conflicts"`
+	Edits struct {
+		Recipes    int `json:"recipes"`
+		Structures int `json:"structures"`
+		Ores       int `json:"ores"`
+		Quests     int `json:"quests"`
+	} `json:"edits"`
+	Alerts struct {
+		Crashes   int `json:"crashes"`
+		Updatable int `json:"updatable"`
+	} `json:"alerts"`
+	LastEditedAt string `json:"lastEditedAt"`
+	CreatedAt    string `json:"createdAt"`
+}
+
+type Pack struct {
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	IconURL       *string `json:"iconUrl,omitempty"`
+	MCVersion     string  `json:"mcVersion"`
+	Loader        string  `json:"loader"`
+	LoaderVersion string  `json:"loaderVersion,omitempty"`
+	Description   string  `json:"description,omitempty"`
+	Status        string  `json:"status"`
+	PackVersion   string  `json:"packVersion"`
+	CreatedAt     string  `json:"createdAt,omitempty"`
+	UpdatedAt     string  `json:"updatedAt,omitempty"`
+}
+
+type CreatePackInput struct {
+	Name          string `json:"name"`
+	MCVersion     string `json:"mcVersion"`
+	Loader        string `json:"loader"`
+	LoaderVersion string `json:"loaderVersion"`
+	Description   string `json:"description"`
+}
+type UpdatePackInput struct {
+	Name          *string `json:"name"`
+	MCVersion     *string `json:"mcVersion"`
+	Loader        *string `json:"loader"`
+	LoaderVersion *string `json:"loaderVersion"`
+	Description   *string `json:"description"`
+}
+
+type Task struct {
+	ID         string  `json:"id"`
+	Type       string  `json:"type"`
+	Title      string  `json:"title"`
+	PackID     *string `json:"packId"`
+	PackName   *string `json:"packName"`
+	Status     string  `json:"status"`
+	Progress   float64 `json:"progress"`
+	Error      *string `json:"error"`
+	StartedAt  string  `json:"startedAt"`
+	FinishedAt *string `json:"finishedAt"`
+}
+type Activity struct {
+	ID     string  `json:"id"`
+	Kind   string  `json:"kind"`
+	Text   string  `json:"text"`
+	PackID *string `json:"packId"`
+	At     string  `json:"at"`
+}
+type SystemHealth struct {
+	CurseForgeKeyConfigured bool  `json:"curseforgeKeyConfigured"`
+	ModrinthReachable       bool  `json:"modrinthReachable"`
+	CurseForgeReachable     bool  `json:"curseforgeReachable"`
+	StorageWritable         bool  `json:"storageWritable"`
+	StorageFreeBytes        int64 `json:"storageFreeBytes"`
+}
+type SystemStatus struct {
+	ModrinthReachable   bool  `json:"modrinthReachable"`
+	CurseForgeReachable bool  `json:"curseforgeReachable"`
+	CacheSizeBytes      int64 `json:"cacheSizeBytes"`
+	StorageFreeBytes    int64 `json:"storageFreeBytes"`
+}
+type Onboarding struct {
+	Steps struct {
+		CurseForgeKey bool `json:"curseforgeKey"`
+		FirstPack     bool `json:"firstPack"`
+		FirstMod      bool `json:"firstMod"`
+	} `json:"steps"`
+}
+
+func (a *API) Dashboard(ctx context.Context) (Dashboard, error) {
+	if err := a.ready(); err != nil {
+		return Dashboard{}, err
+	}
+	rows, err := a.repo.DashboardPacks(ctx)
+	if err != nil {
+		return Dashboard{}, err
+	}
+	out := Dashboard{Packs: make([]DashboardPack, 0, len(rows))}
+	var max int64
+	for _, p := range rows {
+		d := DashboardPack{ID: p.ID, Name: p.Name, MCVersion: p.MCVersion, Loader: normalizeLoader(p.Loader), PackVersion: p.Version, LastEditedAt: iso(p.LastEditedAt), CreatedAt: iso(p.CreatedAt)}
+		if p.IconPath != "" {
+			v := p.IconPath
+			d.IconURL = &v
+		}
+		d.ModCount.Total = p.ModTotal
+		d.ModCount.Installed = p.ModInstalled
+		d.ModCount.Selected = p.ModSelected
+		d.Conflicts.Resolved = p.ConflictsResolved
+		d.Conflicts.Pending = p.ConflictsPending
+		d.Edits.Recipes = p.Recipes
+		d.Edits.Structures = p.Structures
+		d.Edits.Ores = p.Ores
+		d.Edits.Quests = p.Quests
+		d.Alerts.Crashes = p.Crashes
+		d.Alerts.Updatable = p.Updatable
+		out.Packs = append(out.Packs, d)
+		if p.LastEditedAt > max {
+			max = p.LastEditedAt
+			id := p.ID
+			out.LastEditedPackID = &id
+		}
+	}
+	start := a.now().In(time.Local)
+	y, m, day := start.Date()
+	midnight := time.Date(y, m, day, 0, 0, 0, 0, time.Local)
+	out.TodayResolvedCount, err = a.repo.TodayResolvedCount(ctx, midnight.UnixMilli())
+	if err != nil {
+		return Dashboard{}, err
+	}
+	return out, nil
+}
+
+func (a *API) ListPacks(ctx context.Context) ([]Pack, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	rows, err := a.repo.ListPacks(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Pack, 0, len(rows))
+	for _, p := range rows {
+		out = append(out, a.pack(p, "0.1.0"))
+	}
+	return out, nil
+}
+func (a *API) GetPack(ctx context.Context, id string) (Pack, error) {
+	if err := a.ready(); err != nil {
+		return Pack{}, err
+	}
+	p, err := a.repo.GetPack(ctx, id)
+	if err != nil {
+		return Pack{}, err
+	}
+	return a.pack(p, "0.1.0"), nil
+}
+
+func (a *API) CreatePack(ctx context.Context, input CreatePackInput, requestID string) (Pack, error) {
+	if err := a.ready(); err != nil {
+		return Pack{}, err
+	}
+	if err := validateCreate(input); err != nil {
+		return Pack{}, err
+	}
+	now := a.now().UnixMilli()
+	id := newID("pack")
+	verID := newID("packver")
+	p := store.PackRecord{ID: id, Name: strings.TrimSpace(input.Name), MCVersion: strings.TrimSpace(input.MCVersion), Loader: input.Loader, LoaderVersion: strings.TrimSpace(input.LoaderVersion), Description: input.Description, Status: "active", CreatedAt: now, UpdatedAt: now, LastEditedAt: now}
+	v := store.PackVersionRecord{ID: verID, PackID: id, Version: "0.1.0", Channel: "draft", Source: "manual", CreatedAt: now, UpdatedAt: now}
+	err := a.repo.WithTx(ctx, func(tx *store.Repository) error {
+		if err := tx.CreatePack(ctx, p, v); err != nil {
+			return err
+		}
+		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: id, Kind: "pack", Action: "create", Text: fmt.Sprintf("创建了整合包「%s」", p.Name), At: now}, map[string]any{"name": p.Name}, requestID); err != nil {
+			return err
+		}
+		if err := tx.AddOutbox(ctx, newID("event"), id, "pack", id, "pack.created", map[string]any{"packId": id}, now); err != nil {
+			return err
+		}
+		return tx.AddAudit(ctx, newID("audit"), id, "pack.create", requestID, map[string]any{"name": p.Name}, now)
+	})
+	if err != nil {
+		return Pack{}, err
+	}
+	return a.pack(p, v.Version), nil
+}
+
+func (a *API) UpdatePack(ctx context.Context, id string, input UpdatePackInput, requestID string) (Pack, error) {
+	if err := a.ready(); err != nil {
+		return Pack{}, err
+	}
+	p, err := a.repo.GetPack(ctx, id)
+	if err != nil {
+		return Pack{}, err
+	}
+	if input.Name != nil {
+		p.Name = strings.TrimSpace(*input.Name)
+	}
+	if input.MCVersion != nil {
+		p.MCVersion = strings.TrimSpace(*input.MCVersion)
+	}
+	if input.Loader != nil {
+		p.Loader = *input.Loader
+	}
+	if input.LoaderVersion != nil {
+		p.LoaderVersion = strings.TrimSpace(*input.LoaderVersion)
+	}
+	if input.Description != nil {
+		p.Description = *input.Description
+	}
+	if err := validatePack(p); err != nil {
+		return Pack{}, fmt.Errorf("%w: %v", ErrInvalidArgument, err)
+	}
+	p.UpdatedAt = a.now().UnixMilli()
+	p.LastEditedAt = p.UpdatedAt
+	err = a.repo.WithTx(ctx, func(tx *store.Repository) error {
+		if err := tx.UpdatePack(ctx, p); err != nil {
+			return err
+		}
+		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: id, Kind: "pack", Action: "edit", Text: fmt.Sprintf("编辑了整合包「%s」", p.Name), At: p.UpdatedAt}, nil, requestID); err != nil {
+			return err
+		}
+		if err := tx.AddOutbox(ctx, newID("event"), id, "pack", id, "pack.updated", map[string]any{"packId": id}, p.UpdatedAt); err != nil {
+			return err
+		}
+		return tx.AddAudit(ctx, newID("audit"), id, "pack.update", requestID, nil, p.UpdatedAt)
+	})
+	if err != nil {
+		return Pack{}, err
+	}
+	return a.pack(p, "0.1.0"), nil
+}
+
+func (a *API) ArchivePack(ctx context.Context, id, requestID string) (Pack, error) {
+	if err := a.ready(); err != nil {
+		return Pack{}, err
+	}
+	p, err := a.repo.GetPack(ctx, id)
+	if err != nil {
+		return Pack{}, err
+	}
+	at := a.now().UnixMilli()
+	err = a.repo.WithTx(ctx, func(tx *store.Repository) error {
+		if err := tx.SetPackStatus(ctx, id, "archived", at); err != nil {
+			return err
+		}
+		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: id, Kind: "pack", Action: "archive", Text: fmt.Sprintf("归档了整合包「%s」", p.Name), At: at}, nil, requestID); err != nil {
+			return err
+		}
+		if err := tx.AddOutbox(ctx, newID("event"), id, "pack", id, "pack.archived", map[string]any{"packId": id}, at); err != nil {
+			return err
+		}
+		return tx.AddAudit(ctx, newID("audit"), id, "pack.archive", requestID, nil, at)
+	})
+	if err != nil {
+		return Pack{}, err
+	}
+	p.Status = "archived"
+	p.UpdatedAt = at
+	p.LastEditedAt = at
+	return a.pack(p, "0.1.0"), nil
+}
+func (a *API) DeletePack(ctx context.Context, id, requestID string) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	p, err := a.repo.GetPack(ctx, id)
+	if err != nil {
+		return err
+	}
+	at := a.now().UnixMilli()
+	return a.repo.WithTx(ctx, func(tx *store.Repository) error {
+		if err := tx.DeletePack(ctx, id); err != nil {
+			return err
+		}
+		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), Kind: "pack", Action: "delete", Text: fmt.Sprintf("删除了整合包「%s」", p.Name), At: at}, nil, requestID); err != nil {
+			return err
+		}
+		if err := tx.AddOutbox(ctx, newID("event"), "", "pack", id, "pack.deleted", map[string]any{"packId": id}, at); err != nil {
+			return err
+		}
+		return tx.AddAudit(ctx, newID("audit"), "", "pack.delete", requestID, nil, at)
+	})
+}
+
+func (a *API) ListTasks(ctx context.Context, limit int) ([]Task, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	rows, err := a.repo.ListTasks(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Task, 0, len(rows))
+	for _, t := range rows {
+		typ := map[string]string{"index": "index-mod", "build": "build-pack", "import": "import-pack", "resolve": "update-preflight"}[t.Kind]
+		status := map[string]string{"succeeded": "success", "canceled": "cancelled", "queued": "running", "leased": "running"}[t.Status]
+		if status == "" {
+			status = t.Status
+		}
+		started := t.StartedAt
+		if !started.Valid {
+			started = sql.NullInt64{Int64: t.CreatedAt, Valid: true}
+		}
+		var packID, packName *string
+		if t.PackID != "" {
+			v := t.PackID
+			packID = &v
+		}
+		if t.PackName != "" {
+			v := t.PackName
+			packName = &v
+		}
+		var msg *string
+		if t.ErrorMessage != "" {
+			v := t.ErrorMessage
+			msg = &v
+		}
+		var fin *string
+		if t.FinishedAt.Valid {
+			v := iso(t.FinishedAt.Int64)
+			fin = &v
+		}
+		out = append(out, Task{ID: t.ID, Type: typ, Title: t.Title, PackID: packID, PackName: packName, Status: status, Progress: t.Progress, Error: msg, StartedAt: iso(started.Int64), FinishedAt: fin})
+	}
+	return out, nil
+}
+
+func (a *API) ListActivities(ctx context.Context, limit int) ([]Activity, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	rows, err := a.repo.ListActivities(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Activity, 0, len(rows))
+	for _, r := range rows {
+		kind := activityKind(r.Kind, r.Action)
+		var pid *string
+		if r.PackID != "" {
+			v := r.PackID
+			pid = &v
+		}
+		out = append(out, Activity{ID: r.ID, Kind: kind, Text: r.Text, PackID: pid, At: iso(r.At)})
+	}
+	return out, nil
+}
+
+func activityKind(kind, action string) string {
+	switch {
+	case kind == "mod" && action == "add":
+		return "add-mod"
+	case kind == "conflict" || action == "resolve":
+		return "resolve"
+	case kind == "build" || action == "build":
+		return "build"
+	case kind == "content" || kind == "quest" || kind == "pack":
+		return "edit"
+	case kind == "task" && action == "import", kind == "import":
+		return "import"
+	default:
+		return "alert"
+	}
+}
+
+func (a *API) SystemHealth(ctx context.Context) (SystemHealth, error) {
+	if err := a.ready(); err != nil {
+		return SystemHealth{}, err
+	}
+	s, err := a.repo.System(ctx)
+	if err != nil {
+		return SystemHealth{}, err
+	}
+	w, f := storageInfo(a.dataDir)
+	return SystemHealth{CurseForgeKeyConfigured: s.CurseForgeKeyConfigured, ModrinthReachable: s.ModrinthReachable, CurseForgeReachable: s.CurseForgeReachable, StorageWritable: w, StorageFreeBytes: f}, nil
+}
+func (a *API) SystemStatus(ctx context.Context) (SystemStatus, error) {
+	if err := a.ready(); err != nil {
+		return SystemStatus{}, err
+	}
+	s, err := a.repo.System(ctx)
+	if err != nil {
+		return SystemStatus{}, err
+	}
+	_, f := storageInfo(a.dataDir)
+	return SystemStatus{ModrinthReachable: s.ModrinthReachable, CurseForgeReachable: s.CurseForgeReachable, CacheSizeBytes: s.CacheSizeBytes, StorageFreeBytes: f}, nil
+}
+func (a *API) Onboarding(ctx context.Context) (Onboarding, error) {
+	if err := a.ready(); err != nil {
+		return Onboarding{}, err
+	}
+	o, err := a.repo.Onboarding(ctx)
+	if err != nil {
+		return Onboarding{}, err
+	}
+	var out Onboarding
+	out.Steps.CurseForgeKey = o.CurseForgeKey
+	out.Steps.FirstPack = o.FirstPack
+	out.Steps.FirstMod = o.FirstMod
+	return out, nil
+}
+func (a *API) AcknowledgeOnboarding(ctx context.Context, steps map[string]bool, requestID string) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	for _, step := range []string{"curseforgeKey", "firstPack", "firstMod"} {
+		if !steps[step] {
+			continue
+		}
+		at := a.now().UnixMilli()
+		if err := a.repo.WithTx(ctx, func(tx *store.Repository) error {
+			if err := tx.AcknowledgeOnboarding(ctx, step, at); err != nil {
+				return err
+			}
+			return tx.AddAudit(ctx, newID("audit"), "", "onboarding.ack", requestID, map[string]any{"step": step}, at)
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (a *API) MCVersions(ctx context.Context) ([]string, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return []string{"1.21.8", "1.21.1", "1.20.6", "1.20.1", "1.19.2", "1.18.2"}, nil
+}
+
+func (a *API) pack(p store.PackRecord, version string) Pack {
+	var icon *string
+	if p.IconPath != "" {
+		icon = &p.IconPath
+	}
+	return Pack{ID: p.ID, Name: p.Name, IconURL: icon, MCVersion: p.MCVersion, Loader: normalizeLoader(p.Loader), LoaderVersion: p.LoaderVersion, Description: p.Description, Status: p.Status, PackVersion: version, CreatedAt: iso(p.CreatedAt), UpdatedAt: iso(p.UpdatedAt)}
+}
+func validateCreate(i CreatePackInput) error {
+	p := store.PackRecord{Name: strings.TrimSpace(i.Name), MCVersion: strings.TrimSpace(i.MCVersion), Loader: i.Loader, LoaderVersion: i.LoaderVersion}
+	if err := validatePack(p); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidArgument, err)
+	}
+	return nil
+}
+func validatePack(p store.PackRecord) error {
+	if p.Name == "" {
+		return errors.New("name is required")
+	}
+	if len([]rune(p.Name)) > 128 {
+		return errors.New("name is too long")
+	}
+	if p.MCVersion == "" {
+		return errors.New("mcVersion is required")
+	}
+	switch p.Loader {
+	case "forge", "neoforge", "fabric", "quilt":
+	default:
+		return errors.New("loader must be forge, neoforge, fabric, or quilt")
+	}
+	return nil
+}
+func normalizeLoader(v string) string {
+	switch v {
+	case "forge", "neoforge", "fabric", "quilt":
+		return v
+	default:
+		return "forge"
+	}
+}
+func iso(ms int64) string { return time.UnixMilli(ms).UTC().Format(time.RFC3339Nano) }
+func newID(prefix string) string {
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	}
+	return prefix + "-" + hex.EncodeToString(b[:])
+}
