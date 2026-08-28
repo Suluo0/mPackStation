@@ -75,3 +75,22 @@ go vet ./...
 ```
 
 每次报告必须记录：提交/工作树、操作系统、Go 版本、命令、退出码、每个编号的通过/失败、失败响应（去除敏感值）和对应 issue。P3/P4 的红灯要保留稳定错误信息，禁止以“当前功能未实现”替代 issue 或删除测试。
+
+## 2026-08-29 复验记录
+
+复验基线：当前工作树（生产修复未全部提交），Windows，Go 1.27。
+
+执行命令：
+
+```text
+go test ./internal/task ./internal/httpapi -count=1 -timeout=60s
+go vet ./...
+```
+
+结果：
+
+- `go vet ./...`：通过。
+- P4 runner 自有测试：5/6 通过；失败 1 项为 P4-RUN-005，显式 retry 目前拒绝 canceled 任务，但 v7 reliability 规则要求 `failed/cancelled → queued`。
+- P4 数据库测试：P4-DB-001..006 全部通过。
+- P4 HTTP：P4-HTTP-001/002 失败；任务详情、pause、resume、cancel、retry、log 路由仍返回 fallback `not_found`，应接入真实 task service 并返回 `task_not_found` 或稳定 transition error。
+- 组合命令退出码：失败（上述 P4 红灯为预期实现缺口，未跳过或降级断言）。

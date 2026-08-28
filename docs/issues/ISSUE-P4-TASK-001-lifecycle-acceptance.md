@@ -50,3 +50,12 @@ go test ./internal/store -run '^TestP4'
 - **失败**：stale Begin 未及时返回 `ErrLeaseLost`（P4-RUN-002）；当前 fenced 错误路径在事务仍持有单连接时再次读取数据库，导致上下文超时，不能留下连接/事务等待。
 
 上述是实现需要修复的具体证据，不是测试降级理由。
+
+## 复验更新（2026-08-29）
+
+生产侧已修复初始的 terminal lease CHECK、RunOnce 终态和 stale fencing 阻塞问题；当前自有 runner 测试 5/6 通过，数据库约束测试 6/6 通过。剩余明确缺口：
+
+1. `Retry` 目前只接受 `failed`，未覆盖 v7 reliability 规定的 `canceled → queued` 显式重试。
+2. HTTP task detail/control/log 路由尚未注册，P4-HTTP-001/002 仍收到 fallback `not_found`。
+
+`go vet ./...` 已通过；完整 task/http 组合仍因以上红灯不能作为 P4 通过证据。
