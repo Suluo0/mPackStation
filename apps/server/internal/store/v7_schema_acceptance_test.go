@@ -130,7 +130,7 @@ func TestRevisionAppliedStateHasDatabaseUniqueness(t *testing.T) {
 	defer db.Close()
 
 	for _, spec := range []struct {
-		table string
+		table  string
 		parent string
 	}{
 		{table: "content_revisions", parent: "document_id"},
