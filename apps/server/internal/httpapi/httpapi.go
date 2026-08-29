@@ -6,7 +6,6 @@ package httpapi
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -65,15 +64,15 @@ func apiError(w http.ResponseWriter, r *http.Request, status int, code, message 
 // NewRouter assembles the local API. source is intentionally opaque here so
 // this package cannot import database/sql; service owns database composition.
 func NewRouter(source any, version string) http.Handler {
-	return newRouter(service.NewFromSource(source), service.NewTaskAPI(source), service.NewP7ServiceFromSource(source), version)
+	return newRouter(service.NewFromSource(source), service.NewTaskAPI(source), version)
 }
 
 // NewRouterWithService is useful to tests and future composition roots.
 func NewRouterWithService(app *service.API, version string) http.Handler {
-	return newRouter(app, nil, nil, version)
+	return newRouter(app, nil, version)
 }
 
-func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service, version string) http.Handler {
+func newRouter(app *service.API, taskAPI *service.TaskAPI, version string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": version})
@@ -605,102 +604,6 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		WriteJSON(w, http.StatusOK, v)
 	})
-	mux.HandleFunc("POST /api/export-dirs", func(w http.ResponseWriter, r *http.Request) {
-		var body struct{ Name, Directory string }
-		if !decodeJSON(w, r, &body) {
-			return
-		}
-		if err := app.RegisterExportDirectory(r.Context(), body.Name, body.Directory); err != nil {
-			writeP7Error(w, r, err)
-			return
-		}
-		WriteJSON(w, http.StatusCreated, map[string]any{"name": body.Name, "status": "ready"})
-	})
-	mux.HandleFunc("POST /api/packs/{packId}/versions/{versionId}/build", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			ExportDirName   string                           `json:"exportDirName"`
-			Files           []struct{ Path, Content string } `json:"files"`
-			LockSnapshot    json.RawMessage                  `json:"lockSnapshot"`
-			ContentSnapshot json.RawMessage                  `json:"contentSnapshot"`
-			QuestSnapshot   json.RawMessage                  `json:"questSnapshot"`
-			BuildConfig     json.RawMessage                  `json:"buildConfig"`
-			Checks          []service.DeliveryCheck          `json:"checks"`
-		}
-		if !decodeJSON(w, r, &body) {
-			return
-		}
-		files := make([]service.BuildFile, 0, len(body.Files))
-		for _, file := range body.Files {
-			content, err := base64.StdEncoding.DecodeString(file.Content)
-			if err != nil {
-				apiError(w, r, http.StatusBadRequest, "invalid_argument", "file content must be base64")
-				return
-			}
-			files = append(files, service.BuildFile{Path: file.Path, Content: content})
-		}
-		result, err := app.BuildPack(r.Context(), service.BuildInput{PackID: r.PathValue("packId"), PackVersionID: r.PathValue("versionId"), ExportDirName: body.ExportDirName, Files: files, LockSnapshot: body.LockSnapshot, ContentSnapshot: body.ContentSnapshot, QuestSnapshot: body.QuestSnapshot, BuildConfig: body.BuildConfig, Checks: body.Checks})
-		if err != nil {
-			writeP7Error(w, r, err)
-			return
-		}
-		WriteJSON(w, http.StatusCreated, result)
-	})
-	mux.HandleFunc("POST /api/releases", func(w http.ResponseWriter, r *http.Request) {
-		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
-			return
-		}
-		var body service.PublishInput
-		if !decodeJSON(w, r, &body) {
-			return
-		}
-		v, err := p7.PublishPack(r.Context(), body)
-		if err != nil {
-			writeP7Error(w, r, err)
-			return
-		}
-		WriteJSON(w, http.StatusAccepted, v)
-	})
-	mux.HandleFunc("GET /api/releases/{releaseId}", func(w http.ResponseWriter, r *http.Request) {
-		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
-			return
-		}
-		v, err := p7.GetRelease(r.Context(), r.PathValue("releaseId"))
-		if err != nil {
-			writeP7Error(w, r, err)
-			return
-		}
-		WriteJSON(w, http.StatusOK, v)
-	})
-	mux.HandleFunc("POST /api/releases/{releaseId}/poll", func(w http.ResponseWriter, r *http.Request) {
-		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
-			return
-		}
-		v, err := p7.PollRelease(r.Context(), r.PathValue("releaseId"))
-		if err != nil {
-			writeP7Error(w, r, err)
-			return
-		}
-		WriteJSON(w, http.StatusOK, v)
-	})
-	mux.HandleFunc("POST /api/releases/{releaseId}/retry", func(w http.ResponseWriter, r *http.Request) {
-		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
-			return
-		}
-		var body struct{ ProjectID, VersionID string }
-		if !decodeJSON(w, r, &body) {
-			return
-		}
-		v, err := p7.RetryPublish(r.Context(), r.PathValue("releaseId"), body.ProjectID, body.VersionID)
-		if err != nil {
-			writeP7Error(w, r, err)
-			return
-		}
-		WriteJSON(w, http.StatusAccepted, v)
-	})
 	mux.HandleFunc("POST /api/packs/import", func(w http.ResponseWriter, r *http.Request) {
 		apiError(w, r, http.StatusNotImplemented, "import_not_ready", "pack import is scheduled for the import milestone")
 	})
@@ -780,36 +683,6 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		apiError(w, r, http.StatusServiceUnavailable, "not_ready", "service is not ready")
 	default:
 		apiError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
-	}
-}
-
-func p7Ready(p7 *service.P7Service) error {
-	if p7 == nil {
-		return service.ErrUnavailable
-	}
-	return nil
-}
-
-func writeP7Error(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case service.IsNotFound(err):
-		apiError(w, r, http.StatusNotFound, "resource_not_found", "resource not found")
-	case errors.Is(err, service.ErrInvalidBuildInput):
-		apiError(w, r, http.StatusBadRequest, "invalid_argument", "build or publish input is invalid")
-	case errors.Is(err, service.ErrExportDirNotAllowed):
-		apiError(w, r, http.StatusForbidden, "export_dir_not_allowed", "export directory is not approved")
-	case errors.Is(err, service.ErrDeliveryBlocked):
-		apiError(w, r, http.StatusConflict, "delivery_blocked", "delivery checks are blocked")
-	case errors.Is(err, service.ErrPublishFailed):
-		apiError(w, r, http.StatusBadGateway, "publish_failed", "publication failed; retry is explicit")
-	case errors.Is(err, service.ErrPublishIdempotencyConflict):
-		apiError(w, r, http.StatusConflict, "idempotency_conflict", "publication key or artifact conflicts")
-	case errors.Is(err, service.ErrProviderStatusUnavailable):
-		apiError(w, r, http.StatusBadGateway, "provider_status_unavailable", "remote status is unavailable")
-	case errors.Is(err, service.ErrArtifactMissing):
-		apiError(w, r, http.StatusConflict, "artifact_missing", "artifact is no longer available")
-	default:
-		writeServiceError(w, r, err)
 	}
 }
 
