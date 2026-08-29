@@ -12,8 +12,8 @@ adapter 尚未接入，因此不能将整项标记为最终合格。
 | P6-05 | 任务书完整快照 | chapter/node/edge 持久化；revision 单调 | `TestP6QuestGraphLifecycleAndValidation` | 已覆盖 |
 | P6-06 | 环、孤立节点、奖励/引用校验 | cycle 为阻断错误；孤立节点为 warning；跨包 mod ref 拒绝 | `TestP6QuestRejectsCycleOrCrossPackReference` | 已覆盖 |
 | P6-07 | HTTP content/quest routes | 成功/错误 envelope、request-id、If-Match、前端 zod | 待 P6 HTTP adapter | 待接入 |
-| P7-01 | delivery checks/build artifact | 稳定输入 fingerprint、可复现 zip、SHA-256 登记 | 待 P7 | 未开始 |
-| P7-02 | publish retry/status | 非幂等发布不自动重试；远端状态先查询 | 待 P7 | 未开始 |
+| P7-01 | delivery checks/build artifact | 稳定输入 fingerprint、可复现 zip、SHA-256 登记 | `TestP7BuildIsReproducibleAndIdempotent`, `TestP7BuildRejectsUnsafeInputsAndBlockedDelivery` | 已覆盖，待独立复核 |
+| P7-02 | publish retry/status | 非幂等发布不自动重试；远端状态先查询 | `TestP7PublishLocalIsIdempotentAndFailedRetryIsExplicit` | 已覆盖，待独立复核 |
 
 执行命令（Go 工具链可用时）：
 
