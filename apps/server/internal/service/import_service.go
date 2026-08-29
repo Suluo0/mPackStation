@@ -75,6 +75,7 @@ func NewImportServiceFromSource(source any) *ImportService {
 
 func (s *ImportService) Inspect(ctx context.Context, in ImportPreviewInput) (ImportPreview, error) {
 	if s == nil || s.repo == nil { return ImportPreview{}, ErrUnavailable }
+	in.Source = normalizeImportSource(in.Source)
 	if err := validateImportInput(in); err != nil { return ImportPreview{}, err }
 	data := in.Content
 	if in.Source != ImportSourceLocalZip {
@@ -135,6 +136,14 @@ func (s *ImportService) handleImportTask(ctx context.Context, ex *task.Execution
 func validateImportInput(in ImportPreviewInput) error {
 	switch in.Source { case ImportSourceLocalZip: if len(in.Content) == 0 { return ErrInvalidArgument }; case ImportSourceCurseForgeURL, ImportSourceModrinthURL: if strings.TrimSpace(in.URL)=="" { return ErrInvalidArgument }; default: return ErrImportInvalidSource }
 	return nil
+}
+func normalizeImportSource(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "curseforge": return ImportSourceCurseForgeURL
+	case "modrinth": return ImportSourceModrinthURL
+	case "local": return ImportSourceLocalZip
+	default: return strings.ToLower(strings.TrimSpace(source))
+	}
 }
 func validateImportURL(raw, source string) error {
 	u, err := url.Parse(raw); if err != nil || u.Scheme != "https" || u.User != nil || u.Host == "" { return ErrImportInvalidSource }
