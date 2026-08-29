@@ -4,3 +4,4 @@ data/
 .tools/
 .tmp/
 *.log
+*.tsbuildinfo

@@ -48,7 +48,7 @@ cd apps/server
 go run ./cmd/server -data ../../data
 ```
 
-验证后端：`curl http://127.0.0.1:18871/api/health` 应返回 `{"status":"ok","db":true,...}`。
+验证后端：`curl http://127.0.0.1:18871/api/health` 应返回 `{"status":"ready","db":true,...}`；存活探针为 `/api/healthz`，就绪探针为 `/api/readyz`。
 
 > 端口约定：前端 5273、后端 18871。本机 5173 / 18765 / 18766 可能被其他本地服务占用，请勿复用。
 
