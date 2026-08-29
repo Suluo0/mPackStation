@@ -1,15 +1,24 @@
-# P6/P7 人机共读验收矩阵
+# P6/P7 内容、任务书与交付验收矩阵
 
-| 用例 | 预期 | 实际 | 证据 | 结论 |
+本矩阵只记录 P6 当前 service/repository 证据；P7 构建/发布端点和 P6 HTTP
+adapter 尚未接入，因此不能将整项标记为最终合格。
+
+| 编号 | 场景 | 预期 | 自动化证据 | 状态 |
 |---|---|---|---|---|
-| P6-CONTENT-001 文档 revision 创建/递增 | 事务成功且编号单调 | 待执行 | 待补 | ☐ |
-| P6-CONTENT-002 非法 payload/类型 | 稳定 `invalid_argument` | 待执行 | 待补 | ☐ |
-| P6-CONTENT-003 apply/rollback 单 applied 约束 | 旧 revision 归档，active 指针一致 | 待执行 | 待补 | ☐ |
-| P6-QUEST-001 环检测/孤立节点 | 拒绝并返回可定位问题 | 待执行 | 待补 | ☐ |
-| P6-QUEST-002 跨包引用 | 事务回滚，无脏数据 | 待执行 | 待补 | ☐ |
-| P7-BUILD-001 可复现 zip | 指纹与清单一致 | 待执行 | 待补 | ☐ |
-| P7-BUILD-002 临时文件/路径边界 | 不登记半成品，不越界 | 待执行 | 待补 | ☐ |
-| P7-PUBLISH-001 幂等与远端状态 | 重复提交不重复发布 | 待执行 | 待补 | ☐ |
-| P7-PUBLISH-002 失败恢复/非幂等重试 | 可恢复且不自动重复副作用 | 待执行 | 待补 | ☐ |
+| P6-01 | 创建 recipe/structure/ore 文档 | 产生 revision=1 draft；JSON canonical 化 | `TestP6ContentRevisionLifecycleAndEvidence` | 已覆盖 |
+| P6-02 | 同 payload 重复保存 | 不新增 revision；stale If-Match 返回 revision conflict | 同上 | 已覆盖 |
+| P6-03 | 未知字段、非法 schema、ore 范围 | 稳定 invalid_argument 或 validation failed；apply 不改变 active 指针 | `TestP6ContentValidationRejectsUnknownAndBlocksApply` | 已覆盖 |
+| P6-04 | apply/rollback/history | 追加式 revision、active 指针、delivery-check 和三类证据同事务 | `TestP6ContentRevisionLifecycleAndEvidence` | 已覆盖 |
+| P6-05 | 任务书完整快照 | chapter/node/edge 持久化；revision 单调 | `TestP6QuestGraphLifecycleAndValidation` | 已覆盖 |
+| P6-06 | 环、孤立节点、奖励/引用校验 | cycle 为阻断错误；孤立节点为 warning；跨包 mod ref 拒绝 | `TestP6QuestRejectsCycleOrCrossPackReference` | 已覆盖 |
+| P6-07 | HTTP content/quest routes | 成功/错误 envelope、request-id、If-Match、前端 zod | 待 P6 HTTP adapter | 待接入 |
+| P7-01 | delivery checks/build artifact | 稳定输入 fingerprint、可复现 zip、SHA-256 登记 | 待 P7 | 未开始 |
+| P7-02 | publish retry/status | 非幂等发布不自动重试；远端状态先查询 | 待 P7 | 未开始 |
 
-执行环境、命令、commit 和每项证据在实现波次完成后补齐；未补齐不得判定通过。
+执行命令（Go 工具链可用时）：
+
+```text
+go test ./internal/service ./internal/store -run '^TestP6' -count=1
+go test ./...
+go vet ./...
+```
