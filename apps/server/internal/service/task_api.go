@@ -82,8 +82,10 @@ func (a *TaskAPI) Retry(ctx context.Context, id string) error {
 func IsTaskNotFound(err error) bool          { return errors.Is(err, task.ErrNotFound) }
 func IsTaskInvalidTransition(err error) bool { return errors.Is(err, task.ErrInvalidTransition) }
 func IsTaskLeaseLost(err error) bool         { return errors.Is(err, task.ErrLeaseLost) }
-func IsTaskUnavailable(err error) bool       { return errors.Is(err, ErrUnavailable) || task.IsAdapterUnavailable(err) }
-func IsTaskNotAvailable(err error) bool      { return errors.Is(err, task.ErrNoTaskAvailable) }
+func IsTaskUnavailable(err error) bool {
+	return errors.Is(err, ErrUnavailable) || task.IsAdapterUnavailable(err)
+}
+func IsTaskNotAvailable(err error) bool { return errors.Is(err, task.ErrNoTaskAvailable) }
 func IsTaskIdempotencyConflict(err error) bool {
 	return errors.Is(err, task.ErrIdempotencyConflict)
 }
