@@ -1,5 +1,5 @@
 /* 看板页（Dashboard）样式 —— 设计令牌与组件样式自含于本文件。
-   规格来源：docs/dashboard-page-prompt.md「视觉规范」。颜色/圆角/间距只准引用变量。 */
+   规格来源：docs/design/dashboard-page-prompt.md「视觉规范」。颜色/圆角/间距只准引用变量。 */
 
 :root {
   /* 圆角 */

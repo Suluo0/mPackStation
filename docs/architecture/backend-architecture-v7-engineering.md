@@ -1,8 +1,8 @@
 # mPackStation 后端架构设计 v7（工程化与前端能力对齐版，非权威草案）
 
-> 本文件已被 `docs/backend-architecture-v7.md` 最终合并版取代；如与最终版冲突，以最终版为准。
+> 本文件已被 `docs/architecture/backend-architecture-v7.md` 最终合并版取代；如与最终版冲突，以最终版为准。
 
-> 本文是 v7 草案，不修改 `docs/backend-architecture.md`。它将 v6 的运行时、数据、任务、Provider、文件与安全约束，补成可直接开工的工程设计，并把前端页面规格中的全部业务能力纳入同一套后端契约。
+> 本文是 v7 草案，不修改 `docs/architecture/backend-architecture.md`。它将 v6 的运行时、数据、任务、Provider、文件与安全约束，补成可直接开工的工程设计，并把前端页面规格中的全部业务能力纳入同一套后端契约。
 >
 > v7 的部署目标仍是本机单用户服务。按要求删除所有多租户、workspace、owner/member 设计；“鉴权”和“安全边界”合并为一个维度与一个章节。本文中的接口、表、状态、脚本和验收门槛是实现时的约束，不是建议清单。
 
@@ -579,8 +579,8 @@ outbox_pending / outbox_delivery_failures
 以下文件不是绝对不可改，而是“必须伴随相应证据修改”：
 
 ```text
-docs/backend-architecture.md                 # v6，禁止顺手改
-docs/backend-architecture-v7-engineering.md  # v7 变更需 ADR/评审记录
+docs/architecture/backend-architecture.md                 # v6，禁止顺手改
+docs/architecture/backend-architecture-v7-engineering.md  # v7 变更需 ADR/评审记录
 apps/server/migrations/*.sql                 # 已发布 migration 禁止修改
 apps/server/internal/store/schema.sql        # 仅由 migration 生成/校验
 apps/web/src/api/**/types.ts                 # 必须同步 zod + contract fixture
@@ -631,7 +631,7 @@ scripts/verify.ps1
 scripts/package.ps1
 ```
 
-验收必须覆盖：新目录启动、已有数据库升级、异常 migration、重复请求、服务 kill 后恢复、磁盘不足、Provider 不可达、前端 `USE_MOCK=false`。前端页面视觉验收仍按各 `docs/page-specs` 执行，视觉瑕疵可留到收工阶段，但接口和状态契约不能留到最后。
+验收必须覆盖：新目录启动、已有数据库升级、异常 migration、重复请求、服务 kill 后恢复、磁盘不足、Provider 不可达、前端 `USE_MOCK=false`。前端页面视觉验收仍按各 `docs/specs` 执行，视觉瑕疵可留到收工阶段，但接口和状态契约不能留到最后。
 
 ### 11.3 里程碑门槛
 

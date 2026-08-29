@@ -2,7 +2,7 @@
 
 > 审查角色：DBA / 数据一致性负责人
 >
-> 审查范围：`docs/backend-architecture-v7.md`、`docs/backend-architecture.md`（v6 参考稿）、`docs/development-standards.md`、`docs/test-acceptance-standards.md`、`docs/development-priority.md`，以及 `apps/server/internal/store/*`。
+> 审查范围：`docs/architecture/backend-architecture-v7.md`、`docs/architecture/backend-architecture.md`（v6 参考稿）、`docs/standards/development-standards.md`、`docs/standards/test-acceptance-standards.md`、`docs/standards/development-priority.md`，以及 `apps/server/internal/store/*`。
 >
 > 本报告是开工前的只读审查结果。当前没有修改业务代码、schema 或迁移文件。
 

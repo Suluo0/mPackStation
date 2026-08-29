@@ -102,7 +102,7 @@
     {
       "id": "task-b2e18d3f",
       "kind": "task",
-      "title": "看板页功能实现（按 docs/dashboard-page-prompt.md）",
+      "title": "看板页功能实现（按 docs/design/dashboard-page-prompt.md）",
       "status": "implemented",
       "summary": "二态分发（空态迎新/有包总览）、环境自检条（含空态 suppressKeys 抑制 cf-key）、继续设计卡、包列表（只看待处理/删除二次确认）、后台任务 3s 条件轮询、状态与动态、新建/导入弹窗。USE_MOCK=true 走 mock，?mock=empty 切空态。",
       "verification": "passed",
@@ -359,7 +359,7 @@
     {
       "id": "decision-7ed5e6f7",
       "kind": "decision",
-      "title": "紫色主题视觉规范（docs/dashboard-page-prompt.md 6.1 节）",
+      "title": "紫色主题视觉规范（docs/design/dashboard-page-prompt.md 6.1 节）",
       "status": "needs_review",
       "summary": "主色 #7B5CFF、底色 #F3F1FA、16px 圆角、动效令牌 160ms。规范已定稿成文，但用户两轮验收均未通过，下一轮迭代可能修订。",
       "evidence": [
@@ -367,7 +367,7 @@
           "type": "file",
           "level": "observed",
           "claim": "6.1 节视觉规范已写入",
-          "source": "docs/dashboard-page-prompt.md"
+          "source": "docs/design/dashboard-page-prompt.md"
         },
         {
           "type": "statement",

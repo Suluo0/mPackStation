@@ -45,8 +45,8 @@ task → store
 以下文件不是永远不可修改，但修改必须同时提交对应证据：
 
 ```text
-docs/backend-architecture-v7.md
-docs/page-specs/**
+docs/architecture/backend-architecture-v7.md
+docs/specs/**
 apps/server/internal/store/migrations/*.sql
 apps/server/internal/store/schema.sql
 apps/web/src/api/**/types.ts

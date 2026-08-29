@@ -1,6 +1,6 @@
 # mPackStation 后端架构设计 v7（产品领域补全版，非权威草案）
 
-> 本文件已被 `docs/backend-architecture-v7.md` 最终合并版取代；如与最终版冲突，以最终版为准。
+> 本文件已被 `docs/architecture/backend-architecture-v7.md` 最终合并版取代；如与最终版冲突，以最终版为准。
 
 > 本文是 v6 的领域补全版，不修改、不覆盖 `backend-architecture.md`。v6 中已经冻结的基础设施、任务 lease/fencing、provider 限流、blobstore、迁移校验、错误信封和浏览器防护继续有效；本文补齐 v6 明确留待后续设计的产品领域，并把前端页面契约落成可实现的模型。
 >
@@ -38,7 +38,7 @@ mPackStation 的唯一业务对象是整合包。所有模组、版本、锁快�
 ### 0.3 不在 v7 领域文档中解决的事情
 
 - 不实现多用户登录、JWT、session、workspace 或远程协作。
-- 不把前端视觉细节、图标和布局复制进后端架构；页面规范仍以 `docs/page-specs/*` 和 `dashboard-page-prompt.md` 为准。
+- 不把前端视觉细节、图标和布局复制进后端架构；页面规范仍以 `docs/specs/*` 和 `dashboard-page-prompt.md` 为准。
 - 不用一个“大 JSON”替代需要约束、排序、引用和历史的核心表；JSON 只用于领域 payload、扩展字段和 provider 原始响应。
 
 ## 1. 架构边界与单用户主体

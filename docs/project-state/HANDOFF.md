@@ -8,7 +8,7 @@ mPackStation —— Minecraft 整合包制作工具：从搜索到打包，不�
 
 当前暂停在后端 P6 完成点。Git 当前分支为 `fix/responsive-lowres`，无远端；用户 UI/文档改动仍在工作区。P6 已完成并通过独立验收，P7 已回滚并暂不继续推进。
 
-2026-08-27 已按 Taster anti-slop 方法完成一轮视觉语言重设计：暖纸网格底、矿物中性色、ember 橙单一品牌色、紧凑工作台密度；移除全局“模组搜索”导航，普通示例入口不再使用绿色 CTA。详见 `docs/taster-visual-language.md`。当前已进入第三轮 skill 引导的视觉重构；本轮改动尚未获得用户最终验收。
+2026-08-27 已按 Taster anti-slop 方法完成一轮视觉语言重设计：暖纸网格底、矿物中性色、ember 橙单一品牌色、紧凑工作台密度；移除全局“模组搜索”导航，普通示例入口不再使用绿色 CTA。详见 `docs/design/taster-visual-language.md`。当前已进入第三轮 skill 引导的视觉重构；本轮改动尚未获得用户最终验收。
 
 2026-08-28 追加完成侧边栏完整菜单与包工作台 mock 路由；同时完成后端架构盲审。后端仍是仅含 `/api/health` 的 Go+SQLite 骨架，综合评分约 2.7/10。鉴权必须以后端数据域改造为前置条件，不能直接在现有路由外包 JWT/session。
 
@@ -57,10 +57,10 @@ mPackStation —— Minecraft 整合包制作工具：从搜索到打包，不�
 ### 2026-08-28 · 侧边栏菜单、包工作台页面与后端架构盲审
 
 - 状态：页面已实现（mock）/后端审查完成
-- 进展：恢复完整侧边栏菜单，新增包工作台、模组、依赖与冲突、内容编辑、任务书、打包与发布、设置路由页面；补充 `docs/backend-capability-draft.md`。三路 GPT-5.6-sol 盲审已发起，已回收两份完整报告。
+- 进展：恢复完整侧边栏菜单，新增包工作台、模组、依赖与冲突、内容编辑、任务书、打包与发布、设置路由页面；补充 `docs/architecture/backend-capability-draft.md`。三路 GPT-5.6-sol 盲审已发起，已回收两份完整报告。
 - 结论：后端只有 `/api/health` 和 SQLite 初始 schema；耦合性、可维护性、可扩展性、健壮性、鉴权就绪度均不足，综合约 2.7/10。鉴权前必须完成 workspace/principal、migration、repository 授权边界、任务幂等与密钥隔离。
 - 验证：`apps/web` `npm run build` 通过；源码紫色规则扫描零命中；Go `test/vet` 通过但无测试文件。
-- 相关产物：`apps/web/src/app/AppShell.tsx`、`apps/web/src/pages/PackPages.tsx`、`apps/web/src/pages/pack-pages.css`、`docs/backend-capability-draft.md`
+- 相关产物：`apps/web/src/app/AppShell.tsx`、`apps/web/src/pages/PackPages.tsx`、`apps/web/src/pages/pack-pages.css`、`docs/architecture/backend-capability-draft.md`
 
 ### 2026-08-28 · 欢迎页首屏响应式迭代
 
@@ -83,7 +83,7 @@ mPackStation —— Minecraft 整合包制作工具：从搜索到打包，不�
 - 进展：新增应用外壳（220px 侧边栏+顶栏，路由共享，可收起）；紫色主题令牌化；空态 hero+三彩色入口卡+选锁改装流程条+上手三步；有包态 2:1 栅格、继续卡、行式包列表、右侧任务面板；封面按包 id 稳定渐变。
 - 关联任务：`task-d4f3a5b6`
 - 验证：tsc/build 通过、双态截图风格对齐设计稿框架；用户验收未通过
-- 相关产物：`apps/web/src/app/AppShell.tsx`、`apps/web/src/features/dashboard/cover.ts`、`docs/dashboard-page-prompt.md` 6.1 节
+- 相关产物：`apps/web/src/app/AppShell.tsx`、`apps/web/src/features/dashboard/cover.ts`、`docs/design/dashboard-page-prompt.md` 6.1 节
 
 ### 2026-08-27 · Go 后端空壳与 SQLite schema
 
@@ -96,10 +96,10 @@ mPackStation —— Minecraft 整合包制作工具：从搜索到打包，不�
 ### 2026-08-26 · 项目骨架与看板页功能
 
 - 状态：已验证（功能）/ 视觉后被否决返工
-- 进展：mPackStation monorepo 从零搭起；看板页按 `docs/dashboard-page-prompt.md` 实现全部功能（mock 驱动）。
+- 进展：mPackStation monorepo 从零搭起；看板页按 `docs/design/dashboard-page-prompt.md` 实现全部功能（mock 驱动）。
 - 关联任务：`task-a1f07c2e`、`task-b2e18d3f`
 - 验证：tsc/build 通过、双态截图渲染正确；功能未被用户否定
-- 相关产物：`apps/web/`、`README.md`、`docs/dashboard-page-prompt.md`
+- 相关产物：`apps/web/`、`README.md`、`docs/design/dashboard-page-prompt.md`
 
 ## 下一步
 
@@ -134,9 +134,9 @@ mPackStation —— Minecraft 整合包制作工具：从搜索到打包，不�
 ## 首先读取
 
 - `docs/project-state/state.json` —— 机器可读状态（任务/问题/想法/决策全量）
-- `docs/dashboard-page-prompt.md` —— 看板规格 + 6.1 视觉规范（后续页面的风格基准）
+- `docs/design/dashboard-page-prompt.md` —— 看板规格 + 6.1 视觉规范（后续页面的风格基准）
 - `apps/web/src/features/dashboard/dashboard.css` —— 所有 `--mc-*` 令牌集中地
-- `C:\Users\<user>\Downloads\ChatGPT Image 2026年8月26日 19_58_15.png` —— 视觉基准设计稿
+- `docs/design/baseline/dashboard-baseline.png` —— 视觉基准设计稿
 
 ## 验证状态
 

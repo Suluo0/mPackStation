@@ -1,6 +1,6 @@
 # mPackStation 后端架构设计 v7（可靠性与能力契约版，非权威草案）
 
-> 本文件已被 `docs/backend-architecture-v7.md` 最终合并版取代；如与最终版冲突，以最终版为准。
+> 本文件已被 `docs/architecture/backend-architecture-v7.md` 最终合并版取代；如与最终版冲突，以最终版为准。
 
 > 本文是对 v6 的独立迭代草案，不修改、不替代 `backend-architecture.md`。v7 以现有前端页面规格为能力基线，把 v6 尚未展开的内容编辑、任务书、看板读模型、设置/上手、构建/发布契约补齐，并将鉴权与安全合并为一个设计维度。
 >

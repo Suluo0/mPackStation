@@ -2,7 +2,7 @@
 
 > 评审身份：高级后端架构开发 / 评审对手
 >
-> 评审范围：`docs/backend-architecture-v7.md`、`docs/development-standards.md`、`docs/test-acceptance-standards.md`、`docs/development-priority.md`、当前 `apps/server` 数据库与 HTTP 结构，并对照前端现有 zod/API 契约。
+> 评审范围：`docs/architecture/backend-architecture-v7.md`、`docs/standards/development-standards.md`、`docs/standards/test-acceptance-standards.md`、`docs/standards/development-priority.md`、当前 `apps/server` 数据库与 HTTP 结构，并对照前端现有 zod/API 契约。
 >
 > 本报告是 DBA 评审的另一条独立意见；本阶段只读，不修改运行代码，不提交业务实现。
 

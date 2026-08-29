@@ -31,7 +31,7 @@
 ## 本轮追加：菜单页面与后端架构盲审
 
 - 侧边栏恢复完整工作区菜单，并落地包工作台、模组、依赖与冲突、内容编辑、任务书、打包与发布、设置等路由页面（当前仍以 mock 数据为主）。
-- 补充 `docs/backend-capability-draft.md`，记录后端能力分层、接口草案、数据模型缺口与 M0-M4 演进路线。
+- 补充 `docs/architecture/backend-capability-draft.md`，记录后端能力分层、接口草案、数据模型缺口与 M0-M4 演进路线。
 - 按用户要求发起三路 GPT-5.6-sol 独立只读盲审；已回收两份完整报告，第三路未及时返回，未将其当作已完成证据。
 - 盲审共识：后端当前仅落地 Go + SQLite 骨架与 `/api/health`，综合约 2.7/10；直接叠加 JWT/session 会留下 IDOR、全局设置/缓存串用和任务越权风险，必须先建立 workspace/principal 数据边界。
 - 清理 `dashboard.css` 遗留紫色主题变量、紫色渐变和入口卡图标配色；颜色扫描零命中，`apps/web` 的 `npm run build` 通过。

@@ -57,8 +57,7 @@ go run ./cmd/server -data ../../data
 ```
 apps/web/       前端（React + antd）
 apps/server/    Go 后端（cmd/server + internal/store）
-docs/           页面规格文档（唯一真相）与视觉规范
-docs/project-state/   项目检查点（state.json / HANDOFF.md / history/）
+docs/           文档（按职能分子目录，见 docs/README.md）
 data/           运行期生成（数据库 / 缓存），不入库
 .tools/         本地工具链（便携 Go），不入库
 .shots/         界面验收截图
@@ -66,8 +65,10 @@ data/           运行期生成（数据库 / 缓存），不入库
 
 ## 文档
 
-- [看板页面规格与视觉规范](docs/dashboard-page-prompt.md)
-- [产品 UI Design System](docs/design-system.md)
+- [docs/README.md](docs/README.md) —— 文档目录结构说明
+- [看板页面规格与视觉规范](docs/design/dashboard-page-prompt.md)
+- [产品 UI Design System](docs/design/design-system.md)
+- [后端架构 v7（权威）](docs/architecture/backend-architecture-v7.md)
 - [项目交接 HANDOFF](docs/project-state/HANDOFF.md)（持续更新）
 
 ## License

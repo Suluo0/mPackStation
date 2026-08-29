@@ -2,11 +2,11 @@
 
 ## 权威文档
 
-- 后端架构基线：`docs/backend-architecture-v7.md`
-- 开发规范：`docs/development-standards.md`
-- 测试验收：`docs/test-acceptance-standards.md`
-- 开发顺序：`docs/development-priority.md`
-- 页面规格：`docs/page-specs/**`、`docs/dashboard-page-prompt.md`
+- 后端架构基线：`docs/architecture/backend-architecture-v7.md`
+- 开发规范：`docs/standards/development-standards.md`
+- 测试验收：`docs/standards/test-acceptance-standards.md`
+- 开发顺序：`docs/standards/development-priority.md`
+- 页面规格：`docs/specs/**`、`docs/design/dashboard-page-prompt.md`
 
 开始任何开发任务前，先读取与任务相关的上述文档；文档冲突时，以最终 v7 和本文件为准。
 
@@ -39,4 +39,4 @@ go vet ./...
 npm run build
 ```
 
-详细规则见 `docs/development-standards.md`。
+详细规则见 `docs/standards/development-standards.md`。
