@@ -5,9 +5,6 @@
 --   3. 原始 JSON（CurseForge/Modrinth 响应、jar 内 mods.toml 等）不落库，
 --      只存 data/ 下的文件路径（*_path 字段），库里只留结构化索引。
 
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-
 -- 整合包
 CREATE TABLE IF NOT EXISTS packs (
     id              TEXT PRIMARY KEY,            -- ulid/uuid
