@@ -97,6 +97,32 @@ func boolInt(v bool) int {
 }
 
 func (r *Repository) UpsertJarIndex(ctx context.Context, j JarIndexRecord) error {
+	var oldMods, oldLoaders, oldGames string
+	if err := r.db.QueryRowContext(ctx, `SELECT mod_ids,loaders,mc_versions FROM jar_index WHERE sha1=?`, j.SHA1).Scan(&oldMods, &oldLoaders, &oldGames); err == nil {
+		var merge func(string, []string) []string
+		merge = func(raw string, add []string) []string {
+			var all []string
+			_ = json.Unmarshal([]byte(raw), &all)
+			seen := map[string]bool{}
+			out := make([]string, 0, len(all)+len(add))
+			for _, v := range all {
+				if v != "" && !seen[v] {
+					seen[v] = true
+					out = append(out, v)
+				}
+			}
+			for _, v := range add {
+				if v != "" && !seen[v] {
+					seen[v] = true
+					out = append(out, v)
+				}
+			}
+			return out
+		}
+		j.ModIDs = merge(oldMods, j.ModIDs)
+		j.Loaders = merge(oldLoaders, j.Loaders)
+		j.MCVersions = merge(oldGames, j.MCVersions)
+	}
 	mods, _ := json.Marshal(j.ModIDs)
 	loaders, _ := json.Marshal(j.Loaders)
 	games, _ := json.Marshal(j.MCVersions)
@@ -104,7 +130,7 @@ func (r *Repository) UpsertJarIndex(ctx context.Context, j JarIndexRecord) error
 	return err
 }
 
-func (r *Repository) CreateLock(ctx context.Context, lock LockRecord, deps []ModDependencyRecord, conflicts []ConflictRecord) error {
+func (r *Repository) CreateLock(ctx context.Context, lock LockRecord, deps []ModDependencyRecord, conflicts []ConflictRecord, requestID string) error {
 	if lock.SnapshotSHA256 == "" {
 		sum := sha256.Sum256([]byte(lock.SnapshotJSON))
 		lock.SnapshotSHA256 = hex.EncodeToString(sum[:])
@@ -130,6 +156,12 @@ func (r *Repository) CreateLock(ctx context.Context, lock LockRecord, deps []Mod
 			if err != nil {
 				return fmt.Errorf("upsert conflict: %w", err)
 			}
+		}
+		if err := tx.AddActivity(ctx, ActivityRecord{ID: lock.ID + "-activity", PackID: lock.PackID, Kind: "mod", Action: "resolve", Text: "Resolved pack dependencies", At: lock.CreatedAt}, map[string]any{"lock_id": lock.ID}, requestID); err != nil {
+			return fmt.Errorf("record lock activity: %w", err)
+		}
+		if err := tx.AddOutbox(ctx, lock.ID+"-outbox", lock.PackID, "pack_lock", lock.ID, "pack.lock.created", map[string]any{"lock_id": lock.ID}, lock.CreatedAt); err != nil {
+			return fmt.Errorf("record lock outbox: %w", err)
 		}
 		return nil
 	})

@@ -29,7 +29,7 @@ type ModSearchInput struct {
 }
 type ModSearchResult struct {
 	Items      []provider.Project `json:"items"`
-	NextCursor string             `json:"nextCursor,omitempty"`
+	NextCursor string             `json:"nextCursor"`
 	Total      int                `json:"total"`
 }
 type AddModInput struct {
@@ -203,7 +203,7 @@ func (a *API) AddPackMod(ctx context.Context, packID string, in AddModInput, req
 	id := newID("mod")
 	m := store.PackModRecord{ID: id, PackID: packID, Source: string(ad.Name()), ProjectID: in.ProjectID, VersionID: in.VersionID, DisplayName: meta.Project.Name, FileName: dl.FileName, SHA1: strings.ToLower(dl.SHA1), Status: "installed", Required: in.Required, AddedAt: now, UpdatedAt: now}
 	err = a.repo.WithTx(ctx, func(tx *store.Repository) error {
-		if err := tx.UpsertJarIndex(ctx, store.JarIndexRecord{SHA1: m.SHA1, SHA256: dl.SHA256, FilePath: "jar://" + m.SHA1, SizeBytes: dl.Size, ParsedAt: now}); err != nil {
+		if err := tx.UpsertJarIndex(ctx, store.JarIndexRecord{SHA1: m.SHA1, SHA256: dl.SHA256, FilePath: "jar://" + m.SHA1, SizeBytes: dl.Size, ModIDs: []string{id}, ParsedAt: now}); err != nil {
 			return err
 		}
 		if err := tx.AddPackMod(ctx, m); err != nil {
@@ -236,7 +236,7 @@ func (a *API) AddLocalPackMod(ctx context.Context, packID string, in LocalModInp
 	id := newID("mod")
 	m := store.PackModRecord{ID: id, PackID: packID, Source: "local", DisplayName: strings.TrimSpace(in.DisplayName), FileName: strings.TrimSpace(in.FileName), SHA1: strings.ToLower(in.SHA1), Status: "installed", Required: in.Required, AddedAt: now, UpdatedAt: now}
 	err := a.repo.WithTx(ctx, func(tx *store.Repository) error {
-		if err := tx.UpsertJarIndex(ctx, store.JarIndexRecord{SHA1: m.SHA1, SHA256: in.SHA256, FilePath: "jar://" + m.SHA1, SizeBytes: in.Size, ParsedAt: now}); err != nil {
+		if err := tx.UpsertJarIndex(ctx, store.JarIndexRecord{SHA1: m.SHA1, SHA256: in.SHA256, FilePath: "jar://" + m.SHA1, SizeBytes: in.Size, ModIDs: []string{id}, ParsedAt: now}); err != nil {
 			return err
 		}
 		if err := tx.AddPackMod(ctx, m); err != nil {
@@ -394,7 +394,7 @@ func (a *API) ResolvePack(ctx context.Context, packID, requestID string) (Lock, 
 	raw, _ := json.Marshal(snap)
 	sum := sha256.Sum256(raw)
 	lock := store.LockRecord{ID: lockID, PackID: packID, SchemaVersion: 1, SnapshotJSON: string(raw), SnapshotSHA256: hex.EncodeToString(sum[:]), CreatedAt: time.Now().UnixMilli()}
-	if err := a.repo.CreateLock(ctx, lock, deps, confs); err != nil {
+	if err := a.repo.CreateLock(ctx, lock, deps, confs, requestID); err != nil {
 		return Lock{}, err
 	}
 	_ = requestID

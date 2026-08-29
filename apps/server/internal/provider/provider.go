@@ -4,7 +4,9 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 var (
@@ -38,6 +40,7 @@ type Version struct {
 	ID, ProjectID, Name, VersionNumber string
 	GameVersions, Loaders              []string
 	Files                              []File
+	Dependencies                       []Dependency
 }
 type File struct {
 	ID          string `json:"id"`
@@ -48,6 +51,80 @@ type File struct {
 	Size        int64  `json:"size"`
 	Primary     bool   `json:"primary"`
 }
+
+// UnmarshalJSON normalizes the string and numeric identifiers and the
+// provider-specific file length/hash representations used by CF and MR.
+func (f *File) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		ID          json.RawMessage `json:"id"`
+		Name        string          `json:"name"`
+		DisplayName string          `json:"displayName"`
+		DownloadURL string          `json:"downloadUrl"`
+		URL         string          `json:"url"`
+		SHA1        string          `json:"sha1"`
+		SHA256      string          `json:"sha256"`
+		Size        int64           `json:"size"`
+		FileLength  int64           `json:"fileLength"`
+		Primary     bool            `json:"primary"`
+		Hashes      []struct {
+			Value string `json:"value"`
+			Algo  int    `json:"algo"`
+		} `json:"hashes"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	id, err := normalizeID(raw.ID)
+	if err != nil {
+		return err
+	}
+	name := raw.Name
+	if name == "" {
+		name = raw.DisplayName
+	}
+	url := raw.DownloadURL
+	if url == "" {
+		url = raw.URL
+	}
+	size := raw.Size
+	if size == 0 {
+		size = raw.FileLength
+	}
+	sha1, sha256 := raw.SHA1, raw.SHA256
+	for _, h := range raw.Hashes {
+		switch h.Algo {
+		case 1:
+			if sha1 == "" {
+				sha1 = h.Value
+			}
+		case 2:
+			if sha256 == "" {
+				sha256 = h.Value
+			}
+		}
+	}
+	f.ID, f.Name, f.DownloadURL, f.SHA1, f.SHA256, f.Size, f.Primary = id, name, url, sha1, sha256, size, raw.Primary
+	return nil
+}
+
+func normalizeID(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	var s string
+	if raw[0] == '"' {
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return "", err
+		}
+		return s, nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return "", fmt.Errorf("provider id: %w", err)
+	}
+	return n.String(), nil
+}
+
 type Metadata struct {
 	Project      Project
 	Version      Version

@@ -89,25 +89,27 @@ func (h *HTTPAdapter) Search(ctx context.Context, in SearchRequest) (SearchResul
 	}
 	var raw struct {
 		Hits []struct {
-			ProjectID   string `json:"project_id"`
-			ID          string `json:"id"`
-			Slug        string `json:"slug"`
-			Title       string `json:"title"`
-			Name        string `json:"name"`
-			Description string `json:"description"`
-			IconURL     string `json:"icon_url"`
-			Downloads   int64  `json:"downloads"`
+			ProjectID   json.RawMessage `json:"project_id"`
+			ID          json.RawMessage `json:"id"`
+			Slug        string          `json:"slug"`
+			Title       string          `json:"title"`
+			Name        string          `json:"name"`
+			Description string          `json:"description"`
+			IconURL     string          `json:"icon_url"`
+			Downloads   int64           `json:"downloads"`
 		} `json:"hits"`
 		Data []struct {
-			ID        string `json:"id"`
-			Name      string `json:"name"`
-			Slug      string `json:"slug"`
-			Summary   string `json:"summary"`
-			LogoURL   string `json:"logo"`
-			Downloads int64  `json:"downloads"`
+			ID            json.RawMessage `json:"id"`
+			Name          string          `json:"name"`
+			Slug          string          `json:"slug"`
+			Summary       string          `json:"summary"`
+			LogoURL       string          `json:"logo"`
+			Downloads     int64           `json:"downloads"`
+			DownloadCount int64           `json:"downloadCount"`
 		} `json:"data"`
 		Pagination struct {
 			Total         int `json:"total"`
+			TotalCount    int `json:"totalCount"`
 			Offset, Limit int
 		} `json:"pagination"`
 	}
@@ -120,9 +122,12 @@ func (h *HTTPAdapter) Search(ctx context.Context, in SearchRequest) (SearchResul
 	}
 	out := SearchResult{}
 	for _, x := range raw.Hits {
-		id := x.ProjectID
-		if id == "" {
-			id = x.ID
+		id, e := normalizeID(x.ProjectID)
+		if e != nil || id == "" {
+			id, e = normalizeID(x.ID)
+		}
+		if e != nil {
+			return SearchResult{}, fmt.Errorf("decode provider project id: %w", e)
 		}
 		name := x.Title
 		if name == "" {
@@ -131,34 +136,55 @@ func (h *HTTPAdapter) Search(ctx context.Context, in SearchRequest) (SearchResul
 		out.Items = append(out.Items, Project{ID: id, Slug: x.Slug, Name: name, Summary: x.Description, IconURL: x.IconURL, Downloads: x.Downloads})
 	}
 	for _, x := range raw.Data {
-		id := x.ID
+		id, e := normalizeID(x.ID)
+		if e != nil {
+			return SearchResult{}, fmt.Errorf("decode provider project id: %w", e)
+		}
 		name := x.Name
-		out.Items = append(out.Items, Project{ID: id, Slug: x.Slug, Name: name, Summary: x.Summary, IconURL: x.LogoURL, Downloads: x.Downloads})
+		downloads := x.Downloads
+		if downloads == 0 {
+			downloads = x.DownloadCount
+		}
+		out.Items = append(out.Items, Project{ID: id, Slug: x.Slug, Name: name, Summary: x.Summary, IconURL: x.LogoURL, Downloads: downloads})
 	}
 	out.Total = raw.Pagination.Total
+	if out.Total == 0 {
+		out.Total = raw.Pagination.TotalCount
+	}
 	if out.Total == 0 {
 		out.Total = len(out.Items)
 	}
 	return out, nil
 }
 func (h *HTTPAdapter) Project(ctx context.Context, id string) (Project, error) {
-	var x struct {
-		ID          string `json:"id"`
-		Slug        string `json:"slug"`
-		Title       string `json:"title"`
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Summary     string `json:"summary"`
-		IconURL     string `json:"icon_url"`
-		LogoURL     string `json:"logo"`
-		Downloads   int64  `json:"downloads"`
-	}
 	path := "/v2/project/" + url.PathEscape(id)
 	if h.name == CurseForge {
 		path = "/v1/mods/" + url.PathEscape(id)
 	}
-	if e := h.call(ctx, "GET", path, nil, &x); e != nil {
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	var raw json.RawMessage
+	if e := h.call(ctx, "GET", path, nil, &raw); e != nil {
 		return Project{}, e
+	}
+	if e := json.Unmarshal(raw, &envelope); e == nil && len(envelope.Data) > 0 && string(envelope.Data) != "null" {
+		raw = envelope.Data
+	}
+	var x struct {
+		ID            json.RawMessage `json:"id"`
+		Slug          string          `json:"slug"`
+		Title         string          `json:"title"`
+		Name          string          `json:"name"`
+		Description   string          `json:"description"`
+		Summary       string          `json:"summary"`
+		IconURL       string          `json:"icon_url"`
+		LogoURL       string          `json:"logo"`
+		Downloads     int64           `json:"downloads"`
+		DownloadCount int64           `json:"downloadCount"`
+	}
+	if e := json.Unmarshal(raw, &x); e != nil {
+		return Project{}, fmt.Errorf("decode project: %w", e)
 	}
 	name := x.Title
 	if name == "" {
@@ -172,27 +198,99 @@ func (h *HTTPAdapter) Project(ctx context.Context, id string) (Project, error) {
 	if icon == "" {
 		icon = x.LogoURL
 	}
-	return Project{ID: id, Slug: x.Slug, Name: name, Summary: summary, IconURL: icon, Downloads: x.Downloads}, nil
+	downloads := x.Downloads
+	if downloads == 0 {
+		downloads = x.DownloadCount
+	}
+	return Project{ID: id, Slug: x.Slug, Name: name, Summary: summary, IconURL: icon, Downloads: downloads}, nil
 }
 func (h *HTTPAdapter) Versions(ctx context.Context, id string) ([]Version, error) {
-	var raw []struct {
-		ID            string   `json:"id"`
-		Name          string   `json:"name"`
-		VersionNumber string   `json:"version_number"`
-		GameVersions  []string `json:"game_versions"`
-		Loaders       []string `json:"loaders"`
-		Files         []File   `json:"files"`
-	}
+	var payload json.RawMessage
 	path := "/v2/project/" + url.PathEscape(id) + "/version"
 	if h.name == CurseForge {
 		path = "/v1/mods/" + url.PathEscape(id) + "/files"
 	}
-	if e := h.call(ctx, "GET", path, nil, &raw); e != nil {
+	if e := h.call(ctx, "GET", path, nil, &payload); e != nil {
 		return nil, e
+	}
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if e := json.Unmarshal(payload, &envelope); e == nil && len(envelope.Data) > 0 && string(envelope.Data) != "null" {
+		payload = envelope.Data
+	}
+	var raw []struct {
+		ID             json.RawMessage `json:"id"`
+		Name           string          `json:"name"`
+		DisplayName    string          `json:"displayName"`
+		VersionNumber  string          `json:"version_number"`
+		GameVersions   []string        `json:"game_versions"`
+		GameVersionsCF []string        `json:"gameVersions"`
+		Loaders        []string        `json:"loaders"`
+		Files          []File          `json:"files"`
+		DownloadURL    string          `json:"downloadUrl"`
+		FileName       string          `json:"fileName"`
+		FileLength     int64           `json:"fileLength"`
+		Hashes         []struct {
+			Value string `json:"value"`
+			Algo  int    `json:"algo"`
+		} `json:"hashes"`
+		Dependencies []struct {
+			ProjectID      string `json:"project_id"`
+			ProjectIDCamel string `json:"projectId"`
+			VersionID      string `json:"version_id"`
+			VersionIDCamel string `json:"versionId"`
+			Kind           string `json:"dependency_type"`
+			Relation       string `json:"relationType"`
+			Constraint     string `json:"version_range"`
+		} `json:"dependencies"`
+	}
+	if e := json.Unmarshal(payload, &raw); e != nil {
+		return nil, fmt.Errorf("decode versions: %w", e)
 	}
 	out := make([]Version, 0, len(raw))
 	for _, x := range raw {
-		out = append(out, Version{ID: x.ID, ProjectID: id, Name: x.Name, VersionNumber: x.VersionNumber, GameVersions: x.GameVersions, Loaders: x.Loaders, Files: x.Files})
+		versionID, e := normalizeID(x.ID)
+		if e != nil {
+			return nil, fmt.Errorf("decode provider version id: %w", e)
+		}
+		name := x.Name
+		if name == "" {
+			name = x.DisplayName
+		}
+		gameVersions := x.GameVersions
+		if len(gameVersions) == 0 {
+			gameVersions = x.GameVersionsCF
+		}
+		files := x.Files
+		if len(files) == 0 && (x.DownloadURL != "" || x.FileName != "") {
+			files = []File{{Name: x.FileName, DownloadURL: x.DownloadURL, Size: x.FileLength, Primary: true}}
+			for _, hash := range x.Hashes {
+				if hash.Algo == 1 {
+					files[0].SHA1 = hash.Value
+				}
+				if hash.Algo == 2 {
+					files[0].SHA256 = hash.Value
+				}
+			}
+		}
+		deps := make([]Dependency, 0, len(x.Dependencies))
+		for _, d := range x.Dependencies {
+			pid := d.ProjectID
+			if pid == "" {
+				pid = d.ProjectIDCamel
+			}
+			vid := d.VersionID
+			if vid == "" {
+				vid = d.VersionIDCamel
+			}
+			kind := d.Kind
+			if kind == "" {
+				kind = d.Relation
+			}
+			deps = append(deps, Dependency{ProjectID: pid, VersionID: vid, Constraint: d.Constraint, Kind: kind, Reason: "provider dependency"})
+		}
+		out = append(out, Version{ID: versionID, ProjectID: id, Name: name, VersionNumber: x.VersionNumber, GameVersions: gameVersions, Loaders: x.Loaders, Files: files, Dependencies: deps})
 	}
 	return out, nil
 }
@@ -207,7 +305,7 @@ func (h *HTTPAdapter) Metadata(ctx context.Context, pid, vid string) (Metadata, 
 	}
 	for _, v := range vs {
 		if vid == "" || v.ID == vid {
-			return Metadata{Project: p, Version: v}, nil
+			return Metadata{Project: p, Version: v, Dependencies: v.Dependencies}, nil
 		}
 	}
 	return Metadata{}, ErrNotFound
