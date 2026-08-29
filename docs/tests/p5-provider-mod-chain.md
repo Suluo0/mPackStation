@@ -14,8 +14,8 @@
 | P5-08 | 模组启停、版本切换、移除 | disabled/installed/version 更新可验证，移除不影响其他包 | 同上 |
 | P5-09 | 未配置 Provider 与 404/429/503 | service 返回稳定领域错误；HTTP 返回错误信封、request-id 和预期状态码 | `service.TestP5AcceptanceUnconfiguredAndInvalidProviderResults`, `httpapi.TestP5HTTPModChainAndStableProviderErrors` |
 | P5-10 | 锁快照与依赖证据 | 依赖绑定 lock、快照可解析且 hash 存在，重复求解冲突按 fingerprint 幂等，历史快照不变 | `service.TestP5AcceptanceLockSnapshotAndResolutionEvidence` |
-| P5-11 | HTTP 主链路 JSON | 搜索、加入、列表、启停、求解、锁、健康、移除的响应字段和状态码符合契约 | `httpapi.TestP5HTTPModChainAndStableProviderErrors` |
+| P5-11 | HTTP 主链路 JSON | 搜索、加入、列表、启停、求解、锁、健康、移除的响应字段和状态码符合契约 | `httpapi.TestP5HTTPModChainAndStableProviderErrors` | 通过 |
 
 执行：`go test ./internal/provider ./internal/store ./internal/service ./internal/httpapi`、`go vet ./internal/provider ./internal/store ./internal/service ./internal/httpapi`。
 
-当前独立验收发现的两项已在工作树中修复：HTTP 搜索结果曾缺少契约要求的 `nextCursor` 字段；resolve 写入锁、依赖和冲突时曾没有同步 activity/outbox 证据。新增的 CurseForge 真实响应形状验收仍失败：当前 adapter 无法解析 `{data:...}` envelope、数值 ID、`downloadCount`/`fileLength`/`hashes` 字段。该项为 P5 阻断，修复后必须重跑本矩阵，不得用 fixture 单测绿灯替代。另未覆盖真实 CF/MR 网络、异步 download task、blobstore 原子落盘；对应风险见 `ISSUE-P5-provider-mod-chain.md`。
+Luna 独立验收提交 `67e5226`：矩阵中的 fixture、HTTP adapter、service/store 和 HTTP 主链路用例均通过。曾发现的 `nextCursor`、resolve activity/outbox、CurseForge envelope/数值 ID/字段映射问题已修复并重验。未覆盖真实 CF/MR 网络、异步 download task、blobstore 原子落盘；对应风险见 `ISSUE-P5-provider-mod-chain.md`。
