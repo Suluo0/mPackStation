@@ -6,19 +6,74 @@
     "goal_source": "user"
   },
   "checkpoint": {
-    "id": "cp-2026-08-27",
+    "id": "cp-2026-08-29-p6-p7-rollback",
     "context_completeness": "partial",
-    "created_at": "2026-08-27T00:00:00Z",
-    "note": "非 Git 检查点：仓库未初始化 git，delivery 轴不含 commit/push 信息。会话上下文经过压缩，早期细节以交接备忘与仓库证据为准。"
+    "created_at": "2026-08-29T00:00:00Z",
+    "note": "本检查点暂停于 P6 完成后，P7 已按用户要求回滚。P6 独立验收提交为 7d5bf91；P7 回滚提交为 9cab5c4。回滚后全量 go test、go vet、gofmt 均通过。当前工作区仍保留用户 UI/文档改动。"
   },
   "repository": {
     "path": "D:\\workIn\\mPackStation",
     "is_git": true,
     "initial_commit": "0c6edbe",
     "remote": null,
-    "structure": "monorepo：apps/web（React19+TS+Vite7+antd6+zod4）、apps/server（Go+SQLite）、docs/、data/（运行期，gitignore）、.tools/（便携 Go 1.27.0，gitignore）、.shots/（验收截图）"
+    "structure": "monorepo：apps/web（React19+TS+Vite7+antd6+zod4）、apps/server（Go+SQLite）、docs/、data/（运行期，gitignore）、.tools/（便携 Go 1.27.0，gitignore）、.shots/（验收截图）",
+    "branch": "fix/responsive-lowres",
+    "head": "7d5bf915c4c941af81fa66c89dc6260fde276f93",
+    "working_tree_clean": false
   },
   "tasks": [
+    {
+      "id": "task-p7-build-publish",
+      "kind": "task",
+      "title": "P7 构建与发布",
+      "status": "deferred",
+      "summary": "P7 构建/发布实现已回滚，暂不推进；后续需要重新规划并独立验收。",
+      "verification": "not_run",
+      "acceptance": "pending",
+      "documentation": "drafted",
+      "delivery": "committed",
+      "ownership": "shared",
+      "scope": "project",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "P7 实现、测试与 HTTP 接线由回滚提交 9cab5c4 移除",
+          "source": "git commit 9cab5c4"
+        }
+      ],
+      "updated_at": "2026-08-29T00:00:00Z"
+    },
+    {
+      "id": "task-p6-content-quest",
+      "kind": "task",
+      "title": "P6 内容编辑与任务书领域闭环",
+      "status": "delivered",
+      "summary": "内容文档/revision 与任务书图模型已实现 repository/service/HTTP 闭环，包含 canonical 校验、乐观并发、apply/rollback/history、环/孤立/跨包引用校验及 activity/outbox/audit 证据。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "shared",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/service/p6_content.go",
+        "apps/server/internal/store/p6_repo.go",
+        "apps/server/internal/httpapi/p6_acceptance_test.go",
+        "docs/issues/ISSUE-P6-CONTENT-QUEST",
+        "docs/tests/p6-p7-acceptance.md"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "P6 service/store 定向测试、P6 HTTP 契约测试、全量 go test、go vet、gofmt 均通过",
+          "source": "commit 7d5bf91 / Luna 独立复验 2026-08-29",
+          "locator": "docs/issues/ISSUE-P6-CONTENT-QUEST"
+        }
+      ],
+      "updated_at": "2026-08-29T00:00:00Z"
+    },
     {
       "id": "task-a1f07c2e",
       "kind": "task",
@@ -29,8 +84,18 @@
       "acceptance": "not_requested",
       "delivery": "working_tree",
       "evidence": [
-        {"type": "command", "level": "observed", "claim": "npm install 成功，tsc --noEmit 与 vite build 通过", "source": "session"},
-        {"type": "file", "level": "observed", "claim": "go.exe version 输出 go1.27.0", "source": ".tools/go"}
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "npm install 成功，tsc --noEmit 与 vite build 通过",
+          "source": "session"
+        },
+        {
+          "type": "file",
+          "level": "observed",
+          "claim": "go.exe version 输出 go1.27.0",
+          "source": ".tools/go"
+        }
       ],
       "updated_at": "2026-08-26T00:00:00Z"
     },
@@ -43,11 +108,29 @@
       "verification": "passed",
       "acceptance": "rejected",
       "delivery": "working_tree",
-      "related_files": ["apps/web/src/pages/DashboardPage.tsx", "apps/web/src/features/dashboard/"],
+      "related_files": [
+        "apps/web/src/pages/DashboardPage.tsx",
+        "apps/web/src/features/dashboard/"
+      ],
       "evidence": [
-        {"type": "command", "level": "observed", "claim": "tsc --noEmit 零错误、vite build 通过", "source": "session"},
-        {"type": "artifact", "level": "observed", "claim": "无头 Chrome 双态截图渲染正确", "source": ".shots/dash-populated.png, .shots/dash-empty.png"},
-        {"type": "statement", "level": "reported", "claim": "用户两次否定视觉质量（'太丑'/'还是丑'），功能本身未被否定", "source": "user"}
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "tsc --noEmit 零错误、vite build 通过",
+          "source": "session"
+        },
+        {
+          "type": "artifact",
+          "level": "observed",
+          "claim": "无头 Chrome 双态截图渲染正确",
+          "source": ".shots/dash-populated.png, .shots/dash-empty.png"
+        },
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户两次否定视觉质量（'太丑'/'还是丑'），功能本身未被否定",
+          "source": "user"
+        }
       ],
       "updated_at": "2026-08-27T00:00:00Z"
     },
@@ -60,9 +143,18 @@
       "verification": "passed",
       "acceptance": "not_requested",
       "delivery": "working_tree",
-      "related_files": ["apps/server/cmd/server/main.go", "apps/server/internal/store/schema.sql", "apps/server/internal/store/store.go"],
+      "related_files": [
+        "apps/server/cmd/server/main.go",
+        "apps/server/internal/store/schema.sql",
+        "apps/server/internal/store/store.go"
+      ],
       "evidence": [
-        {"type": "command", "level": "observed", "claim": "go build ./... 通过；curl /api/health 直连与 vite 代理均返回 {\"status\":\"ok\",\"db\":true}", "source": "session"}
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go build ./... 通过；curl /api/health 直连与 vite 代理均返回 {\"status\":\"ok\",\"db\":true}",
+          "source": "session"
+        }
       ],
       "updated_at": "2026-08-27T00:00:00Z"
     },
@@ -76,8 +168,18 @@
       "acceptance": "rejected",
       "delivery": "working_tree",
       "evidence": [
-        {"type": "artifact", "level": "observed", "claim": "双态截图风格对齐设计稿（侧边栏/紫主题/栅格齐全）", "source": ".shots/"},
-        {"type": "statement", "level": "reported", "claim": "用户仍不满意：'迭代啥了? 这不还是丑的'", "source": "user"}
+        {
+          "type": "artifact",
+          "level": "observed",
+          "claim": "双态截图风格对齐设计稿（侧边栏/紫主题/栅格齐全）",
+          "source": ".shots/"
+        },
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户仍不满意：'迭代啥了? 这不还是丑的'",
+          "source": "user"
+        }
       ],
       "updated_at": "2026-08-27T00:00:00Z"
     },
@@ -91,8 +193,18 @@
       "acceptance": "rejected",
       "delivery": "working_tree",
       "evidence": [
-        {"type": "command", "level": "observed", "claim": "tsc/build 通过，双态截图回看确认", "source": "session"},
-        {"type": "statement", "level": "reported", "claim": "用户评价仍为'还是丑'——精修未触及图形丰富度核心差距", "source": "user"}
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "tsc/build 通过，双态截图回看确认",
+          "source": "session"
+        },
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户评价仍为'还是丑'——精修未触及图形丰富度核心差距",
+          "source": "user"
+        }
       ],
       "updated_at": "2026-08-27T00:00:00Z"
     },
@@ -100,15 +212,25 @@
       "id": "task-f6b5c7d8",
       "kind": "task",
       "title": "视觉第三轮：图形丰富度（未开工）",
-      "status": "clarified",
-      "summary": "差距分析已完成：真实 MC 风景封面（现为平色渐变块）、3D 质感图标、渐变光晕背景、更大字重排印。候选方案：手绘 SVG 像素风 MC 场景封面（无外链约束下最贴合主题）、hero 区渐变光晕、标题字重字号拉大。被用户的 skill 安装请求打断，未开工。",
-      "verification": "not_run",
-      "acceptance": "not_requested",
-      "delivery": "not_applicable",
+      "status": "implemented",
+      "summary": "引入 frontend-design-codex 作为视觉实现约束；建立 workbench 间距令牌，重整欢迎页 Hero/卡片/流程布局，修复 CSS 预览组件样式，明确主标题语义断行，并为三步走浮层补齐中等桌面与移动响应式避让。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "delivery": "working_tree",
       "evidence": [
-        {"type": "analysis", "level": "reported", "claim": "差距分析基于设计稿 region 放大比对，结论为图形丰富度不足", "source": "session"}
+        {
+          "type": "analysis",
+          "level": "reported",
+          "claim": "差距分析基于设计稿 region 放大比对；桌面与 390x844 移动视口截图复测无横向溢出，标题和浮层布局符合当前组件规则",
+          "source": "session"
+        }
       ],
-      "updated_at": "2026-08-27T00:00:00Z"
+      "updated_at": "2026-08-28T00:00:00Z",
+      "related_files": [
+        "apps/web/src/features/dashboard/OnboardingView.tsx",
+        "apps/web/src/features/dashboard/dashboard.css",
+        "apps/web/src/ui/workbench/workbench.css"
+      ]
     }
   ],
   "issues": [
@@ -120,7 +242,12 @@
       "summary": "go run 首次启动 bind 失败，curl 到的是旧项目的 404。mPackStation 后端改用 18871，vite 代理同步更新。旧进程（5173/18765/18766）一律不动。",
       "resolution": "改端口为 18871 并验证双链路",
       "evidence": [
-        {"type": "command", "level": "observed", "claim": "netstat 确认 18765/18766/5173 被占；18871 健康检查通过", "source": "session"}
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "netstat 确认 18765/18766/5173 被占；18871 健康检查通过",
+          "source": "session"
+        }
       ],
       "updated_at": "2026-08-27T00:00:00Z"
     }
@@ -133,7 +260,12 @@
       "status": "captured",
       "summary": "不接外链图的约束下，手工 SVG 像素/voxel 风山水场景在主题贴合度上优于平色渐变，也优于抽象色块。接真封面后 PackCover 一行换 <img>。",
       "evidence": [
-        {"type": "statement", "level": "inferred", "claim": "由设计稿比对得出，未经用户确认", "source": "session"}
+        {
+          "type": "statement",
+          "level": "inferred",
+          "claim": "由设计稿比对得出，未经用户确认",
+          "source": "session"
+        }
       ],
       "updated_at": "2026-08-27T00:00:00Z"
     },
@@ -144,7 +276,12 @@
       "status": "captured",
       "summary": "交互主战场（搜索→加入整合包）的页面级提示词，按'每页一文档、mock 先行、截图验收'流程推进。旧 mc_dev 仅 multiblocks 组件（GridPreview/IsoPreview）值得移植。",
       "evidence": [
-        {"type": "statement", "level": "reported", "claim": "来自交接备忘记录的既定计划", "source": "session"}
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "来自交接备忘记录的既定计划",
+          "source": "session"
+        }
       ],
       "updated_at": "2026-08-26T00:00:00Z"
     }
@@ -156,9 +293,18 @@
       "title": "技术栈：React+TS+Vite+antd+zod 前端，Go+SQLite 后端",
       "status": "active",
       "summary": "用户明确否决 Node（嫌依赖重、部署占地）与 Java（个人工具启动慢）。发布形态后定（单 exe 本地服务→Electron 均可），现在只做开发环境。",
-      "alternatives": ["Node 后端（否决）", "Java（否决）", "每包一库 SQLite（否决，改单库分域）"],
+      "alternatives": [
+        "Node 后端（否决）",
+        "Java（否决）",
+        "每包一库 SQLite（否决，改单库分域）"
+      ],
       "evidence": [
-        {"type": "statement", "level": "reported", "claim": "用户明确表示不喜欢 Node 依赖重、Java 启动慢", "source": "user"}
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户明确表示不喜欢 Node 依赖重、Java 启动慢",
+          "source": "user"
+        }
       ],
       "updated_at": "2026-08-26T00:00:00Z"
     },
@@ -169,7 +315,12 @@
       "status": "active",
       "summary": "data/mpackstation.db 单库；pack_mods 是唯一权威'已选择/已安装'来源，不再维护全局本地模组清单；平台原始响应只存落盘路径。写在 schema.sql 顶部注释。",
       "evidence": [
-        {"type": "file", "level": "observed", "claim": "schema.sql 顶部四条纪律注释", "source": "apps/server/internal/store/schema.sql"}
+        {
+          "type": "file",
+          "level": "observed",
+          "claim": "schema.sql 顶部四条纪律注释",
+          "source": "apps/server/internal/store/schema.sql"
+        }
       ],
       "updated_at": "2026-08-26T00:00:00Z"
     },
@@ -180,7 +331,12 @@
       "status": "active",
       "summary": "规格文档是唯一真相；AI 生成效果图只是视觉参考，其内部文字不可信（曾把 AI 图噪点当错字被用户纠正）。",
       "evidence": [
-        {"type": "statement", "level": "reported", "claim": "用户明确要求从零写文档、不信旧内容", "source": "user"}
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户明确要求从零写文档、不信旧内容",
+          "source": "user"
+        }
       ],
       "updated_at": "2026-08-26T00:00:00Z"
     },
@@ -191,7 +347,12 @@
       "status": "active",
       "summary": "5173=旧 mc_dev 前端（PID 16200）、18765=本地 LLM、18766=旧 mc_dev 后端，均不动。18766 占用是实测踩坑后改的。",
       "evidence": [
-        {"type": "command", "level": "observed", "claim": "netstat 确认 18765/18766/5173 被占", "source": "session"}
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "netstat 确认 18765/18766/5173 被占",
+          "source": "session"
+        }
       ],
       "updated_at": "2026-08-27T00:00:00Z"
     },
@@ -202,19 +363,50 @@
       "status": "needs_review",
       "summary": "主色 #7B5CFF、底色 #F3F1FA、16px 圆角、动效令牌 160ms。规范已定稿成文，但用户两轮验收均未通过，下一轮迭代可能修订。",
       "evidence": [
-        {"type": "file", "level": "observed", "claim": "6.1 节视觉规范已写入", "source": "docs/dashboard-page-prompt.md"},
-        {"type": "statement", "level": "reported", "claim": "用户两轮验收未通过", "source": "user"}
+        {
+          "type": "file",
+          "level": "observed",
+          "claim": "6.1 节视觉规范已写入",
+          "source": "docs/dashboard-page-prompt.md"
+        },
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户两轮验收未通过",
+          "source": "user"
+        }
       ],
       "updated_at": "2026-08-27T00:00:00Z"
+    },
+    {
+      "id": "decision-8f7a6b5c",
+      "kind": "decision",
+      "title": "视觉实现采用 frontend-design-codex skill",
+      "status": "active",
+      "summary": "采用该 skill 指导视觉预分析、设计令牌、排版/间距/组件规则和浏览器验收；页面形态保持按页面自由组合，不强制所有页面共用同一布局。",
+      "alternatives": [
+        "仅使用 Web Design Guidelines（主要是可访问性审计，不能提供完整视觉系统）"
+      ],
+      "evidence": [
+        {
+          "type": "file",
+          "level": "observed",
+          "claim": "skill 已安装至 C:/Users/<user>/.codex/skills/frontend-design-codex/SKILL.md，内容要求先建立 tokens/typography/spacing/components 并进行浏览器验证",
+          "source": "C:/Users/<user>/.codex/skills/frontend-design-codex/SKILL.md"
+        }
+      ],
+      "updated_at": "2026-08-28T00:00:00Z"
     }
   ],
   "next_session": {
-    "recommended_item": "task-f6b5c7d8",
+    "recommended_item": "task-p6-content-quest",
     "read_first": [
-      "docs/project-state/HANDOFF.md（本检查点）",
-      "docs/dashboard-page-prompt.md（看板规格+6.1 视觉规范）",
-      ".shots/dash-populated.png 与设计稿 C:\\Users\\suluo\\Downloads\\ChatGPT Image 2026年8月26日 19_58_15.png 对比",
-      "apps/web/src/features/dashboard/dashboard.css（样式令牌集中地）"
-    ]
+      "docs/project-state/HANDOFF.md",
+      "docs/project-state/history/2026-08-28-session-summary.md",
+      "C:/Users/<user>/.codex/skills/frontend-design-codex/SKILL.md",
+      "apps/web/src/ui/workbench/workbench.css",
+      "apps/web/src/features/dashboard/dashboard.css"
+    ],
+    "first_action": "恢复时先修复并复验未提交的 P7 验收测试编译问题；本检查点之前不继续开发。"
   }
 }

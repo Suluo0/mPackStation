@@ -6,9 +6,15 @@ mPackStation —— Minecraft 整合包制作工具：从搜索到打包，不�
 
 ## 当前状态
 
-早期搭建阶段。已初始化 Git 仓库（main 分支，初始提交 `0c6edbe`，暂无远端）。看板页功能完成、后端空壳完成；视觉质量未通过用户验收，是当前主要矛盾。
+当前暂停在后端 P6 完成点。Git 当前分支为 `fix/responsive-lowres`，无远端；用户 UI/文档改动仍在工作区。P6 已完成并通过独立验收，P7 已回滚并暂不继续推进。
 
-2026-08-27 已按 Taster anti-slop 方法完成一轮视觉语言重设计：暖纸网格底、矿物中性色、ember 橙单一品牌色、紧凑工作台密度；移除全局“模组搜索”导航，普通示例入口不再使用绿色 CTA。详见 `docs/taster-visual-language.md`。当前仅完成代码与本地双态回看，尚未获得用户最终验收。
+2026-08-27 已按 Taster anti-slop 方法完成一轮视觉语言重设计：暖纸网格底、矿物中性色、ember 橙单一品牌色、紧凑工作台密度；移除全局“模组搜索”导航，普通示例入口不再使用绿色 CTA。详见 `docs/taster-visual-language.md`。当前已进入第三轮 skill 引导的视觉重构；本轮改动尚未获得用户最终验收。
+
+2026-08-28 追加完成侧边栏完整菜单与包工作台 mock 路由；同时完成后端架构盲审。后端仍是仅含 `/api/health` 的 Go+SQLite 骨架，综合评分约 2.7/10。鉴权必须以后端数据域改造为前置条件，不能直接在现有路由外包 JWT/session。
+
+随后已完成后端 M0 第一轮迭代：数据目录绝对化、HTTP 生命周期保护、存活/就绪探针分离、SQLite 连接级约束、事务化 v1 schema 基线、request-id 和基础单测。复审认为健壮性有改善，但鉴权与业务闭环仍未达到接入条件。
+
+设计迭代随后完成真实浏览器复核：标题改为语义明确的两行；中等桌面宽度下三步走浮层缩放避让 CSS 预览图；390×844 移动视口消除横向溢出，并将浮层缩小固定到右下。桌面/移动截图均无首屏横向溢出，用户最终验收待确认。
 
 - 前端 dev：`http://127.0.0.1:5273/`（`?mock=empty` 切空态；USE_MOCK=true，未接真后端）
 - 后端 dev：`http://127.0.0.1:18871/api/health`
@@ -23,6 +29,45 @@ mPackStation —— Minecraft 整合包制作工具：从搜索到打包，不�
 - 用户级 skill 安装：taste-skill、redesign-skill、project-checkpoint（`~/.kimi-code/skills/`）
 
 ## 项目功能进展
+
+### 2026-08-29 · P7 构建与发布回滚
+
+- 状态：已回滚 / 延后
+- 进展：按用户要求移除 P7 构建、发布 service/repository/测试及 HTTP 接线，保留 P6 内容与任务书实现。
+- 关联任务：`task-p7-build-publish`
+- 验证：回滚后全量 `go test ./...`、`go vet ./...`、`gofmt` 均通过；回滚提交为 `9cab5c4`。
+- 相关产物：`apps/server/internal/httpapi/httpapi.go`、P7 生产文件已从当前版本移除。
+
+### 2026-08-29 · P6 内容编辑与任务书闭环
+
+- 状态：已交付（暂停点）
+- 进展：完成内容文档/revision 与任务书图模型的 repository/service/HTTP 闭环；支持 canonical 校验、If-Match 乐观并发、apply/rollback/history、环/孤立/跨包引用校验，以及 activity/outbox/audit 证据。
+- 关联任务：`task-p6-content-quest`
+- 验证：Luna 独立复验通过；P6 定向测试、HTTP 契约测试、全量 `go test ./...`、`go vet ./...`、`gofmt` 均通过，证据绑定提交 `7d5bf91`。当前工作树因未提交 P7 验收测试的未使用导入而不能宣称全量通过。
+- 相关产物：`apps/server/internal/service/p6_content.go`、`apps/server/internal/store/p6_repo.go`、`docs/issues/ISSUE-P6-CONTENT-QUEST`
+
+### 2026-08-28 · 引入 frontend-design-codex 并启动看板第三轮视觉重构
+
+- 状态：进行中
+- 进展：引入 `frontend-design-codex`，建立 workbench 间距令牌，重整欢迎页 Hero、入口卡片、灵感卡片和工作台流程的布局规则；修复 CSS 预览组件样式误删，预览继续使用 HTML/CSS 绘制。
+- 关联任务：`task-f6b5c7d8`
+- 验证：`npm run build` 已通过；浏览器截图验收未完成（localhost URL 策略拦截）；用户验收待确认。
+- 相关产物：`C:/Users/<user>/.codex/skills/frontend-design-codex/SKILL.md`、`apps/web/src/ui/workbench/workbench.css`、`apps/web/src/features/dashboard/dashboard.css`、`apps/web/src/features/dashboard/OnboardingView.tsx`
+
+### 2026-08-28 · 侧边栏菜单、包工作台页面与后端架构盲审
+
+- 状态：页面已实现（mock）/后端审查完成
+- 进展：恢复完整侧边栏菜单，新增包工作台、模组、依赖与冲突、内容编辑、任务书、打包与发布、设置路由页面；补充 `docs/backend-capability-draft.md`。三路 GPT-5.6-sol 盲审已发起，已回收两份完整报告。
+- 结论：后端只有 `/api/health` 和 SQLite 初始 schema；耦合性、可维护性、可扩展性、健壮性、鉴权就绪度均不足，综合约 2.7/10。鉴权前必须完成 workspace/principal、migration、repository 授权边界、任务幂等与密钥隔离。
+- 验证：`apps/web` `npm run build` 通过；源码紫色规则扫描零命中；Go `test/vet` 通过但无测试文件。
+- 相关产物：`apps/web/src/app/AppShell.tsx`、`apps/web/src/pages/PackPages.tsx`、`apps/web/src/pages/pack-pages.css`、`docs/backend-capability-draft.md`
+
+### 2026-08-28 · 欢迎页首屏响应式迭代
+
+- 状态：已实现 / 待用户验收
+- 进展：修正主标题中文语义断行；为独立悬浮的上手三步增加中等宽度避让；移动端限制装饰溢出并调整浮层位置与比例。
+- 验证：桌面与 390×844 移动视口真实截图通过；移动 `scrollWidth=375`，未出现横向滚动；`npm run build` 通过。
+- 相关产物：`apps/web/src/features/dashboard/OnboardingView.tsx`、`apps/web/src/features/dashboard/dashboard.css`
 
 ### 2026-08-27 · 看板视觉精修（redesign-skill 第二轮）
 
@@ -58,13 +103,14 @@ mPackStation —— Minecraft 整合包制作工具：从搜索到打包，不�
 
 ## 下一步
 
-1. **视觉第三轮（`task-f6b5c7d8`，最高优先）**：图形丰富度是用户两次否定的核心差距——SVG 像素风 MC 场景封面、3D 质感图标块、hero 渐变光晕背景、排印字重字号拉大。差距分析已完成，开工即可。
-2. 视觉过关后：写包工作台（`/packs/:id`）提示词文档进 `docs/`（`idea-29e0f1a2`）。
-3. 后端接真实端点替换 USE_MOCK（从 dashboard 六个接口开始）。
+1. 恢复工作时先修复并独立复验 P7 验收测试文件的编译问题，再决定是否继续 P7。
+2. 不要在本检查点继续开发；保留 P6 已通过证据与当前工作区未提交改动。
+3. 恢复后重新运行全量 Go 测试、vet、gofmt，并将结果绑定新的工作树指纹。
 
 ## 阻塞与已知问题
 
 - **视觉验收两轮未过**：用户基准是 AI 生成设计稿（真实插画、3D 图标、光晕）。无外链图/字体约束下需手工 SVG 资产补齐，这是第三轮的核心工作量。
+- **P7 尚未完成**：当前检查点明确暂停于 P6；P7 验收测试文件仍未纳入提交且有编译问题。
 - 包行「可更新」折行已修；继续卡「项目进度」语义已改为模组安装率，接真数据时再定最终口径。
 - vite 993 kB chunk 警告为既有现象，未处理。
 
@@ -90,7 +136,7 @@ mPackStation —— Minecraft 整合包制作工具：从搜索到打包，不�
 - `docs/project-state/state.json` —— 机器可读状态（任务/问题/想法/决策全量）
 - `docs/dashboard-page-prompt.md` —— 看板规格 + 6.1 视觉规范（后续页面的风格基准）
 - `apps/web/src/features/dashboard/dashboard.css` —— 所有 `--mc-*` 令牌集中地
-- `C:\Users\suluo\Downloads\ChatGPT Image 2026年8月26日 19_58_15.png` —— 视觉基准设计稿
+- `C:\Users\<user>\Downloads\ChatGPT Image 2026年8月26日 19_58_15.png` —— 视觉基准设计稿
 
 ## 验证状态
 
