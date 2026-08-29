@@ -211,7 +211,7 @@ func TestP6QuestRejectsCycleOrCrossPackReference(t *testing.T) {
 	cross := questBase()
 	cross.Nodes[0].ModRefs = []any{mod.ID}
 	_, crossIssues, err := a.SaveQuestDraft(ctx, packID, cross, 2, "q-cross")
-	if !errors.Is(err, ErrInvalidArgument) {
+	if !errors.Is(err, ErrCrossPackReference) {
 		t.Fatalf("cross-pack error=%v issues=%#v", err, crossIssues)
 	}
 	found := false

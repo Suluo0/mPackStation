@@ -25,32 +25,44 @@ var (
 
 // ValidationIssue is stable, human-readable validation output.
 type ValidationIssue struct {
-	Code, Severity, Path, Message string
-	Details                       map[string]any `json:"details,omitempty"`
+	Code     string         `json:"code"`
+	Severity string         `json:"severity"`
+	Path     string         `json:"path"`
+	Message  string         `json:"message"`
+	Details  map[string]any `json:"details,omitempty"`
 }
 
 // ContentDocument is the transport-neutral content header.
 type ContentDocument struct {
-	ID, PackID, Kind, Slug, Title string
-	ActiveRevisionID              string `json:"activeRevisionId,omitempty"`
-	CreatedAt                     string `json:"createdAt,omitempty"`
-	UpdatedAt                     string `json:"updatedAt,omitempty"`
+	ID               string `json:"id"`
+	PackID           string `json:"packId"`
+	Kind             string `json:"kind"`
+	Slug             string `json:"slug"`
+	Title            string `json:"title"`
+	ActiveRevisionID string `json:"activeRevisionId,omitempty"`
+	CreatedAt        string `json:"createdAt,omitempty"`
+	UpdatedAt        string `json:"updatedAt,omitempty"`
 }
 
 // ContentRevision is an immutable JSON revision.
 type ContentRevision struct {
-	ID, DocumentID, State, SourceRevisionID string
-	Revision                                int
-	Payload                                 json.RawMessage
-	CreatedAt                               string
+	ID               string          `json:"id"`
+	DocumentID       string          `json:"documentId"`
+	State            string          `json:"state"`
+	SourceRevisionID string          `json:"sourceRevisionId,omitempty"`
+	Revision         int             `json:"revision"`
+	Payload          json.RawMessage `json:"payload"`
+	CreatedAt        string          `json:"createdAt"`
 }
 
 // ContentValidation is the latest validation result for a revision.
 type ContentValidation struct {
-	ID, RevisionID, Status string
-	Issues                 []ValidationIssue
-	AffectedMods           []string
-	CreatedAt              string
+	ID           string            `json:"id"`
+	RevisionID   string            `json:"revisionId"`
+	Status       string            `json:"status"`
+	Issues       []ValidationIssue `json:"issues"`
+	AffectedMods []string          `json:"affectedMods"`
+	CreatedAt    string            `json:"createdAt"`
 }
 
 // CreateContentInput creates a document and initial draft.
@@ -140,6 +152,7 @@ func (a *API) SaveContentDraft(ctx context.Context, packID, documentID string, i
 		return ContentRevision{}, ErrInvalidArgument
 	}
 	r := store.ContentRevisionRecord{ID: newID("content-revision"), DocumentID: documentID, Payload: string(payload), CreatedAt: time.Now().UnixMilli()}
+	r.State = "draft"
 	r, e = a.repo.SaveContentDraft(ctx, packID, documentID, in.IfMatch, r, requestID)
 	if errors.Is(e, store.ErrConflict) {
 		return ContentRevision{}, fmt.Errorf("%w: %v", ErrRevisionConflict, e)
@@ -283,6 +296,9 @@ func canonicalContentPayload(kind string, raw []byte) ([]byte, error) {
 	if !ok {
 		return nil, ErrInvalidArgument
 	}
+	if !jsonWithinBounds(v, 0) {
+		return nil, ErrInvalidArgument
+	}
 	for k := range m {
 		if !contentFields[kind][k] {
 			return nil, fmt.Errorf("%w: unknown content field %s", ErrInvalidArgument, k)
@@ -293,6 +309,35 @@ func canonicalContentPayload(kind string, raw []byte) ([]byte, error) {
 		return nil, ErrInvalidArgument
 	}
 	return b, nil
+}
+
+func jsonWithinBounds(v any, depth int) bool {
+	if depth > 16 {
+		return false
+	}
+	switch x := v.(type) {
+	case map[string]any:
+		if len(x) > 128 {
+			return false
+		}
+		for k, value := range x {
+			if len(k) > 256 || !jsonWithinBounds(value, depth+1) {
+				return false
+			}
+		}
+	case []any:
+		if len(x) > 2048 {
+			return false
+		}
+		for _, value := range x {
+			if !jsonWithinBounds(value, depth+1) {
+				return false
+			}
+		}
+	case string:
+		return len(x) <= 4096
+	}
+	return true
 }
 
 func validateContentSemantics(kind string, raw []byte) []ValidationIssue {
@@ -331,30 +376,48 @@ func isBlocking(x []ValidationIssue) bool {
 
 // Quest domain DTOs.
 type QuestChapter struct {
-	ID, Title, Description, CoverColor string
-	Position                           int `json:"position"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	CoverColor  string `json:"coverColor"`
+	Position    int    `json:"position"`
 }
 type QuestNode struct {
-	ID, ChapterID, Title, Description, Icon string
-	X, Y                                    float64
-	Prerequisites, Rewards, ModRefs         []any
-	Position                                int `json:"position"`
+	ID            string  `json:"id"`
+	ChapterID     string  `json:"chapterId"`
+	Title         string  `json:"title"`
+	Description   string  `json:"description"`
+	Icon          string  `json:"icon"`
+	X             float64 `json:"x"`
+	Y             float64 `json:"y"`
+	Prerequisites []any   `json:"prerequisites"`
+	Rewards       []any   `json:"rewards"`
+	ModRefs       []any   `json:"modRefs"`
+	Position      int     `json:"position"`
 }
-type QuestEdge struct{ ID, FromNodeID, ToNodeID string }
+type QuestEdge struct {
+	ID         string `json:"id"`
+	FromNodeID string `json:"fromNodeId"`
+	ToNodeID   string `json:"toNodeId"`
+}
 type QuestDraft struct {
 	Chapters []QuestChapter `json:"chapters"`
 	Nodes    []QuestNode    `json:"nodes"`
 	Edges    []QuestEdge    `json:"edges"`
 }
 type QuestRevision struct {
-	ID, QuestBookID, State string
-	Revision               int
-	CreatedAt              string
-	Draft                  QuestDraft
+	ID          string     `json:"id"`
+	QuestBookID string     `json:"questBookId"`
+	State       string     `json:"state"`
+	Revision    int        `json:"revision"`
+	CreatedAt   string     `json:"createdAt"`
+	Draft       QuestDraft `json:"draft"`
 }
 type QuestBook struct {
-	ID, PackID, ActiveRevisionID string
-	Revision                     QuestRevision
+	ID               string        `json:"id"`
+	PackID           string        `json:"packId"`
+	ActiveRevisionID string        `json:"activeRevisionId,omitempty"`
+	Revision         QuestRevision `json:"revision"`
 }
 type QuestReward struct {
 	Kind       string `json:"kind"`
@@ -387,6 +450,9 @@ func (a *API) SaveQuestDraft(ctx context.Context, packID string, in QuestDraft, 
 		return QuestRevision{}, nil, e
 	}
 	for _, i := range issues {
+		if i.Code == "cross_pack_reference" {
+			return QuestRevision{}, issues, ErrCrossPackReference
+		}
 		if i.Severity == "error" && (i.Code == "duplicate_id" || i.Code == "duplicate_position" || i.Code == "missing_chapter" || i.Code == "missing_node" || i.Code == "self_edge" || i.Code == "invalid_reward" || i.Code == "cross_pack_reference") {
 			return QuestRevision{}, issues, ErrInvalidArgument
 		}
