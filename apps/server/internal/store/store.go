@@ -68,7 +68,30 @@ func Open(path string) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	// Integrity is checked on every startup, including when no migration ran.
+	// This prevents a previously-corrupted database from reaching HTTP listen.
+	if err := CheckIntegrity(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return db, nil
+}
+
+// CheckIntegrity runs SQLite quick_check and foreign_key_check on the current
+// database. It is intentionally exported for startup and integration tests.
+func CheckIntegrity(db *sql.DB) error {
+	if db == nil {
+		return errors.New("database is nil")
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin integrity check: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := checkIntegrity(tx); err != nil {
+		return err
+	}
+	return nil
 }
 
 func configure(db *sql.DB) error {

@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -79,11 +80,13 @@ func (systemClock) Now() time.Time { return time.Now() }
 // IDGenerator supplies IDs for task and event rows.
 type IDGenerator func() string
 
+var generatedIDSequence atomic.Uint64
+
 func randomID() string {
 	// The timestamp plus a process-local counter is sufficient for the durable
 	// primary key because SQLite uniqueness remains the final guard. The queue
 	// never exposes this format as an API contract.
-	return fmt.Sprintf("t-%d", time.Now().UnixNano())
+	return fmt.Sprintf("t-%d-%d", time.Now().UnixNano(), generatedIDSequence.Add(1))
 }
 
 // SubmitRequest describes a new durable task.
@@ -186,6 +189,14 @@ func (r *Registry) get(kind Kind) (Handler, bool) {
 	defer r.mu.RUnlock()
 	h, ok := r.handlers[kind]
 	return h, ok
+}
+
+// RegisterHandler adds a domain handler to this queue's registry.
+func (q *Queue) RegisterHandler(kind Kind, handler Handler) error {
+	if q == nil || q.registry == nil {
+		return ErrUnknownKind
+	}
+	return q.registry.Register(kind, handler)
 }
 
 // Queue is the durable task state machine.
