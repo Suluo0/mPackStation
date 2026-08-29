@@ -185,6 +185,21 @@ func TestP6QuestRejectsCycleOrCrossPackReference(t *testing.T) {
 		t.Fatalf("cycle apply=%v", err)
 	}
 	_ = r
+	isolated := questBase()
+	isolated.Edges = nil
+	_, isolatedIssues, err := a.SaveQuestDraft(ctx, packID, isolated, 1, "q-isolated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundOrphan := false
+	for _, i := range isolatedIssues {
+		if i.Code == "orphan_node" && i.Severity == "warning" {
+			foundOrphan = true
+		}
+	}
+	if !foundOrphan {
+		t.Fatalf("isolated issues=%#v", isolatedIssues)
+	}
 	other, err := a.CreatePack(ctx, CreatePackInput{Name: "Other", MCVersion: "1.20.1", Loader: "fabric", LoaderVersion: "0.15"}, "other-pack")
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +210,7 @@ func TestP6QuestRejectsCycleOrCrossPackReference(t *testing.T) {
 	}
 	cross := questBase()
 	cross.Nodes[0].ModRefs = []any{mod.ID}
-	_, crossIssues, err := a.SaveQuestDraft(ctx, packID, cross, 1, "q-cross")
+	_, crossIssues, err := a.SaveQuestDraft(ctx, packID, cross, 2, "q-cross")
 	if !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("cross-pack error=%v issues=%#v", err, crossIssues)
 	}
