@@ -59,6 +59,8 @@ func main() {
 	if err != nil { log.Fatalf("open task queue: %v", err) }
 	workerService := service.NewP7Service(db)
 	if err := workerService.RegisterTaskHandlersOnQueue(queue); err != nil { log.Fatalf("register task handlers: %v", err) }
+	importService := service.NewImportService(db)
+	if err := importService.RegisterTaskHandlerOnQueue(queue); err != nil { log.Fatalf("register import handler: %v", err) }
 	if _, err := queue.Recover(context.Background()); err != nil { log.Fatalf("recover tasks: %v", err) }
 	worker := task.NewWorker(queue, "server-worker")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
