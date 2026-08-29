@@ -32,7 +32,8 @@
 
 - 代码边界：service 不写 SQL，所有数据库操作集中在新增 `store/p6_repo.go`。
 - 适用门禁：Go 格式化、单测、vet、真实 SQLite FK/CHECK/UNIQUE、事务证据。
-- N/A：Provider、文件落盘和 HTTP 契约由 P4/P5/P7 负责；本阶段没有引入新依赖。
+- N/A：Provider、文件落盘和 P7 交付由其他阶段负责；HTTP 契约已纳入本阶段独立验收；
+  前端 zod adapter 仍由 web 契约验收负责；本阶段没有引入新依赖。
 - 独立 Luna 2026-08-29 执行：`.tools/go/bin/go.exe test ./... -count=1 -timeout=180s`
   通过；P6 service/store 测试通过。
 - 独立 HTTP 契约执行：`.tools/go/bin/go.exe test ./internal/httpapi -run '^TestP6HTTP'`
