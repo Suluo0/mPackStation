@@ -1,6 +1,6 @@
 # ISSUE-P6-CONTENT-QUEST
 
-状态：P6 service/repository 已实现；HTTP 接入待 P7 集成验收  
+状态：P6 service/repository 已实现；HTTP 接入待 P7 集成验收
 负责人：Sol｜P6 领域开发  
 独立验收：Luna｜P6 测试负责人
 
