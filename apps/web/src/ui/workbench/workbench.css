@@ -1,5 +1,24 @@
 /* Reusable Taster workbench primitives. Feature styles may add layout classes, but
    surface, type, shape and action treatments stay here. */
+:root {
+  --wb-space-1: 4px;
+  --wb-space-2: 8px;
+  --wb-space-3: 12px;
+  --wb-space-4: 16px;
+  --wb-space-5: 24px;
+  --wb-space-6: 32px;
+  --wb-space-7: 48px;
+  --wb-page-gutter: 24px;
+  --wb-section-gap: var(--wb-space-5);
+  --wb-panel-padding: var(--wb-space-5);
+  --wb-control-radius: 9px;
+  --wb-display-size: 36px;
+  --wb-display-line: 44px;
+  --wb-display-weight: 750;
+  --wb-display-tracking: -0.02em;
+  --wb-display-block-margin: var(--wb-space-4);
+}
+.wb-display { margin: var(--wb-display-block-margin) 0; color: var(--mc-text); font-size: var(--wb-display-size); font-weight: var(--wb-display-weight); line-height: var(--wb-display-line); letter-spacing: var(--wb-display-tracking); }
 .wb-card { background: var(--mc-fill); border: 1px solid var(--mc-line); border-radius: var(--mc-radius-lg); box-shadow: var(--mc-shadow); }
 .wb-title { margin: 0; color: var(--mc-text); font-size: 16px; font-weight: 700; line-height: 1.35; letter-spacing: -.01em; }
 .wb-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mc-sp); margin-bottom: var(--mc-sp); }

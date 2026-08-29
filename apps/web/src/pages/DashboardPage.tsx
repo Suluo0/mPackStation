@@ -3,9 +3,9 @@ import {App, Button, Skeleton} from 'antd';
 import {PlusOutlined, ImportOutlined} from '@ant-design/icons';
 import {useNavigate} from 'react-router-dom';
 import {
-  fetchActivities, fetchDashboard, fetchHealth, fetchOnboarding, fetchStatus, fetchTasks,
+  fetchActivities, fetchDashboard, fetchHealth, fetchStatus, fetchTasks,
 } from '../features/dashboard/api';
-import type {DashboardActivity, DashboardData, DashboardTask, Onboarding, SystemHealth, SystemStatus} from '../features/dashboard/types';
+import type {DashboardActivity, DashboardData, DashboardTask, SystemHealth, SystemStatus} from '../features/dashboard/types';
 import {EnvHealthBanner} from '../features/dashboard/EnvHealthBanner';
 import {OnboardingView} from '../features/dashboard/OnboardingView';
 import {ContinueCard} from '../features/dashboard/ContinueCard';
@@ -26,7 +26,6 @@ export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
   const [activities, setActivities] = useState<DashboardActivity[] | null>(null);
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [status, setStatus] = useState<SystemStatus | null>(null);
-  const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
@@ -43,7 +42,6 @@ export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
     loadHealth();
     void fetchActivities().then(setActivities).catch(() => setActivities([]));
     void fetchStatus().then(setStatus).catch(() => setStatus(null));
-    void fetchOnboarding().then(setOnboarding).catch(() => setOnboarding(null));
     void fetchTasks().then(setTasks).catch(() => setTasks([]));
   }, [loadDashboard, loadHealth]);
 
@@ -103,19 +101,16 @@ export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
   const visiblePacks = forceEmpty ? [] : dashboard.packs;
   const isEmpty = visiblePacks.length === 0;
   const lastEdited = visiblePacks.find(p => p.id === dashboard.lastEditedPackId) ?? visiblePacks[0];
-  const visibleOnboarding = forceEmpty ? {steps: {curseforgeKey: false, firstPack: false, firstMod: false}} : onboarding;
 
   return (
     <div className="db-page">
-      {health && <EnvHealthBanner health={health} onRetry={loadHealth} suppressKeys={isEmpty ? ['cf-key'] : []}/>}
+      {health && <EnvHealthBanner health={health} onRetry={loadHealth} suppressKeys={isEmpty ? ['cf-key'] : []}/>} 
 
       {isEmpty ? (
         <OnboardingView
-          onboarding={visibleOnboarding}
           onCreate={() => setCreateOpen(true)}
           onImport={() => setImportOpen(true)}
           onDemo={() => message.info('示例包将在后续版本提供')}
-          onSettings={() => navigate('/settings')}
         />
       ) : (
         <>

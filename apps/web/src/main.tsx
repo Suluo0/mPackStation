@@ -1,22 +1,13 @@
 import {ConfigProvider, App as AntApp} from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import {createRoot} from 'react-dom/client';
-import {BrowserRouter, Navigate, Route, Routes, useParams} from 'react-router-dom';
-import {AppShell, ModulePlaceholder} from './app/AppShell';
+import {BrowserRouter, Navigate, Route, Routes} from 'react-router-dom';
+import {AppShell} from './app/AppShell';
 import {DashboardPage} from './pages/DashboardPage';
+import {ContentEditorPage, DependenciesPage, PackModsPage, PackWorkbenchPage, PacksPage, PublishPage, QuestEditorPage, SettingsPage} from './pages/PackPages';
 import './features/dashboard/dashboard.css';
 import './ui/workbench/workbench.css';
-
-/* 整合包工作台占位：页面将在独立里程碑按提示词文档实现，此处仅保证导航可达。 */
-function PackWorkbenchPlaceholder() {
-  const {id} = useParams();
-  return (
-    <div className="db-card" style={{padding: 24}}>
-      <p className="db-h2">整合包工作台（{id}）</p>
-      <p className="db-muted" style={{marginTop: 8}}>该页面将在独立里程碑实现。</p>
-    </div>
-  );
-}
+import './pages/pack-pages.css';
 
 createRoot(document.getElementById('root')!).render(
   <ConfigProvider locale={zhCN} theme={{
@@ -41,13 +32,18 @@ createRoot(document.getElementById('root')!).render(
           <Route element={<AppShell/>}>
             <Route path="/" element={<DashboardPage/>}/>
             <Route path="/welcome" element={<DashboardPage forceEmpty/>}/>
-            <Route path="/packs" element={<ModulePlaceholder title="整合包"/>}/>
-            <Route path="/packs/:id" element={<PackWorkbenchPlaceholder/>}/>
-            <Route path="/mods" element={<ModulePlaceholder title="模组搜索"/>}/>
-            <Route path="/content" element={<ModulePlaceholder title="内容编辑"/>}/>
-            <Route path="/quests" element={<ModulePlaceholder title="任务书"/>}/>
-            <Route path="/publish" element={<ModulePlaceholder title="打包与发布"/>}/>
-            <Route path="/settings" element={<ModulePlaceholder title="设置"/>}/>
+            <Route path="/packs" element={<PacksPage/>}/>
+            <Route path="/packs/:id" element={<PackWorkbenchPage/>}/>
+            <Route path="/packs/:id/mods" element={<PackModsPage/>}/>
+            <Route path="/packs/:id/dependencies" element={<DependenciesPage/>}/>
+            <Route path="/packs/:id/content" element={<ContentEditorPage/>}/>
+            <Route path="/packs/:id/quests" element={<QuestEditorPage/>}/>
+            <Route path="/packs/:id/publish" element={<PublishPage/>}/>
+            <Route path="/settings" element={<SettingsPage/>}/>
+            <Route path="/mods" element={<Navigate replace to="/packs/tech/mods"/>}/>
+            <Route path="/content" element={<Navigate replace to="/packs/tech/content"/>}/>
+            <Route path="/quests" element={<Navigate replace to="/packs/tech/quests"/>}/>
+            <Route path="/publish" element={<Navigate replace to="/packs/tech/publish"/>}/>
             <Route path="*" element={<Navigate replace to="/"/>}/>
           </Route>
         </Routes>

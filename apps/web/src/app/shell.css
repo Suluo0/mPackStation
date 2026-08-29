@@ -26,10 +26,16 @@
 .app-brand-name { font-size: 21px; font-weight: 800; letter-spacing: -.045em; color: var(--mc-text); white-space: nowrap; }
 .app-brand-sub { display: flex; align-items: center; gap: 8px; color: var(--mc-text-2); font-family: ui-sans-serif, Arial, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .13em; line-height: 1; }
 .app-brand-sub i { display: block; width: 27px; height: 1px; background: var(--mc-text-2); opacity: .85; }
-.app-workbench-settings { display: flex; align-items: center; gap: 10px; margin: 8px 14px 10px; padding: 12px 13px; border: 1px solid var(--mc-line); border-radius: 10px; color: var(--mc-text-2); background: color-mix(in srgb, var(--mc-bg) 76%, var(--mc-fill)); font-size: 13px; font-weight: 600; }
+.app-workbench-settings { display: flex; align-items: center; gap: 10px; margin: 8px 14px 10px; padding: 12px 13px; border: 1px solid var(--mc-line); border-radius: 10px; color: var(--mc-text-2); background: color-mix(in srgb, var(--mc-bg) 76%, var(--mc-fill)); font-size: 13px; font-weight: 600; text-decoration: none; transition: border-color var(--mc-dur) var(--mc-ease), color var(--mc-dur) var(--mc-ease), background var(--mc-dur) var(--mc-ease); }
+.app-workbench-settings:hover { border-color: var(--mc-primary); color: var(--mc-primary); background: var(--mc-hover); }
 .app-workbench-settings svg { color: var(--mc-primary); font-size: 16px; }
 
-.app-nav { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: var(--mc-sp-xs) var(--mc-sp-sm); overflow-y: auto; }
+.app-nav { flex: 1; display: flex; flex-direction: column; gap: 18px; padding: var(--mc-sp-xs) var(--mc-sp-sm); overflow-y: auto; }
+.app-nav-group { display: flex; flex-direction: column; gap: 2px; }
+.app-nav-caption { padding: 0 12px 7px; color: var(--mc-muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.app-nav-pack-group { padding-top: 14px; border-top: 1px solid var(--mc-line); }
+.app-nav-pack-name { display: flex; align-items: center; gap: 9px; padding: 0 12px 8px; color: var(--mc-text); font-size: 12px; font-weight: 700; }
+.app-nav-pack-dot { width: 8px; height: 8px; flex: none; border-radius: var(--mc-radius-pill); background: var(--mc-primary); box-shadow: 0 0 0 4px var(--mc-primary-bg); }
 .app-nav-item {
   display: flex; align-items: center; gap: var(--mc-sp-sm);
   padding: 10px var(--mc-sp-sm); border-radius: var(--mc-radius-pill);
@@ -51,8 +57,12 @@
 .app-sider-fold:hover { background: var(--mc-hover); color: var(--mc-primary); }
 
 .app-shell-collapsed .app-nav-label,
-.app-shell-collapsed .app-brand-copy { display: none; }
+.app-shell-collapsed .app-brand-copy,
+.app-shell-collapsed .app-nav-caption,
+.app-shell-collapsed .app-nav-pack-name { display: none; }
 .app-shell-collapsed .app-brand-logo { display: grid; }
+.app-shell-collapsed .app-workbench-settings { justify-content: center; margin-inline: 12px; }
+.app-shell-collapsed .app-workbench-settings span { display: none; }
 .app-shell-collapsed .app-nav-item,
 .app-shell-collapsed .app-sider-fold { justify-content: center; }
 
@@ -69,3 +79,13 @@
 @media (max-width: 820px) { .app-statusbar { flex-wrap: wrap; gap: 12px; padding: 15px; }.app-status-item { border-right: 0; padding: 0; min-width: 45%; }.app-status-actions { width: 100%; margin-left: 0; } }
 @media (max-width: 820px) { .app-content { padding-bottom: 180px; } }
 @media (max-width: 820px) { .app-statusbar { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 0; min-height: 166px; padding: 12px 16px; }.app-status-item { border-right: 0; padding: 0 8px; }.app-status-item::after { display:none; }.app-status-index { padding-top: 0; }.app-status-actions { grid-column: 1 / -1; justify-content: flex-start; padding-left: 0; }.app-status-actions button { flex: 1; } }
+@media (max-width: 820px) {
+  .app-sider { width: var(--mc-sider-w-fold); }
+  .app-body { margin-left: var(--mc-sider-w-fold); }
+  .app-brand-copy, .app-nav-label, .app-nav-caption, .app-nav-pack-name, .app-workbench-settings span { display: none; }
+  .app-brand-logo { display: grid; }
+  .app-brand { min-height: 78px; padding: 12px 8px; }
+  .app-workbench-settings { justify-content: center; margin-inline: 12px; }
+  .app-nav-item, .app-sider-fold { justify-content: center; padding-inline: 8px; }
+  .app-nav-pack-group { padding-top: 10px; }
+}
