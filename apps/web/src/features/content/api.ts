@@ -1,0 +1,11 @@
+import {z} from 'zod';
+import {get, post, put} from '../../api/http';
+export const contentDocumentSchema=z.object({id:z.string(),packId:z.string(),kind:z.string(),slug:z.string(),title:z.string(),activeRevisionId:z.string().optional(),createdAt:z.string().optional(),updatedAt:z.string().optional()});
+export const revisionSchema=z.object({id:z.string(),documentId:z.string(),state:z.string(),sourceRevisionId:z.string().optional(),revision:z.number().int(),payload:z.unknown(),createdAt:z.string()});
+export const validationSchema=z.object({id:z.string(),revisionId:z.string(),status:z.string(),issues:z.array(z.object({code:z.string(),severity:z.string(),path:z.string(),message:z.string(),details:z.record(z.string(),z.unknown()).optional()})),affectedMods:z.array(z.string()),createdAt:z.string()});
+export const listContent=(packId:string,kind?:string)=>get(`/api/packs/${encodeURIComponent(packId)}/content${kind?`?kind=${encodeURIComponent(kind)}`:''}`,z.object({items:z.array(contentDocumentSchema),next_cursor:z.string().nullable().optional(),total:z.number().int().optional()})).then(v=>v.items);
+export const getContent=(packId:string,documentId:string)=>get(`/api/packs/${encodeURIComponent(packId)}/content/${encodeURIComponent(documentId)}`,z.object({document:contentDocumentSchema,revision:revisionSchema}));
+export const saveContentDraft=(packId:string,documentId:string,ifMatch:number,payload:unknown)=>put(`/api/packs/${encodeURIComponent(packId)}/content/${encodeURIComponent(documentId)}/draft`,{payload},revisionSchema,{headers:{'If-Match':`"${ifMatch}"`}});
+export const validateContent=(packId:string,documentId:string,revisionId?:string)=>post(`/api/packs/${encodeURIComponent(packId)}/content/${encodeURIComponent(documentId)}/validate${revisionId?`?revisionId=${encodeURIComponent(revisionId)}`:''}`,{},validationSchema);
+export const applyContent=(packId:string,documentId:string,revisionId?:string)=>post(`/api/packs/${encodeURIComponent(packId)}/content/${encodeURIComponent(documentId)}/apply${revisionId?`?revisionId=${encodeURIComponent(revisionId)}`:''}`,{},z.object({status:z.string()}));
+export const rollbackContent=(packId:string,documentId:string,revisionId:string)=>post(`/api/packs/${encodeURIComponent(packId)}/content/${encodeURIComponent(documentId)}/rollback`,{revisionId},revisionSchema);
