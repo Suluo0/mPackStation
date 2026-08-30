@@ -11,6 +11,12 @@ export const conflictSchema = z.object({id:z.string(), packId:z.string(), finger
 export const packHealthSchema = z.object({packId:z.string(), mods:z.number().int(), installed:z.number().int(), pendingErrors:z.number().int(), pendingWarnings:z.number().int(), healthy:z.boolean()});
 export const projectSchema = z.object({id:z.string(), slug:z.string().optional(), name:z.string(), summary:z.string().optional(), iconUrl:z.string().optional(), downloads:z.number().optional()});
 export const modSearchSchema = z.object({items:z.array(projectSchema), nextCursor:z.string().optional(), total:z.number().int()});
+export type Project = z.infer<typeof projectSchema>;
+export const modVersionSchema = z.object({id:z.string(), projectId:z.string().optional(), name:z.string().optional(), versionNumber:z.string().optional(), gameVersions:z.array(z.string()).optional(), loaders:z.array(z.string()).optional()});
+export type ModVersion = z.infer<typeof modVersionSchema>;
+export const searchAllItemSchema = projectSchema.extend({provider:z.string()});
+export type SearchAllItem = z.infer<typeof searchAllItemSchema>;
+export const modSearchAllSchema = z.object({items:z.array(searchAllItemSchema), errors:z.record(z.string(), z.string()).optional(), total:z.number().int()});
 
 export const listPacks = () => get('/api/packs', page(packSchema)).then(v => v.items);
 export const getPack = (id:string) => get(`/api/packs/${encodeURIComponent(id)}`, packSchema);
@@ -20,6 +26,12 @@ export const listMods = (packId:string) => get(`/api/packs/${encodeURIComponent(
 export const searchMods = (packId:string, query:Record<string,string|number|undefined>) => {
   const qs = new URLSearchParams(); Object.entries(query).forEach(([k,v]) => v !== undefined && qs.set(k, String(v)));
   return get(`/api/packs/${encodeURIComponent(packId)}/mod-search?${qs}`, modSearchSchema);
+};
+export const listModVersions = (packId:string, provider:string, projectId:string) =>
+  get(`/api/packs/${encodeURIComponent(packId)}/mod-versions?provider=${encodeURIComponent(provider)}&projectId=${encodeURIComponent(projectId)}`, z.object({items:z.array(modVersionSchema)})).then(v => v.items);
+export const searchAllMods = (packId:string, query:Record<string,string|number|undefined>) => {
+  const qs = new URLSearchParams(); Object.entries(query).forEach(([k,v]) => v !== undefined && qs.set(k, String(v)));
+  return get(`/api/packs/${encodeURIComponent(packId)}/mod-search?${qs}`, modSearchAllSchema);
 };
 export const addMod = (packId:string, body:unknown) => post(`/api/packs/${encodeURIComponent(packId)}/mods`, body, modSchema);
 export const updateMod = (packId:string, modId:string, body:unknown) => patch(`/api/packs/${encodeURIComponent(packId)}/mods/${encodeURIComponent(modId)}`, body, modSchema);

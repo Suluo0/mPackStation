@@ -9,23 +9,23 @@ import {
 import {useNavigate, useParams} from 'react-router-dom';
 import {WorkbenchButton, WorkbenchCard, WorkbenchSectionHeader} from '../ui/workbench/Workbench';
 import './pack-pages.css';
-import {addMod, getPack, listConflicts, listLocks, listMods, listPacks, removeMod, resolvePack, searchMods, updateMod} from '../features/pack/api';
-import type {Pack, Mod} from '../features/pack/api';
+import {addMod, getPack, listConflicts, listLocks, listMods, listModVersions, listPacks, removeMod, resolvePack, searchAllMods, updateMod} from '../features/pack/api';
+import type {ModVersion, Pack, Mod, SearchAllItem} from '../features/pack/api';
 import {listContent, validateContent, applyContent} from '../features/content/api';
 import {getQuest, validateQuest, applyQuest} from '../features/content/quests';
 import {listDeliveryChecks, runDeliveryChecks, listVersions, listArtifacts, buildPack} from '../features/release/api';
 
-const packName = (id?: string) => id === 'demo' ? '星港远征' : '科技魔法';
-
 function PackContext({active = '概览', action}: {active?: string; action?: React.ReactNode}) {
   const {id} = useParams();
   const navigate = useNavigate();
-  const name = packName(id);
+  const [pack, setPack] = useState<Pack | null>(null);
+  useEffect(() => { if (id) void getPack(id).then(setPack).catch(() => setPack(null)); }, [id]);
+  const name = pack?.name ?? '整合包';
   return <header className="pack-context">
     <button className="pack-context-back" onClick={() => navigate('/packs')} aria-label="返回整合包列表">整合包</button>
     <span className="pack-context-sep">/</span>
     <div className="pack-context-cover">{name.slice(0, 1)}</div>
-    <div className="pack-context-title"><strong>{name}</strong><span>MC 1.20.1 · NeoForge · v1.2.0</span></div>
+    <div className="pack-context-title"><strong>{name}</strong><span>{pack ? `MC ${pack.mcVersion} · ${pack.loader} · v${pack.packVersion}` : '加载中…'}</span></div>
     <Tag color="green">已保存</Tag>
     <div className="pack-context-tabs">{active}</div>
     <div className="pack-context-action">{action}</div>
@@ -63,7 +63,119 @@ function ModRow({mod, onAction}: {mod: typeof mods[number]; onAction: () => void
 
 function PackHealthRail({id}: {id?: string}) { const navigate = useNavigate(); return <aside className="pack-health-rail"><div className="health-kicker">PACK HEALTH</div><h2>包健康</h2><div className="health-score"><strong>86</strong><span>/ 100</span><Tag color="gold">需要关注</Tag></div><div className="health-list"><div><CheckCircleFilled className="text-success"/><span>依赖已锁定</span><b>142</b></div><div><WarningFilled className="text-danger"/><span>待解决冲突</span><b className="text-danger">3</b></div><div><InfoCircleOutlined className="text-info"/><span>可更新模组</span><b>5</b></div><div><CheckOutlined className="text-success"/><span>内容编辑</span><b>26</b></div></div><Divider/><Button block onClick={() => navigate(`/packs/${id}/dependencies`)}>处理冲突 <ArrowRightOutlined/></Button></aside>; }
 
-export function PackModsPage() { const {id} = useParams(); const {message} = App.useApp(); const [query, setQuery] = useState(''); const [items,setItems]=useState<Mod[]>([]); const [error,setError]=useState(''); const refresh=()=>id&&listMods(id).then(setItems).catch(e=>setError(e instanceof Error?e.message:String(e))); useEffect(()=>{void refresh();},[id]); const runSearch=()=>{if(!id)return; void searchMods(id,{provider:'curseforge',query,limit:20}).then(v=>setItems(v.items.map(p=>({id:p.id,packId:id,source:'curseforge',projectId:p.id,displayName:p.name,fileName:'',status:'available',required:true,addedAt:'',updatedAt:''})))).catch(e=>setError(e instanceof Error?e.message:String(e)));}; const filtered = items.filter(m => `${m.displayName}${m.source}`.toLowerCase().includes(query.toLowerCase())); const mutate=async(fn:()=>Promise<unknown>,ok:string)=>{try{await fn();message.success(ok);void refresh();}catch(e){message.error(e instanceof Error?e.message:String(e));}}; const action=(m:Mod)=>{if(!id)return; if(m.status==='available'){if(!m.versionId){message.error('该搜索结果尚未选择版本，无法添加');return;} void mutate(()=>addMod(id,{provider:m.source,projectId:m.projectId,versionId:m.versionId,required:true}),'已提交添加'); return;} void mutate(()=>m.status==='disabled'?updateMod(id,m.id,{status:'enabled'}):removeMod(id,m.id),m.status==='disabled'?'已启用':'已移除');}; return <div className="workspace-page"><PackContext active="模组"/><div className="page-heading compact"><div><span className="eyebrow">MOD CATALOG / {packName(id).toUpperCase()}</span><h1>模组</h1><p>搜索结果会自动按当前包的 MC 版本与加载器筛选。</p></div></div><WorkbenchCard className="catalog-card"><div className="catalog-toolbar"><Input size="large" allowClear autoFocus prefix={<SearchOutlined/>} placeholder="搜索模组名、作者或 Mod ID" value={query} onChange={e => setQuery(e.target.value)} onPressEnter={runSearch}/><Button icon={<ReloadOutlined/>} onClick={runSearch}>重新检索</Button></div>{error&&<div className="empty-inline">加载失败：{error}</div>}<div className="catalog-tabs"><button className="active">模组 <span>{filtered.length}</span></button></div>{filtered.map(m => <ModRow key={m.id} mod={{name:m.displayName,author:m.source,version:m.versionId||'—',downloads:'',status:m.status,color:'blue',desc:m.fileName}} onAction={()=>action(m)}/>)}{!error&&!filtered.length&&<div className="empty-inline">没有找到匹配结果。</div>}</WorkbenchCard></div>; }
+function fmtDownloads(n?: number) { if (!n) return '0'; if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'; if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'; return String(n); }
+
+export function PackModsPage() {
+  const {id} = useParams();
+  const {message} = App.useApp();
+  const [pack, setPack] = useState<Pack | null>(null);
+  const [installed, setInstalled] = useState<Mod[]>([]);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<SearchAllItem[]>([]);
+  const [searchErrors, setSearchErrors] = useState<Record<string, string>>({});
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [versions, setVersions] = useState<Record<string, ModVersion[]>>({});
+  const [choice, setChoice] = useState<Record<string, string>>({});
+  const [error, setError] = useState('');
+
+  const refresh = () => { if (id) void listMods(id).then(setInstalled).catch(e => setError(e instanceof Error ? e.message : String(e))); };
+  useEffect(() => { if (!id) return; void getPack(id).then(setPack).catch(() => undefined); refresh(); }, [id]);
+
+  const compatible = (v: ModVersion) => {
+    if (!pack) return true;
+    const mcOk = !v.gameVersions?.length || v.gameVersions.includes(pack.mcVersion);
+    const ldOk = !v.loaders?.length || v.loaders.some(l => l.toLowerCase() === pack.loader.toLowerCase());
+    return mcOk && ldOk;
+  };
+
+  const keyOf = (p: SearchAllItem) => `${p.provider}:${p.id}`;
+
+  const runSearch = () => {
+    if (!id || !query.trim()) return;
+    setSearching(true); setError('');
+    searchAllMods(id, {query: query.trim(), limit: 20, mcVersion: pack?.mcVersion, loader: pack?.loader})
+      .then(v => { setResults(v.items); setSearchErrors(v.errors ?? {}); setSearched(true); setVersions({}); setChoice({}); })
+      .catch(e => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setSearching(false));
+  };
+
+  const loadVersions = (p: SearchAllItem) => {
+    if (!id || versions[keyOf(p)]) return;
+    listModVersions(id, p.provider, p.id).then(vs => {
+      setVersions(prev => ({...prev, [keyOf(p)]: vs}));
+      const first = vs.find(compatible) ?? vs[0];
+      if (first) setChoice(prev => ({...prev, [keyOf(p)]: first.id}));
+    }).catch(e => message.error(e instanceof Error ? e.message : String(e)));
+  };
+
+  const add = (p: SearchAllItem) => {
+    if (!id) return;
+    const versionId = choice[keyOf(p)];
+    if (!versionId) { message.error('请先选择版本'); return; }
+    addMod(id, {provider: p.provider, projectId: p.id, versionId, required: true})
+      .then(() => { message.success('已添加到整合包'); refresh(); })
+      .catch(e => message.error(e instanceof Error ? e.message : String(e)));
+  };
+
+  const toggleInstalled = (m: Mod) => {
+    if (!id) return;
+    const op = m.status === 'disabled'
+      ? updateMod(id, m.id, {status: 'enabled'})
+      : removeMod(id, m.id);
+    op.then(() => { message.success(m.status === 'disabled' ? '已启用' : '已移除'); refresh(); })
+      .catch(e => message.error(e instanceof Error ? e.message : String(e)));
+  };
+
+  const errorText: Record<string, string> = {
+    not_configured: '未配置(设置 CURSEFORGE_API_KEY 后可用)',
+    rate_limited: '请求过快,稍后再试',
+    unauthorized: 'API key 无效',
+    unavailable: '平台暂时不可用',
+    not_found: '资源不存在',
+  };
+
+  return <div className="workspace-page">
+    <PackContext active="模组"/>
+    <div className="page-heading compact"><div><span className="eyebrow">MOD CATALOG</span><h1>模组</h1><p>按名称同时搜索 Modrinth 和 CurseForge,版本按当前包 MC {pack?.mcVersion ?? '…'} · {pack?.loader ?? '…'} 过滤。</p></div></div>
+    <WorkbenchCard className="catalog-card">
+      <div className="catalog-toolbar">
+        <Input size="large" allowClear autoFocus prefix={<SearchOutlined/>} placeholder="输入模组名称(模糊搜索,双平台并行)" value={query} onChange={e => setQuery(e.target.value)} onPressEnter={runSearch}/>
+        <Button icon={<ReloadOutlined/>} loading={searching} onClick={runSearch}>搜索</Button>
+      </div>
+      {error && <div className="empty-inline">加载失败:{error}</div>}
+      {Object.entries(searchErrors).map(([p, code]) =>
+        <div className="empty-inline" key={p}>{p === 'curseforge' ? 'CurseForge' : 'Modrinth'}:{errorText[code] ?? code}</div>)}
+      {searched && <div className="result-note"><span><strong>{results.length}</strong> 个搜索结果(按下载量排序)</span></div>}
+      {results.map(p => {
+        const k = keyOf(p);
+        const vs = versions[k];
+        return <div className="mod-row" key={k}>
+          <span className="mod-symbol"><CodeOutlined/></span>
+          <div className="mod-row-main"><strong>{p.name}</strong><span>{fmtDownloads(p.downloads)} 下载</span><small>{p.summary}</small></div>
+          <Tag color={p.provider === 'modrinth' ? 'green' : 'orange'}>{p.provider === 'modrinth' ? 'Modrinth' : 'CurseForge'}</Tag>
+          <Select size="small" style={{minWidth: 240}} placeholder="选择版本" value={choice[k]}
+            onFocus={() => loadVersions(p)}
+            onChange={v => setChoice(prev => ({...prev, [k]: v}))}
+            options={(vs ?? []).map(v => ({value: v.id, label: `${v.versionNumber ?? v.name ?? v.id}${compatible(v) ? '' : '(可能不兼容)'}`}))}
+            notFoundContent={vs ? '无匹配版本' : '点击加载版本'}/>
+          <Button size="small" type="primary" disabled={!choice[k]} onClick={() => add(p)}>添加</Button>
+        </div>;
+      })}
+      {searched && !results.length && !error && <div className="empty-inline">没有搜索结果。</div>}
+    </WorkbenchCard>
+    <WorkbenchCard className="catalog-card">
+      <WorkbenchSectionHeader title={`已安装(${installed.length})`}/>
+      {installed.map(m => <div className="mod-row" key={m.id}>
+        <span className="mod-symbol"><CodeOutlined/></span>
+        <div className="mod-row-main"><strong>{m.displayName}</strong><span>{m.source} · {m.versionId || '—'}</span><small>{m.fileName}</small></div>
+        <Tag color={m.status === 'disabled' ? 'gold' : 'green'}>{m.status}</Tag>
+        <Button size="small" danger={m.status !== 'disabled'} onClick={() => toggleInstalled(m)}>{m.status === 'disabled' ? '启用' : '移除'}</Button>
+      </div>)}
+      {!installed.length && <div className="empty-inline">当前还没有模组。搜索并添加第一个。</div>}
+    </WorkbenchCard>
+  </div>;
+}
 
 export function DependenciesPage() { const {id} = useParams(); const {message} = App.useApp(); const [items,setItems]=useState<any[]>([]); const [locks,setLocks]=useState<any[]>([]); const [error,setError]=useState(''); useEffect(()=>{if(!id)return; void Promise.all([listConflicts(id),listLocks(id)]).then(([c,l])=>{setItems(c);setLocks(l)}).catch(e=>setError(e instanceof Error?e.message:String(e)));},[id]); const resolve=()=>{if(!id)return; void resolvePack(id).then(()=>message.success('依赖已重新解析')).catch(e=>setError(e instanceof Error?e.message:String(e)));}; return <div className="workspace-page"><PackContext active="依赖与冲突"/><div className="page-heading compact"><div><span className="eyebrow">DEPENDENCIES / RESOLUTION</span><h1>依赖与冲突</h1><p>把版本问题变成明确的选择，解决后再进入发布检查。</p></div><WorkbenchButton tone="primary" icon={<CheckOutlined/>} onClick={resolve}>重新解析依赖</WorkbenchButton></div>{error&&<div className="empty-inline">加载失败：{error}</div>}<div className="dependency-grid"><main><div className="resolution-summary"><div><span>锁定快照</span><strong className="text-success">{locks.length}</strong></div><div><span>待处理冲突</span><strong className="text-danger">{items.filter(c=>c.status!=='resolved').length}</strong></div></div><WorkbenchCard className="conflict-card"><WorkbenchSectionHeader title="待处理项" action={<Button type="text" icon={<ReloadOutlined/>} onClick={resolve}>重新检查</Button>}/>{items.map(c=><div className="conflict-row" key={c.id}><span className={`conflict-mark ${c.severity}`}><WarningFilled/></span><div><strong>{c.summary}</strong><Tag color={c.severity==='high'?'red':'gold'}>{c.kind}</Tag><p>{c.status}</p></div></div>)}{!error&&!items.length&&<div className="resolved-state"><CheckCircleFilled/><strong>没有冲突</strong></div>}</WorkbenchCard></main></div></div>; }
 

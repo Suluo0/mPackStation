@@ -7,6 +7,7 @@ import {
 } from '@ant-design/icons';
 import './shell.css';
 import {fetchOnboarding} from '../features/dashboard/api';
+import {listPacks} from '../features/pack/api';
 import type {Onboarding} from '../features/dashboard/types';
 import {OnboardingChecklist} from '../features/dashboard/OnboardingChecklist';
 
@@ -34,7 +35,13 @@ export function AppShell() {
   const packMatch = location.pathname.match(/^\/packs\/([^/]+)/);
   const packId = packMatch?.[1];
   const inPack = Boolean(packId);
-  const activePackId = packId ?? 'tech';
+  /* 不在包页面时,侧栏包导航落到第一个真实整合包;没有包则去列表页。 */
+  const [firstPackId, setFirstPackId] = useState<string | null>(null);
+  useEffect(() => {
+    if (packId) return;
+    void listPacks().then(ps => setFirstPackId(ps[0]?.id ?? '')).catch(() => setFirstPackId(''));
+  }, [packId]);
+  const activePackId = packId ?? firstPackId ?? '';
   useEffect(() => { void fetchOnboarding().then(setOnboarding).catch(() => setOnboarding(null)); }, []);
   return (
     <div className={collapsed ? 'app-shell app-shell-collapsed' : 'app-shell'}>
@@ -64,8 +71,8 @@ export function AppShell() {
             <span className="app-nav-caption">{inPack ? '当前整合包' : '创作工具'}</span>
             <div className="app-nav-pack-name"><span className="app-nav-pack-dot" /> <span className="app-nav-label">包工作台</span></div>
             {packNav.map(item => {
-              const to = `/packs/${activePackId}${item.suffix}`;
-              return <NavLink key={to} to={to} end={item.end} title={item.label}
+              const to = activePackId ? `/packs/${activePackId}${item.suffix}` : '/packs';
+              return <NavLink key={item.suffix} to={to} end={item.end} title={item.label}
                 className={({isActive}) => (isActive ? 'app-nav-item app-nav-item-active' : 'app-nav-item')}>
                 <span className="app-nav-icon">{item.icon}</span>
                 <span className="app-nav-label">{item.label}</span>

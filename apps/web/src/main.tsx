@@ -1,13 +1,27 @@
 import {ConfigProvider, App as AntApp} from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import {useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {BrowserRouter, Navigate, Route, Routes} from 'react-router-dom';
 import {AppShell} from './app/AppShell';
 import {DashboardPage} from './pages/DashboardPage';
 import {ContentEditorPage, DependenciesPage, PackModsPage, PackWorkbenchPage, PacksPage, PublishPage, QuestEditorPage, SettingsPage} from './pages/PackPages';
+import {listPacks} from './features/pack/api';
 import './features/dashboard/dashboard.css';
 import './ui/workbench/workbench.css';
 import './pages/pack-pages.css';
+
+/* 无包上下文的入口路由(如侧栏直达 /mods)重定向到第一个真实整合包;
+   一个包都没有时回到包列表页引导创建,绝不跳转到不存在的假包。 */
+function DefaultPackRedirect({suffix}: {suffix: string}) {
+  const [to, setTo] = useState<string | null>(null);
+  useEffect(() => {
+    void listPacks()
+      .then(ps => setTo(ps[0] ? `/packs/${ps[0].id}${suffix}` : '/packs'))
+      .catch(() => setTo('/packs'));
+  }, [suffix]);
+  return to ? <Navigate replace to={to}/> : null;
+}
 
 createRoot(document.getElementById('root')!).render(
   <ConfigProvider locale={zhCN} theme={{
@@ -40,10 +54,10 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/packs/:id/quests" element={<QuestEditorPage/>}/>
             <Route path="/packs/:id/publish" element={<PublishPage/>}/>
             <Route path="/settings" element={<SettingsPage/>}/>
-            <Route path="/mods" element={<Navigate replace to="/packs/tech/mods"/>}/>
-            <Route path="/content" element={<Navigate replace to="/packs/tech/content"/>}/>
-            <Route path="/quests" element={<Navigate replace to="/packs/tech/quests"/>}/>
-            <Route path="/publish" element={<Navigate replace to="/packs/tech/publish"/>}/>
+            <Route path="/mods" element={<DefaultPackRedirect suffix="/mods"/>}/>
+            <Route path="/content" element={<DefaultPackRedirect suffix="/content"/>}/>
+            <Route path="/quests" element={<DefaultPackRedirect suffix="/quests"/>}/>
+            <Route path="/publish" element={<DefaultPackRedirect suffix="/publish"/>}/>
             <Route path="*" element={<Navigate replace to="/"/>}/>
           </Route>
         </Routes>
