@@ -16,10 +16,10 @@ function detectIssues(health: SystemHealth): Issue[] {
   if (!health.curseforgeKeyConfigured) {
     issues.push({key: 'cf-key', text: 'CurseForge API Key 未配置，将无法检索 CurseForge 模组。', action: {label: '去设置', to: '/settings'}});
   }
-  if (!health.modrinthReachable) {
+  if (health.modrinthStatus === 'unavailable') {
     issues.push({key: 'mr-down', text: 'Modrinth 当前无法连接，搜索将只返回 CurseForge 结果。', action: {label: '重试', to: ''}});
   }
-  if (!health.curseforgeReachable) {
+  if (health.curseforgeStatus === 'unavailable') {
     issues.push({key: 'cf-down', text: 'CurseForge 当前无法连接，搜索将只返回 Modrinth 结果。', action: {label: '重试', to: ''}});
   }
   if (!health.storageWritable) {

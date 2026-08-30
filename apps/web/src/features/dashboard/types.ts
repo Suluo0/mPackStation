@@ -60,6 +60,8 @@ export const systemHealthSchema = z.object({
   curseforgeKeyConfigured: z.boolean(),
   modrinthReachable: z.boolean(),
   curseforgeReachable: z.boolean(),
+  modrinthStatus: z.enum(['unknown', 'ok', 'unavailable']).optional(),
+  curseforgeStatus: z.enum(['unknown', 'ok', 'unavailable']).optional(),
   storageWritable: z.boolean(),
   storageFreeBytes: z.number(),
 });
@@ -68,6 +70,8 @@ export type SystemHealth = z.infer<typeof systemHealthSchema>;
 export const systemStatusSchema = z.object({
   modrinthReachable: z.boolean(),
   curseforgeReachable: z.boolean(),
+  modrinthStatus: z.enum(['unknown', 'ok', 'unavailable']).optional(),
+  curseforgeStatus: z.enum(['unknown', 'ok', 'unavailable']).optional(),
   cacheSizeBytes: z.number(),
   storageFreeBytes: z.number(),
 });

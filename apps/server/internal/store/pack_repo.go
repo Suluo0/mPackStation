@@ -98,6 +98,7 @@ type ActivityRecord struct {
 type SystemRecord struct {
 	CurseForgeKeyConfigured                bool
 	ModrinthReachable, CurseForgeReachable bool
+	ModrinthStatus, CurseForgeStatus       string
 	CacheSizeBytes, StorageFreeBytes       int64
 	StorageWritable                        bool
 }
@@ -348,6 +349,7 @@ func (r *Repository) System(ctx context.Context) (SystemRecord, error) {
 	}
 	s.CurseForgeReachable = cf == "true"
 	s.ModrinthReachable = mr == "true"
+	s.CurseForgeStatus, s.ModrinthStatus = cf, mr
 	if err := r.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(size_bytes),0) FROM remote_cache`).Scan(&s.CacheSizeBytes); err != nil {
 		return s, err
 	}

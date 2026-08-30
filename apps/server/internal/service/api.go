@@ -147,17 +147,21 @@ type Activity struct {
 	At     string  `json:"at"`
 }
 type SystemHealth struct {
-	CurseForgeKeyConfigured bool  `json:"curseforgeKeyConfigured"`
-	ModrinthReachable       bool  `json:"modrinthReachable"`
-	CurseForgeReachable     bool  `json:"curseforgeReachable"`
-	StorageWritable         bool  `json:"storageWritable"`
-	StorageFreeBytes        int64 `json:"storageFreeBytes"`
+	CurseForgeKeyConfigured bool   `json:"curseforgeKeyConfigured"`
+	ModrinthReachable       bool   `json:"modrinthReachable"`
+	CurseForgeReachable     bool   `json:"curseforgeReachable"`
+	ModrinthStatus          string `json:"modrinthStatus"`
+	CurseForgeStatus        string `json:"curseforgeStatus"`
+	StorageWritable         bool   `json:"storageWritable"`
+	StorageFreeBytes        int64  `json:"storageFreeBytes"`
 }
 type SystemStatus struct {
-	ModrinthReachable   bool  `json:"modrinthReachable"`
-	CurseForgeReachable bool  `json:"curseforgeReachable"`
-	CacheSizeBytes      int64 `json:"cacheSizeBytes"`
-	StorageFreeBytes    int64 `json:"storageFreeBytes"`
+	ModrinthReachable   bool   `json:"modrinthReachable"`
+	CurseForgeReachable bool   `json:"curseforgeReachable"`
+	ModrinthStatus      string `json:"modrinthStatus"`
+	CurseForgeStatus    string `json:"curseforgeStatus"`
+	CacheSizeBytes      int64  `json:"cacheSizeBytes"`
+	StorageFreeBytes    int64  `json:"storageFreeBytes"`
 }
 type Onboarding struct {
 	Steps struct {
@@ -497,7 +501,7 @@ func (a *API) SystemHealth(ctx context.Context) (SystemHealth, error) {
 		return SystemHealth{}, err
 	}
 	w, f := storageInfo(a.dataDir)
-	return SystemHealth{CurseForgeKeyConfigured: s.CurseForgeKeyConfigured, ModrinthReachable: s.ModrinthReachable, CurseForgeReachable: s.CurseForgeReachable, StorageWritable: w, StorageFreeBytes: f}, nil
+	return SystemHealth{CurseForgeKeyConfigured: s.CurseForgeKeyConfigured, ModrinthReachable: s.ModrinthReachable, CurseForgeReachable: s.CurseForgeReachable, ModrinthStatus: s.ModrinthStatus, CurseForgeStatus: s.CurseForgeStatus, StorageWritable: w, StorageFreeBytes: f}, nil
 }
 func (a *API) SystemStatus(ctx context.Context) (SystemStatus, error) {
 	if err := a.ready(); err != nil {
@@ -508,7 +512,7 @@ func (a *API) SystemStatus(ctx context.Context) (SystemStatus, error) {
 		return SystemStatus{}, err
 	}
 	_, f := storageInfo(a.dataDir)
-	return SystemStatus{ModrinthReachable: s.ModrinthReachable, CurseForgeReachable: s.CurseForgeReachable, CacheSizeBytes: s.CacheSizeBytes, StorageFreeBytes: f}, nil
+	return SystemStatus{ModrinthReachable: s.ModrinthReachable, CurseForgeReachable: s.CurseForgeReachable, ModrinthStatus: s.ModrinthStatus, CurseForgeStatus: s.CurseForgeStatus, CacheSizeBytes: s.CacheSizeBytes, StorageFreeBytes: f}, nil
 }
 func (a *API) Onboarding(ctx context.Context) (Onboarding, error) {
 	if err := a.ready(); err != nil {
