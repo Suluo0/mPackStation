@@ -18,9 +18,8 @@
     "remote": "https://github.com/Suluo0/mPackStation.git",
     "structure": "monorepo:apps/web(React19+TS+Vite7+antd6+zod4)、apps/server(Go+SQLite)、docs/、data/(运行期,gitignore)、.tools/(便携 Go 1.27.0 + 便携 Prism 11.0.3,gitignore)、.shots/(验收截图)",
     "branch": "fix/responsive-lowres",
-    "head": "a827e9b130b08762ce64cedc11cd35617c2f5d53",
-    "working_tree_clean": false,
-    "unpushed_commits": ["76fb818", "05aefa7", "6764228", "a827e9b"]
+    "head": "c52b82c180d845b4e426e75f5e0fb2b401c15c7d",
+    "working_tree_clean": true
   },
   "tasks": [
     {
@@ -32,7 +31,7 @@
       "verification": "passed",
       "acceptance": "pending",
       "documentation": "drafted",
-      "delivery": "committed",
+      "delivery": "pushed",
       "ownership": "shared",
       "scope": "project",
       "related_files": [
@@ -63,10 +62,13 @@
       "verification": "passed",
       "acceptance": "pending",
       "documentation": "missing",
-      "delivery": "working_tree",
+      "delivery": "pushed",
       "ownership": "session_owned",
       "scope": "project",
-      "related_files": ["scripts/prism-install.sh", "scripts/prism-install.bat"],
+      "related_files": [
+        "scripts/prism-install.sh",
+        "scripts/prism-install.bat"
+      ],
       "evidence": [
         {
           "type": "command",
@@ -86,7 +88,7 @@
       "verification": "passed",
       "acceptance": "pending",
       "documentation": "missing",
-      "delivery": "working_tree",
+      "delivery": "pushed",
       "ownership": "session_owned",
       "scope": "project",
       "related_files": [

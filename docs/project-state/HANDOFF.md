@@ -6,9 +6,8 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 
 ## 当前状态
 
-分支 `fix/responsive-lowres`,远端 `origin = github.com/Suluo0/mPackStation`。HEAD = `a827e9b`,**4 个提交未推送**(76fb818/05aefa7/6764228/a827e9b)。
+分支 `fix/responsive-lowres`,远端 `origin = github.com/Suluo0/mPackStation`。**HEAD = `c52b82c`,工作区干净,本地与远端同步**(本轮 8 个提交已全部推送:模组链路 4 个 + Prism/onboarding 2 个 + 存档 1 个 + docs/api 草稿 1 个)。
 
-工作区有 12 个未提交文件(已 e2e 验证):Prism 便携安装脚本(bat/sh)、上手四步前后端、tool_install 任务化安装、迁移 0003;另有 Codex 遗留的未跟踪 `docs/api/contract.md`。
 
 - 前端 dev:`http://127.0.0.1:5273/`;后端 dev:`http://127.0.0.1:18871/api/health`
 - 便携工具:`.tools/go`(1.27.0)、`.tools/prism`(11.0.3,调试启动器)、`.tools/prism-data`(便携数据目录)
@@ -110,9 +109,8 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 
 ## 下一步
 
-1. **落地未提交改动**:12 个文件按已提议拆两个 commit(①`feat(scripts): portable prism installer with cn mirror fallback`;②`feat: prism as task-based tool install + onboarding step 4 account login`),然后推送 4+2 个提交。
-2. **superpowers v6.3.0 已装好**;启动内核 Phase 0 待拍板:拍板后按 superpowers brainstorming 流程立项,先出设计文档,一行代码不先写。
-3. 模板预制开局(`idea-2bc71628`)与 mrpack-install 服务端冒烟(`idea-28f0096b`)待讨论拍板。
+1. **superpowers v6.3.0 已装好**;启动内核 Phase 0 待拍板:拍板后按 superpowers brainstorming 流程立项,先出设计文档,一行代码不先写。
+2. 模板预制开局(`idea-2bc71628`)与 mrpack-install 服务端冒烟(`idea-28f0096b`)待讨论拍板。
 
 ## 阻塞与已知问题
 
