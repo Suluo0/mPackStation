@@ -17,12 +17,12 @@ export function StatusActivity({status, activities}: {
         ) : (
           <>
             <div className="db-status-line">
-              <span className={status.modrinthReachable ? 'db-dot db-dot-ok' : 'db-dot db-dot-bad'}/>
-              <span className={status.modrinthReachable ? 'db-muted' : ''}>Modrinth {status.modrinthReachable ? '连接正常' : '连接失败'}</span>
+              <span className={status.modrinthStatus === 'unavailable' ? 'db-dot db-dot-bad' : 'db-dot db-dot-ok'}/>
+              <span className={status.modrinthStatus === 'unavailable' ? '' : 'db-muted'}>Modrinth {status.modrinthStatus === 'unavailable' ? '连接失败' : status.modrinthStatus === 'unknown' ? '尚未探测' : '连接正常'}</span>
             </div>
             <div className="db-status-line">
-              <span className={status.curseforgeReachable ? 'db-dot db-dot-ok' : 'db-dot db-dot-bad'}/>
-              <span className={status.curseforgeReachable ? 'db-muted' : ''}>CurseForge {status.curseforgeReachable ? '连接正常' : '连接失败'}</span>
+              <span className={status.curseforgeStatus === 'unavailable' ? 'db-dot db-dot-bad' : 'db-dot db-dot-ok'}/>
+              <span className={status.curseforgeStatus === 'unavailable' ? '' : 'db-muted'}>CurseForge {status.curseforgeStatus === 'unavailable' ? '连接失败' : status.curseforgeStatus === 'unknown' ? '尚未探测' : '连接正常'}</span>
             </div>
             <div className="db-status-line db-muted">数据缓存 <span className="db-status-num">{formatBytes(status.cacheSizeBytes)}</span></div>
             <div className="db-status-line db-muted">存储剩余 <span className="db-status-num">{formatBytes(status.storageFreeBytes)}</span></div>
