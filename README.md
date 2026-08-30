@@ -38,7 +38,7 @@ mPackStation 是一个本地的 Minecraft 整合包设计工作台：在网页�
 环境要求：Node.js 20+、Go 1.27+（仓库内 `.tools/` 可放便携版 Go，不入库）。
 
 ```bash
-# 前端（http://127.0.0.1:5273，?mock=empty 查看空态）
+# 前端（http://127.0.0.1:5273，/welcome 强制显示空态引导）
 cd apps/web
 npm install
 npx vite --port 5273
@@ -48,9 +48,22 @@ cd apps/server
 go run ./cmd/server -data ../../data
 ```
 
+一键启停：`scripts/dev.sh`（启动）与 `scripts/dev-stop.sh`（停止），同时提供 `.bat` 与 `.ps1` 版本。
+
 验证后端：`curl http://127.0.0.1:18871/api/health` 应返回 `{"status":"ready","db":true,...}`；存活探针为 `/api/healthz`，就绪探针为 `/api/readyz`。
 
 > 端口约定：前端 5273、后端 18871。本机 5173 / 18765 / 18766 可能被其他本地服务占用，请勿复用。
+
+### 写操作令牌
+
+非 GET 请求需要 `X-MPack-Token` 请求头，与服务端环境变量 `MPACK_TOKEN` 一致。未设置时后端回落到 dev 令牌 `test`（后端代码里标注为 P2 待办）。前端从构建期变量 `VITE_MPACK_TOKEN` 读取，dev 下未设置时同样回落到 `test`。
+
+生产部署必须同时设置两者：
+
+```bash
+MPACK_TOKEN=<强随机值> ./mpackstation-server
+VITE_MPACK_TOKEN=<同一个值> npm run build
+```
 
 ## 项目结构
 

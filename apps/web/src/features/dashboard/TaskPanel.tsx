@@ -3,18 +3,20 @@ import {useState} from 'react';
 import {DatabaseOutlined, ImportOutlined, RocketOutlined, SyncOutlined} from '@ant-design/icons';
 import type {ReactNode} from 'react';
 import type {DashboardTask} from './types';
+import {cancelTask, pauseTask, resumeTask, retryTask} from './api';
 import {WorkbenchCard, WorkbenchSectionHeader} from '../../ui/workbench/Workbench';
 
 /* 后台任务区（右列卡）：仅存在任务时渲染；进行中可暂停/取消，失败可重试/查看错误。 */
 
-const taskIcon: Record<DashboardTask['type'], ReactNode> = {
+/* type 是开放字符串（后端存在未映射的任务类型），所以这里一律带兜底。 */
+const taskIcon: Record<string, ReactNode> = {
   'build-pack': <RocketOutlined/>,
   'index-mod': <DatabaseOutlined/>,
   'import-pack': <ImportOutlined/>,
   'update-preflight': <SyncOutlined/>,
 };
 
-const runningVerb: Record<DashboardTask['type'], string> = {
+const runningVerb: Record<string, string> = {
   'build-pack': '打包中…',
   'index-mod': '索引中…',
   'import-pack': '导入中…',
@@ -26,17 +28,32 @@ const statusText: Record<string, string> = {
 };
 
 function taskSubText(task: DashboardTask): string {
-  if (task.status === 'running') return runningVerb[task.type];
+  if (task.status === 'running') return runningVerb[task.type] ?? '处理中…';
   return statusText[task.status] ?? task.status;
 }
 
-export function TaskPanel({tasks}: {tasks: DashboardTask[]}) {
+type TaskAction = (id: string) => Promise<unknown>;
+
+export function TaskPanel({tasks, onChanged}: {tasks: DashboardTask[]; onChanged: () => void}) {
   const {message} = App.useApp();
   const [errorOf, setErrorOf] = useState<DashboardTask | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   if (tasks.length === 0) return null;
 
-  const todo = (action: string) => message.info(`任务${action}将在接入真实后端后生效`);
+  const run = async (taskId: string, label: string, fn: TaskAction) => {
+    setBusyId(taskId);
+    try {
+      await fn(taskId);
+      message.success(`任务已${label}`);
+      onChanged();
+    } catch (err) {
+      message.error(`${label}失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const showAll = () => message.info('任务中心将在后续版本提供');
 
   return (
@@ -45,7 +62,7 @@ export function TaskPanel({tasks}: {tasks: DashboardTask[]}) {
       {tasks.map(task => (
         <div key={task.id} className="db-task-row">
           <span className={task.status === 'failed' ? 'db-task-icon db-task-icon-failed' : 'db-task-icon'}>
-            {taskIcon[task.type]}
+            {taskIcon[task.type] ?? <SyncOutlined/>}
           </span>
           <div className="db-task-main">
             <div className="db-task-title">
@@ -62,13 +79,20 @@ export function TaskPanel({tasks}: {tasks: DashboardTask[]}) {
             <div className="db-task-actions">
               {task.status === 'running' && (
                 <>
-                  <Button size="small" type="text" onClick={() => todo('暂停')}>暂停</Button>
-                  <Button size="small" type="text" onClick={() => todo('取消')}>取消</Button>
+                  <Button size="small" type="text" loading={busyId === task.id}
+                          onClick={() => void run(task.id, '暂停', pauseTask)}>暂停</Button>
+                  <Button size="small" type="text" disabled={busyId === task.id}
+                          onClick={() => void run(task.id, '取消', cancelTask)}>取消</Button>
                 </>
+              )}
+              {task.status === 'paused' && (
+                <Button size="small" type="text" loading={busyId === task.id}
+                        onClick={() => void run(task.id, '继续', resumeTask)}>继续</Button>
               )}
               {task.status === 'failed' && (
                 <>
-                  <Button size="small" type="primary" onClick={() => todo('重试')}>重试</Button>
+                  <Button size="small" type="primary" loading={busyId === task.id}
+                          onClick={() => void run(task.id, '重试', retryTask)}>重试</Button>
                   <Button size="small" type="text" onClick={() => setErrorOf(task)}>查看错误</Button>
                 </>
               )}
