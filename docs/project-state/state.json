@@ -2,33 +2,117 @@
   "schema_version": 1,
   "project": {
     "name": "mPackStation",
-    "goal": "Minecraft 整合包制作工具：从搜索到打包，不启动游戏完成整合包（双平台检索、依赖锁定、冲突解决、内容编辑、一键打包）",
+    "goal": "Minecraft 整合包工作台:模板开局 → 模组/依赖锁定 → 内容/任务书 → 构建 .mrpack → 部署冒烟 → 便携 Prism 导入并启动 Minecraft。流水线终局必须通向启动一个 Minecraft,否则前面工作没有意义(用户 2026-08-30 定调)。",
     "goal_source": "user"
   },
   "checkpoint": {
-    "id": "cp-2026-08-29-p6-p7-rollback",
+    "id": "cp-2026-08-30-modchain-prism-pipeline",
     "context_completeness": "partial",
-    "created_at": "2026-08-29T00:00:00Z",
-    "note": "本检查点暂停于 P6 完成后，P7 已按用户要求回滚。P6 独立验收提交为 7d5bf91；P7 回滚提交为 9cab5c4。回滚后全量 go test、go vet、gofmt 均通过。当前工作区仍保留用户 UI/文档改动。"
+    "created_at": "2026-08-30T08:00:00Z",
+    "note": "模组页双平台真实链路已交付(76fb818/05aefa7 等 4 提交,未推送);Prism 便携安装与上手四步已实现并 e2e 验证但全部未提交;流水线终局重定义为'启动 Minecraft',自研启动内核处于评估待拍板;superpowers 方法论的安装被 Hermes 安全门禁拦截,等用户批准临时关扫描。"
   },
   "repository": {
     "path": "D:\\workIn\\mPackStation",
     "is_git": true,
     "initial_commit": "0c6edbe",
-    "remote": null,
-    "structure": "monorepo：apps/web（React19+TS+Vite7+antd6+zod4）、apps/server（Go+SQLite）、docs/、data/（运行期，gitignore）、.tools/（便携 Go 1.27.0，gitignore）、.shots/（验收截图）",
+    "remote": "https://github.com/Suluo0/mPackStation.git",
+    "structure": "monorepo:apps/web(React19+TS+Vite7+antd6+zod4)、apps/server(Go+SQLite)、docs/、data/(运行期,gitignore)、.tools/(便携 Go 1.27.0 + 便携 Prism 11.0.3,gitignore)、.shots/(验收截图)",
     "branch": "fix/responsive-lowres",
-    "head": "7d5bf915c4c941af81fa66c89dc6260fde276f93",
-    "working_tree_clean": false
+    "head": "a827e9b130b08762ce64cedc11cd35617c2f5d53",
+    "working_tree_clean": false,
+    "unpushed_commits": ["76fb818", "05aefa7", "6764228", "a827e9b"]
   },
   "tasks": [
+    {
+      "id": "task-690ee8ef",
+      "kind": "task",
+      "title": "模组页双平台真实链路(搜索/版本/添加)",
+      "status": "verified",
+      "summary": "后端装配真实 provider registry(Modrinth 免 key 默认启用,CurseForge 需 CURSEFORGE_API_KEY),新增 mod-versions 接口;ModSearchAll 并发扇出双平台、单平台失败只做错误隔离;修复 CF 适配器三个 fixture 造假型 bug(搜索方言/logo 对象/gameVersions 混排);前端单框模糊名称搜索、路由/侧栏/顶栏去除写死的假包 tech。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "documentation": "drafted",
+      "delivery": "committed",
+      "ownership": "shared",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/service/p5_mods.go",
+        "apps/server/internal/provider/http_adapter.go",
+        "apps/server/internal/httpapi/httpapi.go",
+        "apps/web/src/pages/PackPages.tsx",
+        "apps/web/src/main.tsx",
+        "apps/web/src/app/AppShell.tsx"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "curl 实测:搜 sodium/JEI 双平台并行返回;CF 与 MR 同版本 sha1 一致(1757289b…)交叉验证;添加落库成功;go test/vet/gofmt 全绿;前端 tsc/build 通过",
+          "source": "session 2026-08-30",
+          "locator": "commit 76fb818, 05aefa7"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "task-d0e1ded6",
+      "kind": "task",
+      "title": "Prism 便携安装脚本(prism-install.sh/bat)",
+      "status": "verified",
+      "summary": "便携 zip 装 .tools\\prism(零系统接触/无 UAC/相对路径随仓库分发);代理前置探测(tasklist 进程→端口 7897/7890/10809/10808→gstatic 204 探活);版本解析 GitHub API 直连→代理→钉住 11.0.3;下载优先级 代理→GitCode 镜像→gh-proxy→直连。bat 终版纯 ASCII+CRLF。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "documentation": "missing",
+      "delivery": "working_tree",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": ["scripts/prism-install.sh", "scripts/prism-install.bat"],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "sh 与 bat 均真删真装成功;prismlauncher.exe --version 输出 PrismLauncher 11.0.3;GitCode 镜像 20,392,295 字节与官方等大、16.3MB/s",
+          "source": "session 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "task-1bd4148d",
+      "kind": "task",
+      "title": "上手四步与 tool_install 任务化安装",
+      "status": "verified",
+      "summary": "上手三步变四步;第 4 步只负责登录(唤起便携 Prism GUI,后端检测 .tools/prism-data/accounts.json 自动打勾);安装本体按用户拍板改造为一等任务 tool_install:安装脚本输出实时写入任务日志,成败以任务终态+exe 存在为准;新增迁移 0003 扩展 tasks.kind CHECK;修掉租约 30s 静默下载被回收(10s 心跳)与幂等键阻塞重装(仅活跃任务复用)两个实测问题。首次启动流程/用户协议入口留待后续。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "documentation": "missing",
+      "delivery": "working_tree",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/service/api.go",
+        "apps/server/internal/task/task.go",
+        "apps/server/internal/store/migrations/0003_task_kind_tool_install.sql",
+        "apps/server/internal/httpapi/httpapi.go",
+        "apps/web/src/features/dashboard/OnboardingChecklist.tsx"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "e2e:删 .tools/prism → POST /api/tools/prism/install 返回 taskId → 任务日志 11 条(queued→代理探测→下载心跳→解压→succeeded)→ exe 就位 11.0.3;重复提交返回 already_installed;POST /api/tools/prism/login 唤起 GUI 且便携数据目录生成;后端 build/vet/test、gofmt、前端 tsc/build 全绿",
+          "source": "session 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
     {
       "id": "task-p7-build-publish",
       "kind": "task",
       "title": "P7 构建与发布",
-      "status": "deferred",
-      "summary": "P7 构建/发布实现已回滚，暂不推进；后续需要重新规划并独立验收。",
-      "verification": "not_run",
+      "status": "implemented",
+      "summary": "Codex 午间轮(2026-08-30 12:16-12:30,用户授意)以 08f916a 重新交付 P7 构建/发布/worker 基础;取消语义/重启恢复测试/HTTP 契约测试三项缺口自该提交后未复核。",
+      "verification": "partial",
       "acceptance": "pending",
       "documentation": "drafted",
       "delivery": "committed",
@@ -38,18 +122,18 @@
         {
           "type": "command",
           "level": "observed",
-          "claim": "P7 实现、测试与 HTTP 接线由回滚提交 9cab5c4 移除",
-          "source": "git commit 9cab5c4"
+          "claim": "08f916a 存在且后续全量 go test/vet/gofmt 通过(含 task 包);但三缺口未单独复验",
+          "source": "git log / session 2026-08-30"
         }
       ],
-      "updated_at": "2026-08-29T00:00:00Z"
+      "updated_at": "2026-08-30T08:00:00Z"
     },
     {
       "id": "task-p6-content-quest",
       "kind": "task",
       "title": "P6 内容编辑与任务书领域闭环",
       "status": "delivered",
-      "summary": "内容文档/revision 与任务书图模型已实现 repository/service/HTTP 闭环，包含 canonical 校验、乐观并发、apply/rollback/history、环/孤立/跨包引用校验及 activity/outbox/audit 证据。",
+      "summary": "内容文档/revision 与任务书图模型已实现 repository/service/HTTP 闭环,包含 canonical 校验、乐观并发、apply/rollback/history、环/孤立/跨包引用校验及 activity/outbox/audit 证据。",
       "verification": "passed",
       "acceptance": "pending",
       "documentation": "complete",
@@ -79,7 +163,7 @@
       "kind": "task",
       "title": "monorepo 骨架与开发环境",
       "status": "verified",
-      "summary": "目录骨架、README、.gitignore、便携 Go 1.27.0（.tools/，阿里云镜像安装）、apps/web 工程（vite 5273，/api 代理 18871）完成。",
+      "summary": "目录骨架、README、.gitignore、便携 Go 1.27.0(.tools/,阿里云镜像安装)、apps/web 工程(vite 5273,/api 代理 18871)完成。",
       "verification": "passed",
       "acceptance": "not_requested",
       "delivery": "working_tree",
@@ -87,7 +171,7 @@
         {
           "type": "command",
           "level": "observed",
-          "claim": "npm install 成功，tsc --noEmit 与 vite build 通过",
+          "claim": "npm install 成功,tsc --noEmit 与 vite build 通过",
           "source": "session"
         },
         {
@@ -102,9 +186,9 @@
     {
       "id": "task-b2e18d3f",
       "kind": "task",
-      "title": "看板页功能实现（按 docs/design/dashboard-page-prompt.md）",
+      "title": "看板页功能实现(按 docs/design/dashboard-page-prompt.md)",
       "status": "implemented",
-      "summary": "二态分发（空态迎新/有包总览）、环境自检条（含空态 suppressKeys 抑制 cf-key）、继续设计卡、包列表（只看待处理/删除二次确认）、后台任务 3s 条件轮询、状态与动态、新建/导入弹窗。USE_MOCK=true 走 mock，?mock=empty 切空态。",
+      "summary": "二态分发(空态迎新/有包总览)、环境自检条(含空态 suppressKeys 抑制 cf-key)、继续设计卡、包列表(只看待处理/删除二次确认)、后台任务 3s 条件轮询、状态与动态、新建/导入弹窗。USE_MOCK=true 走 mock,?mock=empty 切空态。",
       "verification": "passed",
       "acceptance": "rejected",
       "delivery": "working_tree",
@@ -128,7 +212,7 @@
         {
           "type": "statement",
           "level": "reported",
-          "claim": "用户两次否定视觉质量（'太丑'/'还是丑'），功能本身未被否定",
+          "claim": "用户两次否定视觉质量('太丑'/'还是丑'),功能本身未被否定",
           "source": "user"
         }
       ],
@@ -139,7 +223,7 @@
       "kind": "task",
       "title": "Go 后端空壳 + SQLite 初始 schema",
       "status": "verified",
-      "summary": "net/http 标准库服务（18871），/api/health 返回 db:true；modernc.org/sqlite 纯 Go 驱动；schema 含 packs/pack_mods/jar_index/tasks/conflicts/activities/settings/remote_cache。",
+      "summary": "net/http 标准库服务(18871),/api/health 返回 db:true;modernc.org/sqlite 纯 Go 驱动;schema 含 packs/pack_mods/jar_index/tasks/conflicts/activities/settings/remote_cache。",
       "verification": "passed",
       "acceptance": "not_requested",
       "delivery": "working_tree",
@@ -152,7 +236,7 @@
         {
           "type": "command",
           "level": "observed",
-          "claim": "go build ./... 通过；curl /api/health 直连与 vite 代理均返回 {\"status\":\"ok\",\"db\":true}",
+          "claim": "go build ./... 通过;curl /api/health 直连与 vite 代理均返回 {\"status\":\"ok\",\"db\":true}",
           "source": "session"
         }
       ],
@@ -161,9 +245,9 @@
     {
       "id": "task-d4f3a5b6",
       "kind": "task",
-      "title": "看板视觉重做：对齐 AI 设计稿（第一轮）",
+      "title": "看板视觉重做:对齐 AI 设计稿(第一轮)",
       "status": "implemented",
-      "summary": "补齐应用外壳（AppShell 侧边栏+顶栏+占位路由）、紫色主题令牌（#7B5CFF / #F3F1FA）、空态 hero+彩色入口卡+四步流程条+上手三步、有包态 2:1 栅格、渐变封面（cover.ts 按包 id 稳定取色）。",
+      "summary": "补齐应用外壳(AppShell 侧边栏+顶栏+占位路由)、紫色主题令牌(#7B5CFF / #F3F1FA)、空态 hero+彩色入口卡+四步流程条+上手三步、有包态 2:1 栅格、渐变封面(cover.ts 按包 id 稳定取色)。",
       "verification": "passed",
       "acceptance": "rejected",
       "delivery": "working_tree",
@@ -171,13 +255,13 @@
         {
           "type": "artifact",
           "level": "observed",
-          "claim": "双态截图风格对齐设计稿（侧边栏/紫主题/栅格齐全）",
+          "claim": "双态截图风格对齐设计稿(侧边栏/紫主题/栅格齐全)",
           "source": ".shots/"
         },
         {
           "type": "statement",
           "level": "reported",
-          "claim": "用户仍不满意：'迭代啥了? 这不还是丑的'",
+          "claim": "用户仍不满意:'迭代啥了? 这不还是丑的'",
           "source": "user"
         }
       ],
@@ -186,9 +270,9 @@
     {
       "id": "task-e5a4b6c7",
       "kind": "task",
-      "title": "redesign-skill 精修迭代（第二轮已完成的部分）",
+      "title": "redesign-skill 精修迭代(第二轮已完成的部分)",
       "status": "verified",
-      "summary": "audit 后修 6 项：tabular-nums 等宽数字、健康列两行堆叠消除折行、继续卡进度语义改'模组安装 130/142'、动效令牌统一（160ms/cubic-bezier）+按压/浮起反馈、空态按钮钉底对齐、环境状态数值层次。",
+      "summary": "audit 后修 6 项:tabular-nums 等宽数字、健康列两行堆叠消除折行、继续卡进度语义改'模组安装 130/142'、动效令牌统一(160ms/cubic-bezier)+按压/浮起反馈、空态按钮钉底对齐、环境状态数值层次。",
       "verification": "passed",
       "acceptance": "rejected",
       "delivery": "working_tree",
@@ -196,7 +280,7 @@
         {
           "type": "command",
           "level": "observed",
-          "claim": "tsc/build 通过，双态截图回看确认",
+          "claim": "tsc/build 通过,双态截图回看确认",
           "source": "session"
         },
         {
@@ -211,9 +295,9 @@
     {
       "id": "task-f6b5c7d8",
       "kind": "task",
-      "title": "视觉第三轮：图形丰富度（未开工）",
+      "title": "视觉第三轮:图形丰富度(未开工)",
       "status": "implemented",
-      "summary": "引入 frontend-design-codex 作为视觉实现约束；建立 workbench 间距令牌，重整欢迎页 Hero/卡片/流程布局，修复 CSS 预览组件样式，明确主标题语义断行，并为三步走浮层补齐中等桌面与移动响应式避让。",
+      "summary": "引入 frontend-design-codex 作为视觉实现约束;建立 workbench 间距令牌,重整欢迎页 Hero/卡片/流程布局,修复 CSS 预览组件样式,明确主标题语义断行,并为三步走浮层补齐中等桌面与移动响应式避让。",
       "verification": "passed",
       "acceptance": "pending",
       "delivery": "working_tree",
@@ -221,7 +305,7 @@
         {
           "type": "analysis",
           "level": "reported",
-          "claim": "差距分析基于设计稿 region 放大比对；桌面与 390x844 移动视口截图复测无横向溢出，标题和浮层布局符合当前组件规则",
+          "claim": "差距分析基于设计稿 region 放大比对;桌面与 390x844 移动视口截图复测无横向溢出,标题和浮层布局符合当前组件规则",
           "source": "session"
         }
       ],
@@ -235,17 +319,52 @@
   ],
   "issues": [
     {
+      "id": "issue-ac56a422",
+      "kind": "issue",
+      "title": "假包 tech 路由导致模组搜索 404",
+      "status": "resolved",
+      "summary": "main.tsx 四条路由写死 /packs/tech/…,AppShell 侧栏 activePackId 默认 'tech',数据库只有真实包,导致全部 404 'pack not found',表现为'JEI 都搜不到'。",
+      "resolution": "DefaultPackRedirect 自动落第一个真实包;侧栏包导航 listPacks 动态化;PackContext 顶栏改 getPack 真实数据。修复后 JEI 双平台实测 10 条。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "修复后 curl 搜 JEI:CF+MR 共 10 条无错误",
+          "source": "session 2026-08-30",
+          "locator": "commit 05aefa7"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "issue-670c4eeb",
+      "kind": "issue",
+      "title": "tool_install 任务首次提交 500 与租约回收",
+      "status": "resolved",
+      "summary": "① tasks 表 CHECK 约束枚举写死 kind,新 kind 插入被 sqlite 拒绝(迁移 0003 重建表解决,注意迁移执行器自带事务,文件内不能再写 BEGIN/COMMIT);② 任务租约 30s,下载静默期无 Progress 被回收重跑(10s 心跳 + handler 入口 exe 存在即成功解决);③ 幂等键复用已成功任务导致'删了重装'无法提交(改为仅复用活跃任务)。",
+      "resolution": "迁移 0003 + 心跳 + 活跃任务复用;e2e 复验任务日志 11 条干净闭环",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "复验任务日志:queued→leased→running→安装输出→succeeded,无回收重跑",
+          "source": "session 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
       "id": "issue-07c8d9e0",
       "kind": "issue",
       "title": "后端端口 18766 被旧 mc_dev 进程占用",
       "status": "resolved",
-      "summary": "go run 首次启动 bind 失败，curl 到的是旧项目的 404。mPackStation 后端改用 18871，vite 代理同步更新。旧进程（5173/18765/18766）一律不动。",
+      "summary": "go run 首次启动 bind 失败,curl 到的是旧项目的 404。mPackStation 后端改用 18871,vite 代理同步更新。旧进程(5173/18765/18766)一律不动。",
       "resolution": "改端口为 18871 并验证双链路",
       "evidence": [
         {
           "type": "command",
           "level": "observed",
-          "claim": "netstat 确认 18765/18766/5173 被占；18871 健康检查通过",
+          "claim": "netstat 确认 18765/18766/5173 被占;18871 健康检查通过",
           "source": "session"
         }
       ],
@@ -254,16 +373,70 @@
   ],
   "ideas": [
     {
+      "id": "idea-ddc96879",
+      "kind": "idea",
+      "title": "自研启动内核分段评估(Go 实现启动器协议子集)",
+      "status": "needs_discussion",
+      "summary": "嵌 Prism 代码被否决后,改评估自研:mrpack 客户端安装(可借 MIT 的 mrpack-install)+ Mojang manifest 安装 MC + loader 安装 + 微软 device code 登录 + 拉起抓日志,估 2-4k 行 Go,范围收窄到 1.16+/Windows/NeoForge+Fabric/自家包。三段执行:Phase 0 原版+离线模式 spike(卡住即止损回 Prism CLI)→ Phase 1 loader+mrpack+与 Prism 目录树 diff 神谕测试 → Phase 2 微软登录+真实包冒烟矩阵。用户担心 LLM 从零架构能力,已选定引入 superpowers 方法论;待用户拍板是否开工 Phase 0。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'好好想想,你要是真能接,那你就做好吧。先评估一下' —— 评估已交付,开工未拍板",
+          "source": "user 2026-08-30"
+        },
+        {
+          "type": "analysis",
+          "level": "observed",
+          "claim": "参照系:minecraft-launcher-lib(Python,BSD-2)约 5k 行实现同等能力全集;go-mc 无现成启动器核心",
+          "source": "web 调研 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "idea-2bc71628",
+      "kind": "idea",
+      "title": "模板卡片 = 预制开局(迎新三卡落地)",
+      "status": "needs_discussion",
+      "summary": "科技包默认 AE2/Mek/Flux Networks/JEI+基础附属+按 loader 分叉的优化层(NeoForge=Embeddium/FerriteCore/ModernFix,Fabric=Sodium/Lithium);模板存 JSON 数据文件;不可解析版本跳过并出报告;装完自动依赖解析。未拍板:模板清单 schema、反选权(默认全勾可取消 vs 全装)、清单草案分工。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'我现在的目的是跟你讨论,不是说让你直接就去改'",
+          "source": "user 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "idea-28f0096b",
+      "kind": "idea",
+      "title": "mrpack-install 服务端冒烟进流水线",
+      "status": "captured",
+      "summary": "mrpack-install(MIT,Go)可无账号部署 .mrpack 为服务端,抓日志即可自动冒烟(缺依赖/版本错配/初始化崩);作为'启动 Minecraft'前的免账号验收环。是否进路线图未拍板。",
+      "evidence": [
+        {
+          "type": "analysis",
+          "level": "observed",
+          "claim": "官方 README:server/update/ping 子命令,支持 vanilla/fabric/quilt/forge/neoforge/paper",
+          "source": "github.com/nothub/mrpack-install"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
       "id": "idea-18d9e0f1",
       "kind": "idea",
       "title": "SVG 像素风 MC 场景封面替代渐变块",
       "status": "captured",
-      "summary": "不接外链图的约束下，手工 SVG 像素/voxel 风山水场景在主题贴合度上优于平色渐变，也优于抽象色块。接真封面后 PackCover 一行换 <img>。",
+      "summary": "不接外链图的约束下,手工 SVG 像素/voxel 风山水场景在主题贴合度上优于平色渐变,也优于抽象色块。接真封面后 PackCover 一行换 <img>。",
       "evidence": [
         {
           "type": "statement",
           "level": "inferred",
-          "claim": "由设计稿比对得出，未经用户确认",
+          "claim": "由设计稿比对得出,未经用户确认",
           "source": "session"
         }
       ],
@@ -272,9 +445,9 @@
     {
       "id": "idea-29e0f1a2",
       "kind": "idea",
-      "title": "包工作台页（/packs/:id）提示词文档",
+      "title": "包工作台页(/packs/:id)提示词文档",
       "status": "captured",
-      "summary": "交互主战场（搜索→加入整合包）的页面级提示词，按'每页一文档、mock 先行、截图验收'流程推进。旧 mc_dev 仅 multiblocks 组件（GridPreview/IsoPreview）值得移植。",
+      "summary": "交互主战场(搜索→加入整合包)的页面级提示词,按'每页一文档、mock 先行、截图验收'流程推进。旧 mc_dev 仅 multiblocks 组件(GridPreview/IsoPreview)值得移植。",
       "evidence": [
         {
           "type": "statement",
@@ -288,15 +461,88 @@
   ],
   "decisions": [
     {
+      "id": "decision-9a0c8004",
+      "kind": "decision",
+      "title": "流水线终局通向启动 Minecraft",
+      "status": "active",
+      "summary": "链 = 模板开局 → 模组/依赖锁定 → 内容/任务书 → 构建 .mrpack → mrpack-install 服务端冒烟(免账号)→ Prism 导入并启动(账号 = 用户登录一次微软账号的人工节点)。mPackStation 生态位 = 编排器:构建是自己的,部署/启动用现成轮子或自研内核,不造 GUI 启动器;知识沉淀(踩坑规则)是壁垒。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'这条线最终的结果肯定通向启动一个 Minecraft,不然我们前面的工作都是没有意义的'",
+          "source": "user 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "decision-da2110dc",
+      "kind": "decision",
+      "title": "模组搜索:单框模糊名称、双平台并发、不加锁",
+      "status": "active",
+      "summary": "单搜索框按名称模糊搜(两平台 ID 不一致,否决 ID 搜索);底层 WaitGroup 并发扇出 MR+CF;适配器无状态故不加锁;防限流靠每平台单次请求/零自动重试/15s 独立超时/仅手动触发;单平台失败只做错误隔离绝不阻塞另一平台。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户钦定设计,曾因 Codex 残壳被误改为单平台而震怒",
+          "source": "user 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "decision-f3ee0d92",
+      "kind": "decision",
+      "title": "否决嵌入 Prism 代码,能力靠协议自研或 CLI 调用",
+      "status": "active",
+      "summary": "实测 Prism launcher/ 795 文件 116,455 行 C++20 且与 Qt 深度耦合,无可拆库;GPL-3.0-only 嵌入即传染全项目;其微软 client id 依 ToS 不可冒用。CLI 调用属 mere aggregation 不传染,保留为兜底;自研路径见 idea-ddc96879。",
+      "alternatives": [
+        "嵌入/fork Prism 源码(否决:GPL 传染+Qt 耦合)",
+        "引导用户自装 Prism(否决:用户要求自动安装)"
+      ],
+      "evidence": [
+        {
+          "type": "analysis",
+          "level": "observed",
+          "claim": "浅克隆真实统计 LOC;COPYING.md GPL-3.0-only;README 明示 fork 须替换 API key",
+          "source": "GitCode 克隆 + 官方仓库 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "decision-7859b14d",
+      "kind": "decision",
+      "title": "引入 obra/superpowers 作为从 0 开发方法论",
+      "status": "active",
+      "summary": "用户认定 LLM 单点执行可信、从零架构组织不可信,要求引入方法论 skill。superpowers v6.3.0 已安装并启用(14 个 skill:brainstorming/writing-plans/executing-plans/subagent-driven-development/TDD 等)。安装时曾被安全扫描拦截(227 条全为 docs/tests 误报),用户授权'抽审确认误报即可直接装',已按 临时关扫描→安装→恢复 完成。注意:官方提示 Hermes 无 post-compaction hook,长会话压缩后引导可能失效,每阶段开新会话 + project-checkpoint 配套。",
+      "alternatives": [
+        "github/spec-kit(暂缓,文档仪式可先借概念)",
+        "buildermethods/agent-os(不匹配从 0 立项)",
+        "BMAD-METHOD(不匹配)"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "hermes plugins install 输出 dangerous 判定与 227 条清单;逐条抽审均为 docs/tests 误报",
+          "source": "session 2026-08-30 / superpowers-scan.log"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
       "id": "decision-3af1a2b3",
       "kind": "decision",
-      "title": "技术栈：React+TS+Vite+antd+zod 前端，Go+SQLite 后端",
+      "title": "技术栈:React+TS+Vite+antd+zod 前端,Go+SQLite 后端",
       "status": "active",
-      "summary": "用户明确否决 Node（嫌依赖重、部署占地）与 Java（个人工具启动慢）。发布形态后定（单 exe 本地服务→Electron 均可），现在只做开发环境。",
+      "summary": "用户明确否决 Node(嫌依赖重、部署占地)与 Java(个人工具启动慢)。发布形态后定(单 exe 本地服务→Electron 均可),现在只做开发环境。",
       "alternatives": [
-        "Node 后端（否决）",
-        "Java（否决）",
-        "每包一库 SQLite（否决，改单库分域）"
+        "Node 后端(否决)",
+        "Java(否决)",
+        "每包一库 SQLite(否决,改单库分域)"
       ],
       "evidence": [
         {
@@ -311,9 +557,9 @@
     {
       "id": "decision-4ba2b3c4",
       "kind": "decision",
-      "title": "SQLite 纪律：单库、pack_id 分域、jar_index 按 sha1 共享、原始 JSON 不落库",
+      "title": "SQLite 纪律:单库、pack_id 分域、jar_index 按 sha1 共享、原始 JSON 不落库",
       "status": "active",
-      "summary": "data/mpackstation.db 单库；pack_mods 是唯一权威'已选择/已安装'来源，不再维护全局本地模组清单；平台原始响应只存落盘路径。写在 schema.sql 顶部注释。",
+      "summary": "data/mpackstation.db 单库;pack_mods 是唯一权威'已选择/已安装'来源,不再维护全局本地模组清单;平台原始响应只存落盘路径。写在 schema.sql 顶部注释。",
       "evidence": [
         {
           "type": "file",
@@ -327,9 +573,9 @@
     {
       "id": "decision-5cb3c4d5",
       "kind": "decision",
-      "title": "开发流程：每页先在 docs/ 落自含提示词 → mock 先行 → 截图验收 → 接真后端",
+      "title": "开发流程:每页先在 docs/ 落自含提示词 → mock 先行 → 截图验收 → 接真后端",
       "status": "active",
-      "summary": "规格文档是唯一真相；AI 生成效果图只是视觉参考，其内部文字不可信（曾把 AI 图噪点当错字被用户纠正）。",
+      "summary": "规格文档是唯一真相;AI 生成效果图只是视觉参考,其内部文字不可信(曾把 AI 图噪点当错字被用户纠正)。",
       "evidence": [
         {
           "type": "statement",
@@ -343,9 +589,9 @@
     {
       "id": "decision-6dc4d5e6",
       "kind": "decision",
-      "title": "端口分配：前端 5273、后端 18871",
+      "title": "端口分配:前端 5273、后端 18871",
       "status": "active",
-      "summary": "5173=旧 mc_dev 前端（PID 16200）、18765=本地 LLM、18766=旧 mc_dev 后端，均不动。18766 占用是实测踩坑后改的。",
+      "summary": "5173=旧 mc_dev 前端、18765=本地 LLM、18766=旧 mc_dev 后端,均不动。18766 占用是实测踩坑后改的。",
       "evidence": [
         {
           "type": "command",
@@ -359,9 +605,9 @@
     {
       "id": "decision-7ed5e6f7",
       "kind": "decision",
-      "title": "紫色主题视觉规范（docs/design/dashboard-page-prompt.md 6.1 节）",
+      "title": "紫色主题视觉规范(docs/design/dashboard-page-prompt.md 6.1 节)",
       "status": "needs_review",
-      "summary": "主色 #7B5CFF、底色 #F3F1FA、16px 圆角、动效令牌 160ms。规范已定稿成文，但用户两轮验收均未通过，下一轮迭代可能修订。",
+      "summary": "主色 #7B5CFF、底色 #F3F1FA、16px 圆角、动效令牌 160ms。规范已定稿成文,但用户两轮验收均未通过,下一轮迭代可能修订。",
       "evidence": [
         {
           "type": "file",
@@ -383,15 +629,15 @@
       "kind": "decision",
       "title": "视觉实现采用 frontend-design-codex skill",
       "status": "active",
-      "summary": "采用该 skill 指导视觉预分析、设计令牌、排版/间距/组件规则和浏览器验收；页面形态保持按页面自由组合，不强制所有页面共用同一布局。",
+      "summary": "采用该 skill 指导视觉预分析、设计令牌、排版/间距/组件规则和浏览器验收;页面形态保持按页面自由组合,不强制所有页面共用同一布局。",
       "alternatives": [
-        "仅使用 Web Design Guidelines（主要是可访问性审计，不能提供完整视觉系统）"
+        "仅使用 Web Design Guidelines(主要是可访问性审计,不能提供完整视觉系统)"
       ],
       "evidence": [
         {
           "type": "file",
           "level": "observed",
-          "claim": "skill 已安装至 C:/Users/<user>/.codex/skills/frontend-design-codex/SKILL.md，内容要求先建立 tokens/typography/spacing/components 并进行浏览器验证",
+          "claim": "skill 已安装至 C:/Users/<user>/.codex/skills/frontend-design-codex/SKILL.md,内容要求先建立 tokens/typography/spacing/components 并进行浏览器验证",
           "source": "C:/Users/<user>/.codex/skills/frontend-design-codex/SKILL.md"
         }
       ],
@@ -399,14 +645,13 @@
     }
   ],
   "next_session": {
-    "recommended_item": "task-p6-content-quest",
+    "recommended_item": "task-1bd4148d",
     "read_first": [
       "docs/project-state/HANDOFF.md",
-      "docs/project-state/history/2026-08-28-session-summary.md",
-      "C:/Users/<user>/.codex/skills/frontend-design-codex/SKILL.md",
-      "apps/web/src/ui/workbench/workbench.css",
-      "apps/web/src/features/dashboard/dashboard.css"
+      "docs/project-state/history/2026-08-30-session-summary.md",
+      "apps/server/internal/service/api.go(prism 段落)",
+      "scripts/prism-install.bat"
     ],
-    "first_action": "恢复时先修复并复验未提交的 P7 验收测试编译问题；本检查点之前不继续开发。"
+    "first_action": "先把未提交的 12 个文件按已提议的两个 commit 落地(scripts 安装器 / onboarding 四步+tool_install),再处理 superpowers 安装批准;启动内核 Phase 0 等用户拍板后方可开工。"
   }
 }
