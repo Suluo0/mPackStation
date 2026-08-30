@@ -4,16 +4,22 @@
 package service
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"database/sql"
 	"mpackstation/internal/store"
+	"mpackstation/internal/task"
 )
 
 var ErrUnavailable = errors.New("service unavailable")
@@ -32,6 +38,14 @@ type API struct {
 	repo    *store.Repository
 	now     func() time.Time
 	dataDir string
+	queue   *task.Queue
+}
+
+// SetTaskQueue injects the process queue used for tool-install submissions.
+func (a *API) SetTaskQueue(q *task.Queue) {
+	if a != nil {
+		a.queue = q
+	}
 }
 
 // New creates the local single-instance service.
@@ -168,6 +182,7 @@ type Onboarding struct {
 		CurseForgeKey bool `json:"curseforgeKey"`
 		FirstPack     bool `json:"firstPack"`
 		FirstMod      bool `json:"firstMod"`
+		PrismAccount  bool `json:"prismAccount"`
 	} `json:"steps"`
 }
 
@@ -526,8 +541,191 @@ func (a *API) Onboarding(ctx context.Context) (Onboarding, error) {
 	out.Steps.CurseForgeKey = o.CurseForgeKey
 	out.Steps.FirstPack = o.FirstPack
 	out.Steps.FirstMod = o.FirstMod
+	out.Steps.PrismAccount = a.prismAccountReady()
 	return out, nil
 }
+
+// workbenchRoot anchors every tool path: data dir lives at <root>/data, so
+// the root is its parent. All tool paths stay relative to this root, which
+// keeps the whole workbench portable after distribution.
+func (a *API) workbenchRoot() string {
+	if a.dataDir == "" {
+		return ""
+	}
+	return filepath.Dir(a.dataDir)
+}
+
+func (a *API) prismExe() string {
+	root := a.workbenchRoot()
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, ".tools", "prism", "prismlauncher.exe")
+}
+
+// prismDataDir is the portable Prism root passed via -d on every launch, so
+// instances and the logged-in account travel with the workbench directory.
+func (a *API) prismDataDir() string {
+	root := a.workbenchRoot()
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, ".tools", "prism-data")
+}
+
+// prismAccountReady is a live file check: Prism stores the Microsoft account
+// in accounts.json under its -d root after the user logs in once.
+func (a *API) prismAccountReady() bool {
+	dir := a.prismDataDir()
+	if dir == "" {
+		return false
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "accounts.json"))
+	if err != nil {
+		return false
+	}
+	var acc struct {
+		Accounts []json.RawMessage `json:"accounts"`
+	}
+	if err := json.Unmarshal(b, &acc); err != nil {
+		return false
+	}
+	return len(acc.Accounts) > 0
+}
+
+// SubmitPrismInstall enqueues the installer as a first-class task; the task
+// log is the source of truth for success. A currently-active install is
+// reused; a finished one is not, so reinstall after deletion works.
+func (a *API) SubmitPrismInstall(ctx context.Context) (*task.Task, bool, error) {
+	if err := a.ready(); err != nil {
+		return nil, false, err
+	}
+	if a.queue == nil {
+		return nil, false, ErrUnavailable
+	}
+	if a.prismExeExists() {
+		return nil, false, nil
+	}
+	tasks, err := a.queue.List(ctx, 50)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, t := range tasks {
+		if t.Kind != task.KindToolInstall {
+			continue
+		}
+		switch t.Status {
+		case task.StatusQueued, task.StatusLeased, task.StatusRunning, task.StatusPaused:
+			return t, true, nil
+		}
+	}
+	t, _, err := a.queue.Submit(ctx, task.SubmitRequest{
+		Kind: task.KindToolInstall, Title: "Install Prism Launcher (portable)",
+		Payload: json.RawMessage(`{"tool":"prism"}`), MaxAttempts: 1,
+	})
+	return t, false, err
+}
+
+func (a *API) prismExeExists() bool {
+	exe := a.prismExe()
+	if exe == "" {
+		return false
+	}
+	st, err := os.Stat(exe)
+	return err == nil && !st.IsDir()
+}
+
+// HandleToolInstallTask runs scripts/prism-install.bat, streaming installer
+// output into the task event log, and succeeds only if the exe exists after.
+// The task lease is 30s while downloads are silent, so a heartbeat keeps
+// Progress flowing and an early-exit makes a recovered rerun harmless.
+func (a *API) HandleToolInstallTask(ctx context.Context, ex *task.Execution) error {
+	if a.prismExeExists() {
+		return ex.Succeed(ctx, "prismlauncher.exe already present under .tools/prism")
+	}
+	root := a.workbenchRoot()
+	if root == "" {
+		return &task.TaskError{Code: "no_root", Message: "workbench root unknown"}
+	}
+	script := filepath.Join(root, "scripts", "prism-install.bat")
+	if _, err := os.Stat(script); err != nil {
+		return &task.TaskError{Code: "installer_missing", Message: "scripts/prism-install.bat not found"}
+	}
+	_ = ex.Progress(ctx, 0.05, "starting prism-install.bat")
+	cmd := exec.CommandContext(ctx, "cmd.exe", "/c", script)
+	cmd.Dir = root
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return &task.TaskError{Code: "pipe", Message: err.Error()}
+	}
+	cmd.Stderr = cmd.Stdout
+	if err := cmd.Start(); err != nil {
+		return &task.TaskError{Code: "start_failed", Message: err.Error()}
+	}
+	// Heartbeat: downloads are silent for tens of seconds; the lease (30s)
+	// dies without a Progress call and the task would be recovered mid-run.
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_ = ex.Progress(ctx, 0.5, "installer running…")
+			}
+		}
+	}()
+	scanner := bufio.NewScanner(stdout)
+	last := time.Now()
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		// Throttle: one output event per second keeps the log readable.
+		if time.Since(last) >= time.Second {
+			_ = ex.Progress(ctx, 0.5, line)
+			last = time.Now()
+		}
+	}
+	close(done)
+	if err := cmd.Wait(); err != nil {
+		return &task.TaskError{Code: "install_failed", Message: fmt.Sprintf("installer exited: %v", err)}
+	}
+	if !a.prismExeExists() {
+		return &task.TaskError{Code: "exe_missing", Message: "installer finished but prismlauncher.exe not found"}
+	}
+	return ex.Succeed(ctx, "prismlauncher.exe installed under .tools/prism")
+}
+
+// LaunchPrismLogin opens the Prism GUI against the portable data dir so the
+// user can add their Microsoft account; completion is auto-detected from
+// accounts.json by the onboarding step.
+func (a *API) LaunchPrismLogin(ctx context.Context) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	exe := a.prismExe()
+	if !a.prismExeExists() {
+		return fmt.Errorf("%w: prism launcher not installed", store.ErrNotFound)
+	}
+	dir := a.prismDataDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create prism data dir: %w", err)
+	}
+	cmd := exec.Command(exe, "-d", dir)
+	cmd.Dir = filepath.Dir(exe)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("launch prism: %w", err)
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
+}
+
 func (a *API) AcknowledgeOnboarding(ctx context.Context, steps map[string]bool, requestID string) error {
 	if err := a.ready(); err != nil {
 		return err

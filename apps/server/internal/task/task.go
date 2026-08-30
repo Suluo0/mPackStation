@@ -28,7 +28,10 @@ const (
 	KindBuild    Kind = "build"
 	KindPublish  Kind = "publish"
 	KindImport   Kind = "import"
-	KindCacheGC  Kind = "cache_gc"
+	// KindToolInstall installs workbench tools (e.g. Prism Launcher) as a
+	// first-class task so success is judged from the task log, not hope.
+	KindToolInstall Kind = "tool_install"
+	KindCacheGC     Kind = "cache_gc"
 )
 
 // Status is the durable lifecycle state of a task.
@@ -1058,7 +1061,7 @@ func validateSubmit(request SubmitRequest) error {
 
 func validKind(kind Kind) bool {
 	switch kind {
-	case KindResolve, KindDownload, KindIndex, KindBuild, KindPublish, KindImport, KindCacheGC:
+	case KindResolve, KindDownload, KindIndex, KindBuild, KindPublish, KindImport, KindCacheGC, KindToolInstall:
 		return true
 	}
 	return false

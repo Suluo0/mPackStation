@@ -46,6 +46,16 @@ export function acknowledgeOnboarding(steps: Record<string, boolean>): Promise<O
   return put('/api/onboarding', {steps}, onboardingSchema);
 }
 
+/* 后台异步把 Prism 便携安装提交为任务;成败以任务日志为准。 */
+export function installPrism(): Promise<{started: boolean; taskId?: string}> {
+  return post('/api/tools/prism/install', {}, z.object({started: z.boolean(), taskId: z.string().optional()}));
+}
+
+/* 唤起 Prism GUI(便携 -d 目录)让用户登录微软账号;登录完成由后端检测 accounts.json 自动打勾。 */
+export function launchPrismLogin(): Promise<{launched: boolean}> {
+  return post('/api/tools/prism/login', {}, z.object({launched: z.boolean()}));
+}
+
 export type CreatePackInput = {
   name: string;
   mcVersion: string;

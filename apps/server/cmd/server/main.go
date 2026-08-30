@@ -101,7 +101,7 @@ func main() {
 
 	log.Printf("mpackstation server listening on http://%s (data: %s)", *addr, *dataDir)
 	server := &http.Server{
-		Addr: *addr, Handler: httpapi.NewRouterWithProviders(db, version, providerRegistry()),
+		Addr: *addr, Handler: httpapi.NewRouterWithProviders(db, version, providerRegistry(), queue),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second,
 	}

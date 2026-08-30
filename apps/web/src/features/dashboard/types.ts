@@ -82,6 +82,7 @@ export const onboardingSchema = z.object({
     curseforgeKey: z.boolean(),
     firstPack: z.boolean(),
     firstMod: z.boolean(),
+    prismAccount: z.boolean(),
   }),
 });
 export type Onboarding = z.infer<typeof onboardingSchema>;

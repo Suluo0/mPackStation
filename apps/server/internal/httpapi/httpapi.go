@@ -20,6 +20,7 @@ import (
 
 	"mpackstation/internal/provider"
 	"mpackstation/internal/service"
+	"mpackstation/internal/task"
 )
 
 type contextKey int
@@ -75,10 +76,15 @@ func NewRouterWithService(app *service.API, version string) http.Handler {
 }
 
 // NewRouterWithProviders wires real provider adapters (Modrinth/CurseForge)
-// into both the catalog service and the publish pipeline.
-func NewRouterWithProviders(source any, version string, reg *provider.Registry) http.Handler {
+// into both the catalog service and the publish pipeline. A non-nil queue
+// additionally enables task-based tool installation.
+func NewRouterWithProviders(source any, version string, reg *provider.Registry, q *task.Queue) http.Handler {
 	app := service.NewFromSource(source)
 	app.SetProviderRegistry(reg)
+	if q != nil {
+		app.SetTaskQueue(q)
+		_ = q.RegisterHandler(task.KindToolInstall, task.HandlerFunc(app.HandleToolInstallTask))
+	}
 	p7 := service.NewP7ServiceFromSource(source)
 	p7.SetProviderRegistry(reg)
 	return newRouter(app, service.NewTaskAPI(source), p7, service.NewImportServiceFromSource(source), version)
@@ -280,6 +286,25 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		} else {
 			WriteJSON(w, http.StatusOK, v)
 		}
+	})
+	mux.HandleFunc("POST /api/tools/prism/install", func(w http.ResponseWriter, r *http.Request) {
+		t, reused, err := app.SubmitPrismInstall(r.Context())
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if t == nil {
+			WriteJSON(w, http.StatusOK, map[string]any{"started": false, "reason": "already_installed"})
+			return
+		}
+		WriteJSON(w, http.StatusAccepted, map[string]any{"started": true, "reused": reused, "taskId": t.ID})
+	})
+	mux.HandleFunc("POST /api/tools/prism/login", func(w http.ResponseWriter, r *http.Request) {
+		if err := app.LaunchPrismLogin(r.Context()); err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusAccepted, map[string]any{"launched": true})
 	})
 	mux.HandleFunc("GET /api/meta/mc-versions", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.MCVersions(r.Context())

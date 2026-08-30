@@ -30,6 +30,8 @@ const packNav = [
 export function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
+  const refreshOnboarding = () => { void fetchOnboarding().then(setOnboarding).catch(() => setOnboarding(null)); };
+  useEffect(refreshOnboarding, []);
   const location = useLocation();
   const navigate = useNavigate();
   const packMatch = location.pathname.match(/^\/packs\/([^/]+)/);
@@ -42,7 +44,6 @@ export function AppShell() {
     void listPacks().then(ps => setFirstPackId(ps[0]?.id ?? '')).catch(() => setFirstPackId(''));
   }, [packId]);
   const activePackId = packId ?? firstPackId ?? '';
-  useEffect(() => { void fetchOnboarding().then(setOnboarding).catch(() => setOnboarding(null)); }, []);
   return (
     <div className={collapsed ? 'app-shell app-shell-collapsed' : 'app-shell'}>
       <aside className="app-sider">
@@ -90,7 +91,7 @@ export function AppShell() {
           <Outlet/>
         </main>
       </div>
-      <OnboardingChecklist onboarding={onboarding} onSettings={() => navigate('/settings')} />
+      <OnboardingChecklist onboarding={onboarding} onSettings={() => navigate('/settings')} onRefresh={refreshOnboarding} />
       {inPack && <footer className="app-statusbar">
         <div className="app-status-item"><span className="app-status-icon"><DatabaseOutlined /></span><div><strong>0 个模组</strong><small>模组库总数</small></div></div>
         <div className="app-status-item"><span className="app-status-check"><CheckCircleOutlined /></span><div><strong>0 已安装</strong><small>已选择模组</small></div></div>
