@@ -1,10 +1,12 @@
 import {useEffect, useState} from 'react';
 import {App, Form, Input, Modal, Radio, Select, Tabs, Upload} from 'antd';
 import {InboxOutlined} from '@ant-design/icons';
-import {createPack, fetchMcVersions, importPack} from './api';
+import {createPack, confirmImport, fetchMcVersions, inspectImport} from './api';
+import type {ImportPreview, ImportSource} from './types';
 import type {DashboardPack} from './types';
 
-/* 新建 / 导入整合包对话框（看板页的直接子功能）。 */
+/* 新建 / 导入整合包对话框（看板页的直接子功能）。
+   导入走后端真实的两阶段流程：先解析出预览，用户确认后才入队。 */
 
 const loaders = [
   {value: 'forge', label: 'Forge', hint: '生态最老、模组最多'},
@@ -66,6 +68,9 @@ export function CreatePackModal({open, existing, onClose, onCreated}: {
             ))}
           </Radio.Group>
         </Form.Item>
+        <Form.Item name="loaderVersion" label="加载器版本（选填）" rules={[{max: 50}]}>
+          <Input placeholder="留空则由平台选择匹配的稳定版" maxLength={50}/>
+        </Form.Item>
         <Form.Item name="description" label="包描述（选填）" rules={[{max: 200}]}>
           <Input.TextArea rows={3} maxLength={200} showCount placeholder="这个包的定位与玩法"/>
         </Form.Item>
@@ -75,62 +80,140 @@ export function CreatePackModal({open, existing, onClose, onCreated}: {
   );
 }
 
+/* 读取本地 zip 并转成 base64（去掉 data URL 前缀）。 */
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? '');
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function newIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 export function ImportPackModal({open, onClose, onImported}: {
   open: boolean;
   onClose: () => void;
-  onImported: (id: string) => void;
+  onImported: (packId: string | null) => void;
 }) {
   const {message} = App.useApp();
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [tab, setTab] = useState<'curseforge' | 'modrinth' | 'local'>('curseforge');
+  const [tab, setTab] = useState<ImportSource>('curseforge');
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [inspecting, setInspecting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
-  const submit = async () => {
-    setSubmitting(true);
+  const reset = () => {
+    setUrl('');
+    setFile(null);
+    setPreview(null);
+    setInspecting(false);
+    setConfirming(false);
+  };
+
+  const close = () => {
+    reset();
+    onClose();
+  };
+
+  const inspect = async () => {
+    if (tab !== 'local' && !url.trim()) {
+      message.warning('请先粘贴链接');
+      return;
+    }
+    if (tab === 'local' && !file) {
+      message.warning('请先选择 zip 文件');
+      return;
+    }
+    setInspecting(true);
     try {
-      const input = tab === 'local'
-        ? {source: tab, filename: file?.name}
-        : {source: tab, url};
-      if (tab !== 'local' && !url.trim()) {
-        message.warning('请先粘贴链接');
-        return;
-      }
-      if (tab === 'local' && !file) {
-        message.warning('请先选择 zip 文件');
-        return;
-      }
-      const created = await importPack(input);
-      message.success(`已开始导入「${created.name}」，进度见后台任务`);
-      onImported(created.id);
+      const contentBase64 = tab === 'local' && file ? await readAsBase64(file) : undefined;
+      const result = await inspectImport({source: tab, url, contentBase64});
+      setPreview(result);
+    } catch (err) {
+      message.error(`解析失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setInspecting(false);
+    }
+  };
+
+  const confirm = async () => {
+    if (!preview) return;
+    setConfirming(true);
+    try {
+      const result = await confirmImport(preview, newIdempotencyKey());
+      message.success(`已开始导入「${preview.packName || '整合包'}」，进度见后台任务`);
+      reset();
+      onImported(result.packId);
     } catch (err) {
       message.error(`导入失败：${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setSubmitting(false);
+      setConfirming(false);
     }
   };
 
   const linkForm = (platform: string) => (
     <>
       <Input placeholder={`粘贴 ${platform} 整合包链接`} value={url} onChange={e => setUrl(e.target.value)}/>
-      <div className="db-muted" style={{marginTop: 8}}>解析出包名、版本、模组数后会先给你预览，确认后再导入。</div>
+      <div className="db-muted" style={{marginTop: 8}}>解析出包名和条目数后会先给你预览，确认后再导入。</div>
+    </>
+  );
+
+  const previewView = preview && (
+    <>
+      <div className="db-card" style={{padding: 16}}>
+        <div className="db-h2">{preview.packName || '未命名整合包'}</div>
+        <div className="db-muted" style={{marginTop: 8}}>
+          来源：{preview.source} · 解析出 {preview.entryCount} 个条目
+        </div>
+        {preview.expiresAt && (
+          <div className="db-muted" style={{marginTop: 4}}>预览有效期至 {new Date(preview.expiresAt).toLocaleString()}</div>
+        )}
+      </div>
+      <div className="db-muted" style={{marginTop: 12}}>确认后会在后台任务中执行导入，可以在右侧任务面板查看进度。</div>
     </>
   );
 
   return (
-    <Modal title="导入整合包" open={open} onCancel={onClose} onOk={() => void submit()}
-           confirmLoading={submitting} okText="导入" cancelText="取消" destroyOnHidden>
-      <Tabs activeKey={tab} onChange={k => setTab(k as typeof tab)} items={[
-        {key: 'curseforge', label: 'CurseForge 链接', children: linkForm('CurseForge')},
-        {key: 'modrinth', label: 'Modrinth 链接', children: linkForm('Modrinth')},
-        {key: 'local', label: '本地 zip 文件', children: (
-          <Upload.Dragger accept=".zip" maxCount={1} beforeUpload={f => {setFile(f); return false;}}
-                          onRemove={() => setFile(null)}>
-            <p><InboxOutlined style={{fontSize: 32, color: 'var(--mc-blue)'}}/></p>
-            <p>拖拽 zip 到这里，或点击选择文件</p>
-          </Upload.Dragger>
-        )},
-      ]}/>
+    <Modal
+      title="导入整合包"
+      open={open}
+      onCancel={close}
+      destroyOnHidden
+      footer={preview ? [
+        <button key="back" className="db-link" style={{marginRight: 12}} onClick={() => setPreview(null)}>返回修改</button>,
+        <button key="cancel" className="db-link" style={{marginRight: 12}} onClick={close}>取消</button>,
+        <button key="ok" className="mc-btn-cta" disabled={confirming} onClick={() => void confirm()}>
+          {confirming ? '提交中…' : '确认导入'}
+        </button>,
+      ] : [
+        <button key="cancel" className="db-link" style={{marginRight: 12}} onClick={close}>取消</button>,
+        <button key="ok" className="mc-btn-cta" disabled={inspecting} onClick={() => void inspect()}>
+          {inspecting ? '解析中…' : '解析'}
+        </button>,
+      ]}
+    >
+      {preview ? previewView : (
+        <Tabs activeKey={tab} onChange={k => setTab(k as ImportSource)} items={[
+          {key: 'curseforge', label: 'CurseForge 链接', children: linkForm('CurseForge')},
+          {key: 'modrinth', label: 'Modrinth 链接', children: linkForm('Modrinth')},
+          {key: 'local', label: '本地 zip 文件', children: (
+            <Upload.Dragger accept=".zip" maxCount={1} beforeUpload={f => {setFile(f); return false;}}
+                            onRemove={() => setFile(null)}>
+              <p><InboxOutlined style={{fontSize: 32, color: 'var(--mc-blue)'}}/></p>
+              <p>拖拽 zip 到这里，或点击选择文件</p>
+            </Upload.Dragger>
+          )},
+        ]}/>
+      )}
     </Modal>
   );
 }

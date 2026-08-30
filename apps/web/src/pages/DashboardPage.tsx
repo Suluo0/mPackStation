@@ -4,6 +4,7 @@ import {PlusOutlined, ImportOutlined} from '@ant-design/icons';
 import {useNavigate} from 'react-router-dom';
 import {
   fetchActivities, fetchDashboard, fetchHealth, fetchStatus, fetchTasks,
+  deletePack as deletePackRequest,
 } from '../features/dashboard/api';
 import type {DashboardActivity, DashboardData, DashboardTask, SystemHealth, SystemStatus} from '../features/dashboard/types';
 import {EnvHealthBanner} from '../features/dashboard/EnvHealthBanner';
@@ -37,6 +38,10 @@ export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
     fetchHealth().then(setHealth).catch(() => setHealth(null));
   }, []);
 
+  const refreshTasks = useCallback(() => {
+    void fetchTasks().then(setTasks).catch(() => undefined);
+  }, []);
+
   useEffect(() => {
     loadDashboard();
     loadHealth();
@@ -62,15 +67,20 @@ export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
   const openPack = (id: string) => navigate(`/packs/${id}`);
 
   const deletePack = async (id: string) => {
-    // TODO: 接真实后端后改为 DELETE /api/packs/:id；mock 期仅本地移除
-    setDashboard(prev => prev ? {...prev, packs: prev.packs.filter(p => p.id !== id)} : prev);
+    try {
+      await deletePackRequest(id);
+      message.success('整合包已删除');
+      loadDashboard();
+    } catch (err) {
+      message.error(`删除失败：${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const onCreated = (id: string) => {
     setCreateOpen(false);
     openPack(id);
   };
-  const onImported = (_id: string) => {
+  const onImported = (_id: string | null) => {
     setImportOpen(false);
     loadDashboard();
     void fetchTasks().then(setTasks).catch(() => undefined);
@@ -134,7 +144,7 @@ export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
               <StatusActivity status={status} activities={activities ?? []}/>
             </div>
 
-            <TaskPanel tasks={tasks}/>
+            <TaskPanel tasks={tasks} onChanged={refreshTasks}/>
           </div>
         </>
       )}
