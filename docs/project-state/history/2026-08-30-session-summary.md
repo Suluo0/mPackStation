@@ -44,3 +44,10 @@
 ## 下一会话第一步
 
 读 `docs/project-state/HANDOFF.md` → 落地两个已提议 commit → 问用户 superpowers 安装批准 → 如拍板启动内核则开 superpowers brainstorming。
+
+## 本次检查点 · 看板视觉问题已完成
+
+- 用户明确要求将看板视觉问题标记为已完成。
+- `task-f6b5c7d8` 已从 `implemented/acceptance=pending` 更新为 `delivered/acceptance=accepted`。
+- 验证证据保留：前端构建通过，桌面与 390×844 移动视口无横向溢出。
+- 本次未修改业务代码；仅更新项目状态、交接和历史记录。

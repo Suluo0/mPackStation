@@ -15,6 +15,15 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 
 ## 项目功能进展
 
+### 2026-08-30 · 看板视觉问题收尾
+
+- 状态:已完成
+- 进展:用户确认将看板视觉问题标记为完成;第三轮图形丰富度、间距、响应式避让和首屏布局调整纳入完成记录。
+- 关联任务:`task-f6b5c7d8`
+- 验证:`npm run build` 已通过;桌面与 390×844 移动视口截图复测无横向溢出。
+- 验收:用户明确确认标记为已完成。
+- 相关产物:`apps/web/src/features/dashboard/OnboardingView.tsx`、`apps/web/src/features/dashboard/dashboard.css`、`apps/web/src/ui/workbench/workbench.css`
+
 ### 2026-08-30 · 模组页双平台真实链路(搜索/版本/添加)
 
 - 状态:已验证(未推送)
@@ -54,10 +63,10 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 
 ### 2026-08-28 · 引入 frontend-design-codex 并启动看板第三轮视觉重构
 
-- 状态:进行中
+- 状态:已完成（2026-08-30 用户确认）
 - 进展:引入 `frontend-design-codex`,建立 workbench 间距令牌,重整欢迎页 Hero、入口卡片、灵感卡片和工作台流程的布局规则;修复 CSS 预览组件样式误删,预览继续使用 HTML/CSS 绘制。
 - 关联任务:`task-f6b5c7d8`
-- 验证:`npm run build` 已通过;浏览器截图验收未完成(localhost URL 策略拦截);用户验收待确认。
+- 验证:`npm run build` 已通过;桌面与 390×844 移动视口截图复测无横向溢出。
 - 相关产物:`C:/Users/<user>/.codex/skills/frontend-design-codex/SKILL.md`、`apps/web/src/ui/workbench/workbench.css`、`apps/web/src/features/dashboard/dashboard.css`、`apps/web/src/features/dashboard/OnboardingView.tsx`
 
 ### 2026-08-28 · 侧边栏菜单、包工作台页面与后端架构盲审
@@ -116,7 +125,7 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 
 - **前端残余假数据**:工作台右栏"包健康"(86/142/3 写死)、概览页模组列表 4 条写死(PackPages.tsx `const mods = [`)、设置页"已连接"/缓存演戏。
 - **P7 三缺口未复核**:取消语义/重启恢复测试/HTTP 契约测试(08f916a 之后)。
-- **视觉验收两轮未过**:第三轮进行中,用户最终验收待确认。
+- **视觉验收**:第三轮已由用户确认完成；后续若提出新的视觉问题，另立新任务，不回写本任务历史状态。
 - vite 993 kB chunk 警告为既有现象,未处理。
 
 ## 关键决策
