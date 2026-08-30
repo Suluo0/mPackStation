@@ -4,7 +4,7 @@
 >
 > - 通用规则（状态码语义、命名、分页、错误粒度、鉴权）见 [`standards.md`](./standards.md)，本文不重复
 > - 实现与本文冲突时**改实现**，不允许改本文去迁就现状
-> - 当前实现尚未达标的项，统一记录在 §5 实现符合度清单
+> - 当前实现尚未达标的项记录在 [`implementation-status.md`](./implementation-status.md) 和带日期的 `audit/`；本文不因实现现状降低要求
 >
 > 每个接口包含三段：**(a) 请求参数 · (b) 校验 · (c) 异常处理**
 
@@ -153,7 +153,7 @@
 **(b) 校验**
 
 - 入参：`recent` 非整数或越界 → 400 `invalid_argument`
-- 出参：`Task[]`（见 §2），**不分页**，直接返回数组
+- 出参：`ListEnvelope<Task>`（见 [`dto.md`](./dto.md)）；即使当前页面只取 `items`，也必须保留 `next_cursor` 和 `total`
 
 **(c) 异常处理**
 
@@ -362,7 +362,7 @@ MC 版本候选，创建包下拉用。
 - 出参（200）：`{"launched":true}`
 - 前端随后轮询 `GET /api/onboarding` 等待 `prismAccount` 自动置位
 
-> **规范**：轮询必须有终止条件——页面卸载、组件销毁，或超过 10 分钟。当前实现只靠计数上限兜底，违反此条（见 §5 C-3）。
+> **规范**：轮询必须有终止条件——页面卸载、组件销毁，或超过 10 分钟。实现状态记录在 `implementation-status.md`。
 
 **(c) 异常处理**
 
@@ -556,7 +556,7 @@ MC 版本候选，创建包下拉用。
 {"importId":"import-...","taskId":"task-...","packId":"pack-...","reused":false}
 ```
 
-> **规范**：响应中**不允许**内嵌 `task` 对象。任务信息统一用 `taskId` 去 `GET /api/tasks` 取。当前实现内嵌了原始 `task.Task`（无 json tag 的 Go 字段名），违反此条（见 §5 T-1）。
+> **规范**：响应中**不允许**内嵌 `task` 对象。任务信息统一用 `taskId` 去 `GET /api/tasks` 取。实现偏差记录在日期化审计中。
 
 **(c) 异常处理**
 
@@ -946,7 +946,7 @@ MC 版本候选，创建包下拉用。
 **(b) 校验**
 
 - 出参：**`Task`**（全局唯一结构，见 §2）
-- 当前实现返回的是另一套 `TaskView`，违反 §2 的一致性要求（见 §5 T-1）
+- 返回全局唯一的 `Task` DTO；实现差异记录在 `implementation-status.md`，不在此处改变契约
 
 **(c) 异常处理**
 
@@ -998,34 +998,8 @@ MC 版本候选，创建包下拉用。
 
 ---
 
-## 5. 实现符合度清单
+## 5. 历史实现符合度索引
 
-本节记录**代码尚未达标**的项。规范不因这些项而降低要求。
+历史缺口的详细状态不再维护在接口正文中，统一见 [`implementation-audit-2026-08-30.md`](./implementation-audit-2026-08-30.md) 及后续 `audit/` 文件。本节仅保留索引，避免契约与状态重复漂移。
 
-| 编号 | 缺口 | 规范要求 | 涉及 |
-|---|---|---|---|
-| T-1 | 任务 DTO 三套：列表 `service.Task`、控制 `task.TaskView`、导入响应内嵌原始 `task.Task` | 全局唯一 `Task` 结构 | `service/api.go`、`task/http_adapter.go`、`httpapi.go` |
-| T-2 | 导入确认响应内嵌 `task` 对象（Go 字段名、无 json tag） | 只返回 `taskId`，不内嵌 | `httpapi.go` 导入路由 |
-| S-1 | 硬编码 `test` 令牌兜底 | 启动生成随机令牌写 `data/` | `httpapi.go` `securityMiddleware` |
-| S-2 | 乐观锁返回 409 `revision_conflict` | 应为 **412** | `writeServiceError` |
-| S-3 | 错误码过粗：`validation_failed` / `conflict` / `revision_conflict` 覆盖所有领域 | 细粒度 `content_invalid` / `quest_cycle` / `pack_name_duplicate` 等 | 各 service |
-| S-4 | 导入预览过期与已消费同为 409 `preview_expired` | 过期 **410**，已消费 **409** 并返回原结果 | `import_service.go` |
-| S-5 | 导入来源域名校验返回 400 | 语义校验应为 **422** | `httpapi.go` |
-| S-6 | 幂等键已消费返回 409 错误 | 应返回原结果 + `reused:true` | 导入确认路由 |
-| S-7 | `POST /api/packs/{id}/duplicate` 返回 501 | 实现或正式标注为不支持 | `httpapi.go` |
-| S-8 | `total` 字段时有时无（`optional`） | 必须返回整数 | 各列表接口 |
-| S-9 | 任务 `type` 未映射时输出空串 | 输出原始 kind 值 | `service/api.go` |
-| C-1 | 前端 `z.unknown()` 用于任务控制响应 | DTO 归一后改用 `taskSchema` | `dashboard/api.ts` |
-| C-2 | 前端 `del()` 未复用 `writeHeaders()` | 统一走 `writeHeaders()` | `api/http.ts` |
-| C-3 | Prism 轮询无退出条件 | 组件卸载 / 超时必须终止 | `OnboardingChecklist.tsx` |
-| C-4 | 前端时间字段只校验 `z.string()` | 用 `z.string().datetime()` | `features/*/api.ts` |
-| C-5 | 前端未处理 `revision_conflict` | 识别后提示"内容已变更，请刷新重试" | 内容/任务书编辑器 |
-| C-6 | 设置页零接口调用 | 接 `system/status`；`默认包配置` 待产品决策 | `PackPages.tsx` |
-
----
-
-## 6. 待确认事项
-
-1. **错误码细粒度**（D-5）—— 决定 S-3 的工作量
-2. **分批追平 vs 一次性改完**（D-9）—— 本文件倾向分批，符合度清单即跟踪工具
-3. **设置页「默认包配置」** —— 补 `/api/settings` 还是移除 UI，属产品决策
+当前待决策项和执行顺序记录在项目计划/issue 中，不作为接口契约的一部分。
