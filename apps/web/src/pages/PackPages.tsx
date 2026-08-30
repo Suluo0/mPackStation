@@ -1,4 +1,4 @@
-import {useMemo, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {App, Button, Divider, Form, Input, InputNumber, Progress, Select, Space, Steps, Switch, Tag} from 'antd';
 import {
   ApartmentOutlined, ArrowRightOutlined, CheckCircleFilled, CheckOutlined, CloudDownloadOutlined,
@@ -9,6 +9,8 @@ import {
 import {useNavigate, useParams} from 'react-router-dom';
 import {WorkbenchButton, WorkbenchCard, WorkbenchSectionHeader} from '../ui/workbench/Workbench';
 import './pack-pages.css';
+import {getPack, listMods, listPacks} from '../features/pack/api';
+import type {Pack, Mod} from '../features/pack/api';
 
 const packName = (id?: string) => id === 'demo' ? '星港远征' : '科技魔法';
 
@@ -37,18 +39,21 @@ const mods = [
 export function PacksPage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
-  const packs = [{id: 'tech', name: '科技魔法', version: 'v1.2.0', mods: 142, pending: 3, edited: '2 小时前', loader: 'NeoForge'}, {id: 'demo', name: '星港远征', version: 'v0.8.4', mods: 87, pending: 0, edited: '昨天', loader: 'Fabric'}, {id: 'adventure', name: '暮色边境', version: 'v0.3.1', mods: 36, pending: 1, edited: '8 月 24 日', loader: 'Forge'}];
+  const [packs, setPacks] = useState<Pack[]>([]); const [error, setError] = useState('');
+  useEffect(() => { void listPacks().then(setPacks).catch(e => setError(e instanceof Error ? e.message : String(e))); }, []);
   const visible = packs.filter(p => p.name.includes(query));
   return <div className="workspace-page">
     <div className="page-heading"><div><span className="eyebrow">WORKSPACE / PACKS</span><h1>整合包</h1><p>每个包都是一条独立的设计路径，从选模组一直走到交付。</p></div><Space><Button icon={<UploadOutlined/>}>导入整合包</Button><WorkbenchButton tone="primary" icon={<PlusOutlined/>}>新建整合包</WorkbenchButton></Space></div>
     <WorkbenchCard className="pack-overview-strip"><div><span className="strip-label">当前工作集</span><strong>3 个整合包</strong></div><div><span className="strip-label">最近解决</span><strong className="text-success">12 个问题</strong></div><div><span className="strip-label">需要处理</span><strong className="text-warning">4 个冲突</strong></div><Input prefix={<SearchOutlined/>} placeholder="筛选整合包" value={query} onChange={e => setQuery(e.target.value)} allowClear /></WorkbenchCard>
-    <WorkbenchCard className="pack-table-card"><WorkbenchSectionHeader title="全部整合包" action={<span className="db-muted">按最后编辑排序</span>}/><div className="pack-table pack-table-head"><span>包名称</span><span>环境</span><span>模组</span><span>冲突</span><span>最后编辑</span><span /></div>{visible.map(p => <button className="pack-table pack-table-row" key={p.id} onClick={() => navigate(`/packs/${p.id}`)}><span className="pack-table-name"><span className={`pack-mini-cover pack-mini-${p.id}`}>{p.name.slice(0, 1)}</span><strong>{p.name}</strong><Tag>{p.version}</Tag></span><span><Tag>MC 1.20.1</Tag><Tag>{p.loader}</Tag></span><span className="tabular"><strong>{p.mods}</strong> 个</span><span className={p.pending ? 'text-danger tabular' : 'text-success tabular'}>{p.pending ? `待解决 ${p.pending}` : '已解决'}</span><span className="db-muted">{p.edited}</span><span><MoreOutlined /></span></button>)}{visible.length === 0 && <div className="empty-inline">没有匹配的整合包。试试其他名称。</div>}</WorkbenchCard>
+    <WorkbenchCard className="pack-table-card"><WorkbenchSectionHeader title="全部整合包" action={<span className="db-muted">按最后编辑排序</span>}/>{error && <div className="empty-inline">加载失败：{error}</div>}<div className="pack-table pack-table-head"><span>包名称</span><span>环境</span><span>模组</span><span>状态</span><span>最后编辑</span><span /></div>{visible.map(p => <button className="pack-table pack-table-row" key={p.id} onClick={() => navigate(`/packs/${p.id}`)}><span className="pack-table-name"><span className={`pack-mini-cover pack-mini-${p.id}`}>{p.name.slice(0, 1)}</span><strong>{p.name}</strong><Tag>{p.packVersion}</Tag></span><span><Tag>MC {p.mcVersion}</Tag><Tag>{p.loader}</Tag></span><span className="tabular">—</span><span className="text-success tabular">{p.status}</span><span className="db-muted">{p.updatedAt ?? p.createdAt ?? '—'}</span><span><MoreOutlined /></span></button>)}{!error && visible.length === 0 && <div className="empty-inline">没有匹配的整合包。试试其他名称。</div>}</WorkbenchCard>
   </div>;
 }
 
 export function PackWorkbenchPage() {
-  const {id} = useParams(); const navigate = useNavigate(); const {message} = App.useApp();
-  return <div className="workspace-page"><PackContext action={<WorkbenchButton tone="primary" onClick={() => navigate(`/packs/${id}/publish`)} icon={<FileZipOutlined/>}>开始打包</WorkbenchButton>}/><div className="page-heading compact"><div><span className="eyebrow">PACK WORKBENCH</span><h1>{packName(id)}</h1><p>选择模组、锁定依赖，处理会阻塞交付的冲突。</p></div><Button icon={<SettingOutlined/>} onClick={() => message.info('包设置将在此处打开')}>包设置</Button></div><div className="workbench-grid"><main className="workbench-main"><WorkbenchCard className="mod-search-card"><div className="toolbar-row"><Input size="large" prefix={<SearchOutlined/>} placeholder={`在 ${packName(id)} 内搜索模组`}/><Select defaultValue="全部平台" options={['全部平台', 'CurseForge', 'Modrinth'].map(v => ({label: v, value: v}))}/><Select defaultValue="全部分类" options={['全部分类', '科技', '魔法', '探索'].map(v => ({label: v, value: v}))}/><Button type="text" icon={<ReloadOutlined/>}>刷新索引</Button></div><div className="result-note"><span><strong>142</strong> 个已选择模组</span><span className="text-warning">3 个待处理冲突</span><Button type="link" onClick={() => navigate(`/packs/${id}/mods`)}>查看完整搜索 <ArrowRightOutlined/></Button></div>{mods.slice(0, 3).map(m => <ModRow key={m.name} mod={m} onAction={() => message.success(`${m.name} 已加入整合包`)} />)}<Button block type="dashed" className="list-more" onClick={() => navigate(`/packs/${id}/mods`)}>搜索并添加更多模组</Button></WorkbenchCard></main><PackHealthRail id={id}/></div></div>;
+  const {id} = useParams(); const navigate = useNavigate(); const {message} = App.useApp(); const [pack,setPack]=useState<Pack|null>(null); const [items,setItems]=useState<Mod[]>([]); const [error,setError]=useState('');
+  useEffect(()=>{ if (!id) return; void Promise.all([getPack(id),listMods(id)]).then(([p,m])=>{setPack(p);setItems(m)}).catch(e=>setError(e instanceof Error?e.message:String(e))); },[id]);
+  const rows = items.slice(0,3).map(m=>({name:m.displayName,author:m.source,version:m.versionId||'—',downloads:'',status:m.status,color:'blue',desc:m.fileName}));
+  return <div className="workspace-page"><PackContext action={<WorkbenchButton tone="primary" onClick={() => navigate(`/packs/${id}/publish`)} icon={<FileZipOutlined/>}>开始打包</WorkbenchButton>}/><div className="page-heading compact"><div><span className="eyebrow">PACK WORKBENCH</span><h1>{pack?.name ?? '加载中…'}</h1><p>选择模组、锁定依赖，处理会阻塞交付的冲突。</p></div><Button icon={<SettingOutlined/>} onClick={() => message.info('包设置将在此处打开')}>包设置</Button></div>{error&&<div className="empty-inline">加载失败：{error}</div>}<div className="workbench-grid"><main className="workbench-main"><WorkbenchCard className="mod-search-card"><div className="result-note"><span><strong>{items.length}</strong> 个已选择模组</span><Button type="link" onClick={() => navigate(`/packs/${id}/mods`)}>查看完整搜索 <ArrowRightOutlined/></Button></div>{rows.map(m=><ModRow key={m.name} mod={m} onAction={()=>message.success(`${m.name} 已加入整合包`)}/>)}{!error&&items.length===0&&<div className="empty-inline">当前还没有模组。</div>}<Button block type="dashed" className="list-more" onClick={()=>navigate(`/packs/${id}/mods`)}>搜索并添加更多模组</Button></WorkbenchCard></main><PackHealthRail id={id}/></div></div>;
 }
 
 function ModRow({mod, onAction}: {mod: typeof mods[number]; onAction: () => void}) { return <div className="mod-row"><span className="mod-symbol"><CodeOutlined/></span><div className="mod-row-main"><strong>{mod.name}</strong><span>{mod.author} · {mod.version} · {mod.downloads} 下载</span><small>{mod.desc}</small></div><Tag color={mod.color}>{mod.status}</Tag><Button size="small" onClick={onAction}>{mod.status === '已安装' ? '查看' : '添加'}</Button></div>; }
