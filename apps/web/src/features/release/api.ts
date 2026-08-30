@@ -5,7 +5,7 @@ export const versionSchema=z.object({id:z.string(),packId:z.string(),version:z.s
 export const releaseSchema=z.object({id:z.string(),packId:z.string(),packVersionId:z.string(),provider:z.string(),status:z.string(),remoteId:z.string(),idempotencyKey:z.string(),remoteState:z.string(),artifactId:z.string(),errorCode:z.string(),errorMessage:z.string(),createdAt:z.string(),updatedAt:z.string()});
 const page=<T extends z.ZodTypeAny>(i:T)=>z.object({items:z.array(i),next_cursor:z.string().nullable().optional(),total:z.number().int().optional()});
 export const listDeliveryChecks=(packId:string)=>get(`/api/packs/${encodeURIComponent(packId)}/delivery-checks`,page(deliveryCheckSchema));
-export const runDeliveryChecks=(packId:string,body:unknown)=>post(`/api/packs/${encodeURIComponent(packId)}/delivery-checks/run`,body,z.object({packVersionId:z.string(),checks:z.array(deliveryCheckSchema)}));
+export const runDeliveryChecks=(packId:string,body:unknown)=>post(`/api/packs/${encodeURIComponent(packId)}/delivery-checks/run`,body,z.object({items:z.array(deliveryCheckSchema)}));
 export const listVersions=(packId:string)=>get(`/api/packs/${encodeURIComponent(packId)}/versions`,page(versionSchema)).then(v=>v.items);
 export const listArtifacts=(packId:string,versionId?:string)=>get(`/api/packs/${encodeURIComponent(packId)}/artifacts${versionId?`?packVersionId=${encodeURIComponent(versionId)}`:''}`,page(artifactSchema)).then(v=>v.items);
 export const listReleases=(packId:string,versionId?:string)=>get(`/api/packs/${encodeURIComponent(packId)}/releases${versionId?`?packVersionId=${encodeURIComponent(versionId)}`:''}`,page(releaseSchema)).then(v=>v.items);
