@@ -177,7 +177,7 @@
 **(b) 校验**
 
 - 入参：`limit` 非整数或越界 → 400 `invalid_argument`
-- 出参：`Activity[]`，不分页
+- 出参：`ListEnvelope<Activity>`（见 [`dto.md`](./dto.md)）；当前页面只取 `items`，但必须返回 `next_cursor: null` 和 `total`
 
 **(c) 异常处理**
 
