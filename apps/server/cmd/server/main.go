@@ -15,12 +15,32 @@ import (
 
 	"mpackstation/internal/httpapi"
 	"mpackstation/internal/instlock"
+	"mpackstation/internal/provider"
 	"mpackstation/internal/service"
 	"mpackstation/internal/store"
 	"mpackstation/internal/task"
 )
 
 var version = "dev"
+
+// providerRegistry assembles real provider adapters. Modrinth works without a
+// token for public catalog reads; CurseForge is enabled only when
+// CURSEFORGE_API_KEY is set (https://console.curseforge.com).
+func providerRegistry() *provider.Registry {
+	adapters := []provider.Adapter{}
+	// Adapter paths already carry the API version prefix (/v2, /v1), so the
+	// base URLs must be bare hosts.
+	mr, err := provider.NewHTTPAdapter(provider.Modrinth, "https://api.modrinth.com", os.Getenv("MODRINTH_TOKEN"), nil)
+	if err == nil {
+		adapters = append(adapters, mr)
+	}
+	if key := os.Getenv("CURSEFORGE_API_KEY"); key != "" {
+		if cf, err := provider.NewHTTPAdapter(provider.CurseForge, "https://api.curseforge.com", key, nil); err == nil {
+			adapters = append(adapters, cf)
+		}
+	}
+	return provider.NewRegistry(adapters...)
+}
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:18871", "listen address")
@@ -56,22 +76,32 @@ func main() {
 	}
 	defer db.Close()
 	queue, err := task.NewQueue(db)
-	if err != nil { log.Fatalf("open task queue: %v", err) }
+	if err != nil {
+		log.Fatalf("open task queue: %v", err)
+	}
 	workerService := service.NewP7Service(db)
-	if err := workerService.RegisterTaskHandlersOnQueue(queue); err != nil { log.Fatalf("register task handlers: %v", err) }
+	if err := workerService.RegisterTaskHandlersOnQueue(queue); err != nil {
+		log.Fatalf("register task handlers: %v", err)
+	}
 	importService := service.NewImportService(db)
-	if err := importService.RegisterTaskHandlerOnQueue(queue); err != nil { log.Fatalf("register import handler: %v", err) }
-	if _, err := queue.Recover(context.Background()); err != nil { log.Fatalf("recover tasks: %v", err) }
+	if err := importService.RegisterTaskHandlerOnQueue(queue); err != nil {
+		log.Fatalf("register import handler: %v", err)
+	}
+	if _, err := queue.Recover(context.Background()); err != nil {
+		log.Fatalf("recover tasks: %v", err)
+	}
 	worker := task.NewWorker(queue, "server-worker")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
-		if err := worker.Run(ctx); err != nil && ctx.Err() == nil { log.Printf("task worker stopped: %v", err) }
+		if err := worker.Run(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("task worker stopped: %v", err)
+		}
 	}()
 
 	log.Printf("mpackstation server listening on http://%s (data: %s)", *addr, *dataDir)
 	server := &http.Server{
-		Addr: *addr, Handler: httpapi.NewRouter(db, version),
+		Addr: *addr, Handler: httpapi.NewRouterWithProviders(db, version, providerRegistry()),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second,
 	}

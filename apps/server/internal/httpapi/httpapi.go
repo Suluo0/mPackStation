@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"mpackstation/internal/provider"
 	"mpackstation/internal/service"
 )
 
@@ -71,6 +72,16 @@ func NewRouter(source any, version string) http.Handler {
 // NewRouterWithService is useful to tests and future composition roots.
 func NewRouterWithService(app *service.API, version string) http.Handler {
 	return newRouter(app, nil, nil, nil, version)
+}
+
+// NewRouterWithProviders wires real provider adapters (Modrinth/CurseForge)
+// into both the catalog service and the publish pipeline.
+func NewRouterWithProviders(source any, version string, reg *provider.Registry) http.Handler {
+	app := service.NewFromSource(source)
+	app.SetProviderRegistry(reg)
+	p7 := service.NewP7ServiceFromSource(source)
+	p7.SetProviderRegistry(reg)
+	return newRouter(app, service.NewTaskAPI(source), p7, service.NewImportServiceFromSource(source), version)
 }
 
 func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service, importer *service.ImportService, version string) http.Handler {
@@ -398,12 +409,30 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 			apiError(w, r, http.StatusBadRequest, "invalid_argument", "limit must be a positive integer")
 			return
 		}
+		// No provider param: fan the query out to every platform concurrently.
+		if strings.TrimSpace(in.Provider) == "" {
+			v, err := app.ModSearchAll(r.Context(), r.PathValue("packId"), in)
+			if err != nil {
+				writeServiceError(w, r, err)
+				return
+			}
+			WriteJSON(w, http.StatusOK, v)
+			return
+		}
 		v, err := app.ModSearch(r.Context(), r.PathValue("packId"), in)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
+	})
+	mux.HandleFunc("GET /api/packs/{packId}/mod-versions", func(w http.ResponseWriter, r *http.Request) {
+		v, err := app.ModVersions(r.Context(), r.PathValue("packId"), r.URL.Query().Get("provider"), r.URL.Query().Get("projectId"))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"items": v})
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/resolve", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ResolvePack(r.Context(), r.PathValue("packId"), RequestID(r.Context()))
@@ -918,22 +947,43 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		WriteJSON(w, http.StatusAccepted, v)
 	})
 	mux.HandleFunc("POST /api/packs/import/inspect", func(w http.ResponseWriter, r *http.Request) {
-		if importer == nil { writeServiceError(w, r, service.ErrUnavailable); return }
-		var body struct { Source, URL, Content string }
-		if !decodeJSON(w, r, &body) { return }
+		if importer == nil {
+			writeServiceError(w, r, service.ErrUnavailable)
+			return
+		}
+		var body struct{ Source, URL, Content string }
+		if !decodeJSON(w, r, &body) {
+			return
+		}
 		content, err := base64.StdEncoding.DecodeString(body.Content)
-		if body.Source == service.ImportSourceLocalZip && err != nil { apiError(w, r, http.StatusBadRequest, "invalid_argument", "content must be base64"); return }
+		if body.Source == service.ImportSourceLocalZip && err != nil {
+			apiError(w, r, http.StatusBadRequest, "invalid_argument", "content must be base64")
+			return
+		}
 		v, err := importer.Inspect(r.Context(), service.ImportPreviewInput{Source: body.Source, URL: body.URL, Content: content})
-		if err != nil { writeImportError(w, r, err); return }
+		if err != nil {
+			writeImportError(w, r, err)
+			return
+		}
 		WriteJSON(w, http.StatusOK, v)
 	})
 	mux.HandleFunc("POST /api/packs/import", func(w http.ResponseWriter, r *http.Request) {
-		if importer == nil { writeServiceError(w, r, service.ErrUnavailable); return }
-		var body struct { PreviewID, Token, InputHash, IdempotencyKey string }
-		if !decodeJSON(w, r, &body) { return }
-		if body.IdempotencyKey == "" { body.IdempotencyKey = r.Header.Get("Idempotency-Key") }
+		if importer == nil {
+			writeServiceError(w, r, service.ErrUnavailable)
+			return
+		}
+		var body struct{ PreviewID, Token, InputHash, IdempotencyKey string }
+		if !decodeJSON(w, r, &body) {
+			return
+		}
+		if body.IdempotencyKey == "" {
+			body.IdempotencyKey = r.Header.Get("Idempotency-Key")
+		}
 		v, reused, err := importer.Confirm(r.Context(), service.ImportConfirmInput{PreviewID: body.PreviewID, Token: body.Token, InputHash: body.InputHash, IdempotencyKey: body.IdempotencyKey})
-		if err != nil { writeImportError(w, r, err); return }
+		if err != nil {
+			writeImportError(w, r, err)
+			return
+		}
 		WriteJSON(w, http.StatusAccepted, map[string]any{"importId": body.PreviewID, "taskId": v.ID, "packId": v.PackID, "task": v, "reused": reused})
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/duplicate", func(w http.ResponseWriter, r *http.Request) {

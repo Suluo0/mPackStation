@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 )
 
 var (
@@ -28,19 +29,27 @@ type SearchRequest struct {
 	Limit                            int
 }
 type SearchResult struct {
-	Items      []Project
-	NextCursor string
-	Total      int
+	Items      []Project `json:"items"`
+	NextCursor string    `json:"nextCursor"`
+	Total      int       `json:"total"`
 }
 type Project struct {
-	ID, Slug, Name, Summary, IconURL string
-	Downloads                        int64
+	ID        string `json:"id"`
+	Slug      string `json:"slug,omitempty"`
+	Name      string `json:"name"`
+	Summary   string `json:"summary,omitempty"`
+	IconURL   string `json:"iconUrl,omitempty"`
+	Downloads int64  `json:"downloads"`
 }
 type Version struct {
-	ID, ProjectID, Name, VersionNumber string
-	GameVersions, Loaders              []string
-	Files                              []File
-	Dependencies                       []Dependency
+	ID            string       `json:"id"`
+	ProjectID     string       `json:"projectId,omitempty"`
+	Name          string       `json:"name,omitempty"`
+	VersionNumber string       `json:"versionNumber,omitempty"`
+	GameVersions  []string     `json:"gameVersions,omitempty"`
+	Loaders       []string     `json:"loaders,omitempty"`
+	Files         []File       `json:"files,omitempty"`
+	Dependencies  []Dependency `json:"dependencies,omitempty"`
 }
 type File struct {
 	ID          string `json:"id"`
@@ -59,6 +68,7 @@ func (f *File) UnmarshalJSON(data []byte) error {
 		ID          json.RawMessage `json:"id"`
 		Name        string          `json:"name"`
 		DisplayName string          `json:"displayName"`
+		FileName    string          `json:"filename"`
 		DownloadURL string          `json:"downloadUrl"`
 		URL         string          `json:"url"`
 		SHA1        string          `json:"sha1"`
@@ -66,10 +76,7 @@ func (f *File) UnmarshalJSON(data []byte) error {
 		Size        int64           `json:"size"`
 		FileLength  int64           `json:"fileLength"`
 		Primary     bool            `json:"primary"`
-		Hashes      []struct {
-			Value string `json:"value"`
-			Algo  int    `json:"algo"`
-		} `json:"hashes"`
+		Hashes      json.RawMessage `json:"hashes"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -82,6 +89,9 @@ func (f *File) UnmarshalJSON(data []byte) error {
 	if name == "" {
 		name = raw.DisplayName
 	}
+	if name == "" {
+		name = raw.FileName
+	}
 	url := raw.DownloadURL
 	if url == "" {
 		url = raw.URL
@@ -91,15 +101,35 @@ func (f *File) UnmarshalJSON(data []byte) error {
 		size = raw.FileLength
 	}
 	sha1, sha256 := raw.SHA1, raw.SHA256
-	for _, h := range raw.Hashes {
-		switch h.Algo {
-		case 1:
-			if sha1 == "" {
-				sha1 = h.Value
+	// CurseForge: hashes is [{value, algo}]; Modrinth: {"sha1": ..., "sha512": ...}.
+	var cfHashes []struct {
+		Value string `json:"value"`
+		Algo  int    `json:"algo"`
+	}
+	if len(raw.Hashes) > 0 && json.Unmarshal(raw.Hashes, &cfHashes) == nil {
+		for _, h := range cfHashes {
+			switch h.Algo {
+			case 1:
+				if sha1 == "" {
+					sha1 = h.Value
+				}
+			case 2:
+				if sha256 == "" {
+					sha256 = h.Value
+				}
 			}
-		case 2:
+		}
+	} else if len(raw.Hashes) > 0 {
+		var mrHashes struct {
+			SHA1   string `json:"sha1"`
+			SHA256 string `json:"sha256"`
+		}
+		if json.Unmarshal(raw.Hashes, &mrHashes) == nil {
+			if sha1 == "" {
+				sha1 = mrHashes.SHA1
+			}
 			if sha256 == "" {
-				sha256 = h.Value
+				sha256 = mrHashes.SHA256
 			}
 		}
 	}
@@ -173,7 +203,21 @@ func (r *Registry) Get(name string) (Adapter, error) {
 	}
 	a, ok := r.adapters[Name(name)]
 	if !ok {
-		return nil, ErrUnavailable
+		return nil, ErrNotFound
 	}
 	return a, nil
+}
+
+// List returns every registered adapter. Used by fan-out search; the order is
+// deterministic (sorted by provider name) so responses are stable.
+func (r *Registry) List() []Adapter {
+	if r == nil {
+		return nil
+	}
+	out := make([]Adapter, 0, len(r.adapters))
+	for _, a := range r.adapters {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
+	return out
 }

@@ -79,13 +79,68 @@ func (h *HTTPAdapter) call(ctx context.Context, method, path string, q url.Value
 	}
 	return nil
 }
-func (h *HTTPAdapter) Search(ctx context.Context, in SearchRequest) (SearchResult, error) {
-	q := url.Values{"query": {in.Query}}
-	if in.Limit > 0 {
-		q.Set("limit", strconv.Itoa(in.Limit))
+
+// cfLoaderType maps a loader name to CurseForge's ModLoaderType enum
+// (0=Any 1=Forge 2=Cauldron 3=LiteLoader 4=Fabric 5=Quilt 6=NeoForge).
+// Unknown loaders return "" so the filter is simply omitted.
+func cfLoaderType(loader string) string {
+	switch strings.ToLower(strings.TrimSpace(loader)) {
+	case "forge":
+		return "1"
+	case "fabric":
+		return "4"
+	case "quilt":
+		return "5"
+	case "neoforge":
+		return "6"
+	default:
+		return ""
 	}
-	if in.Cursor != "" {
-		q.Set("offset", in.Cursor)
+}
+
+func (h *HTTPAdapter) Search(ctx context.Context, in SearchRequest) (SearchResult, error) {
+	// Each platform has its own query vocabulary; build params per provider.
+	q := url.Values{}
+	path := "/v2/search"
+	if h.name == CurseForge {
+		// CurseForge: gameId=432 (Minecraft) is mandatory or the API 400s.
+		path = "/v1/mods/search"
+		q.Set("gameId", "432")
+		q.Set("classId", "6") // mods
+		q.Set("searchFilter", in.Query)
+		if in.Limit > 0 {
+			q.Set("pageSize", strconv.Itoa(in.Limit))
+		}
+		if in.Cursor != "" {
+			q.Set("index", in.Cursor)
+		}
+		if in.MCVersion != "" {
+			q.Set("gameVersion", in.MCVersion)
+		}
+		if lt := cfLoaderType(in.Loader); lt != "" {
+			q.Set("modLoaderType", lt)
+		}
+		q.Set("sortField", "6") // total downloads
+		q.Set("sortOrder", "desc")
+	} else {
+		// Modrinth: query/limit/offset, filters go into JSON facets.
+		q.Set("query", in.Query)
+		if in.Limit > 0 {
+			q.Set("limit", strconv.Itoa(in.Limit))
+		}
+		if in.Cursor != "" {
+			q.Set("offset", in.Cursor)
+		}
+		facets := [][]string{{"project_type:mod"}}
+		if in.MCVersion != "" {
+			facets = append(facets, []string{"versions:" + in.MCVersion})
+		}
+		if in.Loader != "" {
+			facets = append(facets, []string{"categories:" + strings.ToLower(in.Loader)})
+		}
+		if b, e := json.Marshal(facets); e == nil {
+			q.Set("facets", string(b))
+		}
 	}
 	var raw struct {
 		Hits []struct {
@@ -99,23 +154,22 @@ func (h *HTTPAdapter) Search(ctx context.Context, in SearchRequest) (SearchResul
 			Downloads   int64           `json:"downloads"`
 		} `json:"hits"`
 		Data []struct {
-			ID            json.RawMessage `json:"id"`
-			Name          string          `json:"name"`
-			Slug          string          `json:"slug"`
-			Summary       string          `json:"summary"`
-			LogoURL       string          `json:"logo"`
-			Downloads     int64           `json:"downloads"`
-			DownloadCount int64           `json:"downloadCount"`
+			ID      json.RawMessage `json:"id"`
+			Name    string          `json:"name"`
+			Slug    string          `json:"slug"`
+			Summary string          `json:"summary"`
+			Logo    struct {
+				ThumbnailURL string `json:"thumbnailUrl"`
+				URL          string `json:"url"`
+			} `json:"logo"`
+			Downloads     int64 `json:"downloads"`
+			DownloadCount int64 `json:"downloadCount"`
 		} `json:"data"`
 		Pagination struct {
 			Total         int `json:"total"`
 			TotalCount    int `json:"totalCount"`
 			Offset, Limit int
 		} `json:"pagination"`
-	}
-	path := "/v2/search"
-	if h.name == CurseForge {
-		path = "/v1/mods/search"
 	}
 	if e := h.call(ctx, "GET", path, q, &raw); e != nil {
 		return SearchResult{}, e
@@ -145,7 +199,11 @@ func (h *HTTPAdapter) Search(ctx context.Context, in SearchRequest) (SearchResul
 		if downloads == 0 {
 			downloads = x.DownloadCount
 		}
-		out.Items = append(out.Items, Project{ID: id, Slug: x.Slug, Name: name, Summary: x.Summary, IconURL: x.LogoURL, Downloads: downloads})
+		icon := x.Logo.ThumbnailURL
+		if icon == "" {
+			icon = x.Logo.URL
+		}
+		out.Items = append(out.Items, Project{ID: id, Slug: x.Slug, Name: name, Summary: x.Summary, IconURL: icon, Downloads: downloads})
 	}
 	out.Total = raw.Pagination.Total
 	if out.Total == 0 {
@@ -172,16 +230,19 @@ func (h *HTTPAdapter) Project(ctx context.Context, id string) (Project, error) {
 		raw = envelope.Data
 	}
 	var x struct {
-		ID            json.RawMessage `json:"id"`
-		Slug          string          `json:"slug"`
-		Title         string          `json:"title"`
-		Name          string          `json:"name"`
-		Description   string          `json:"description"`
-		Summary       string          `json:"summary"`
-		IconURL       string          `json:"icon_url"`
-		LogoURL       string          `json:"logo"`
-		Downloads     int64           `json:"downloads"`
-		DownloadCount int64           `json:"downloadCount"`
+		ID          json.RawMessage `json:"id"`
+		Slug        string          `json:"slug"`
+		Title       string          `json:"title"`
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Summary     string          `json:"summary"`
+		IconURL     string          `json:"icon_url"`
+		Logo        struct {
+			ThumbnailURL string `json:"thumbnailUrl"`
+			URL          string `json:"url"`
+		} `json:"logo"`
+		Downloads     int64 `json:"downloads"`
+		DownloadCount int64 `json:"downloadCount"`
 	}
 	if e := json.Unmarshal(raw, &x); e != nil {
 		return Project{}, fmt.Errorf("decode project: %w", e)
@@ -196,7 +257,10 @@ func (h *HTTPAdapter) Project(ctx context.Context, id string) (Project, error) {
 	}
 	icon := x.IconURL
 	if icon == "" {
-		icon = x.LogoURL
+		icon = x.Logo.ThumbnailURL
+	}
+	if icon == "" {
+		icon = x.Logo.URL
 	}
 	downloads := x.Downloads
 	if downloads == 0 {
@@ -259,8 +323,20 @@ func (h *HTTPAdapter) Versions(ctx context.Context, id string) ([]Version, error
 			name = x.DisplayName
 		}
 		gameVersions := x.GameVersions
-		if len(gameVersions) == 0 {
-			gameVersions = x.GameVersionsCF
+		loaders := x.Loaders
+		if len(gameVersions) == 0 && len(x.GameVersionsCF) > 0 {
+			// CurseForge mixes game versions, loader names and side markers
+			// ("Client"/"Server") into one array; split them out here.
+			for _, gv := range x.GameVersionsCF {
+				switch strings.ToLower(gv) {
+				case "client", "server":
+					// side marker, not a game version
+				case "forge", "neoforge", "fabric", "quilt", "liteloader", "cauldron":
+					loaders = append(loaders, gv)
+				default:
+					gameVersions = append(gameVersions, gv)
+				}
+			}
 		}
 		files := x.Files
 		if len(files) == 0 && (x.DownloadURL != "" || x.FileName != "") {
@@ -290,7 +366,7 @@ func (h *HTTPAdapter) Versions(ctx context.Context, id string) ([]Version, error
 			}
 			deps = append(deps, Dependency{ProjectID: pid, VersionID: vid, Constraint: d.Constraint, Kind: kind, Reason: "provider dependency"})
 		}
-		out = append(out, Version{ID: versionID, ProjectID: id, Name: name, VersionNumber: x.VersionNumber, GameVersions: gameVersions, Loaders: x.Loaders, Files: files, Dependencies: deps})
+		out = append(out, Version{ID: versionID, ProjectID: id, Name: name, VersionNumber: x.VersionNumber, GameVersions: gameVersions, Loaders: loaders, Files: files, Dependencies: deps})
 	}
 	return out, nil
 }

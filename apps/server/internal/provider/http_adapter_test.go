@@ -122,9 +122,9 @@ func TestHTTPAdapterCurseForgeEnvelopeNormalization(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v1/mods/search":
-			_, _ = w.Write([]byte(`{"data":[{"id":123,"name":"Alpha Mod","slug":"alpha","summary":"summary","logo":"https://cdn.example/icon.png","downloadCount":1234}],"pagination":{"totalCount":1,"index":0,"pageSize":20}}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":123,"name":"Alpha Mod","slug":"alpha","summary":"summary","logo":{"thumbnailUrl":"https://cdn.example/icon.png"},"downloadCount":1234}],"pagination":{"totalCount":1,"index":0,"pageSize":20}}`))
 		case "/v1/mods/123":
-			_, _ = w.Write([]byte(`{"data":{"id":123,"name":"Alpha Mod","slug":"alpha","summary":"summary","logo":"https://cdn.example/icon.png","downloadCount":1234}}`))
+			_, _ = w.Write([]byte(`{"data":{"id":123,"name":"Alpha Mod","slug":"alpha","summary":"summary","logo":{"thumbnailUrl":"https://cdn.example/icon.png"},"downloadCount":1234}}`))
 		case "/v1/mods/123/files":
 			_, _ = w.Write([]byte(`{"data":[{"id":456,"displayName":"Alpha 1.0","gameVersions":["1.20.1"],"loaders":["fabric"],"downloadUrl":"https://cdn.example/alpha.jar","fileLength":12,"hashes":[{"value":"1111111111111111111111111111111111111111","algo":1}],"primary":true}],"pagination":{"totalCount":1,"index":0,"pageSize":20}}`))
 		default:

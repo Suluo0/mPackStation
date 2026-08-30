@@ -136,6 +136,25 @@ func (a *API) p5Adapter(name string) (provider.Adapter, error) {
 	}
 	return ad, nil
 }
+
+// ModVersions lists a project's versions on a provider so the UI can offer a
+// real version choice before AddPackMod. Read-only; no download happens here.
+func (a *API) ModVersions(ctx context.Context, packID, providerName, projectID string) ([]provider.Version, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrInvalidArgument
+	}
+	if _, err := a.repo.GetPack(ctx, packID); err != nil {
+		return nil, err
+	}
+	ad, err := a.p5Adapter(providerName)
+	if err != nil {
+		return nil, err
+	}
+	return ad.Versions(ctx, projectID)
+}
 func mapProviderError(err error) error {
 	switch {
 	case errors.Is(err, provider.ErrNotFound):
@@ -146,6 +165,106 @@ func mapProviderError(err error) error {
 		return err
 	}
 }
+
+// ModSearchAllItem is one catalog hit tagged with the platform it came from.
+type ModSearchAllItem struct {
+	Provider string `json:"provider"`
+	provider.Project
+}
+
+// ModSearchAllResult merges every platform's hits and reports per-platform
+// failures independently, so one missing key or outage never blocks the rest.
+type ModSearchAllResult struct {
+	Items  []ModSearchAllItem `json:"items"`
+	Errors map[string]string  `json:"errors,omitempty"`
+	Total  int                `json:"total"`
+}
+
+// providerErrorCode maps provider failures to stable per-platform codes.
+func providerErrorCode(err error) string {
+	switch {
+	case errors.Is(err, provider.ErrRateLimited):
+		return "rate_limited"
+	case errors.Is(err, provider.ErrUnauthorized):
+		return "unauthorized"
+	case errors.Is(err, provider.ErrNotFound):
+		return "not_found"
+	default:
+		return "unavailable"
+	}
+}
+
+// ModSearchAll fans one fuzzy name query out to every known platform
+// concurrently. Adapters are stateless, so no locking is needed: each
+// goroutine writes only its own result slot. Rate-limit safety comes from
+// exactly one request per platform per search, no retries, and a per-platform
+// timeout.
+func (a *API) ModSearchAll(ctx context.Context, packID string, in ModSearchInput) (ModSearchAllResult, error) {
+	if err := a.ready(); err != nil {
+		return ModSearchAllResult{}, err
+	}
+	if _, err := a.repo.GetPack(ctx, packID); err != nil {
+		return ModSearchAllResult{}, err
+	}
+	known := []provider.Name{provider.CurseForge, provider.Modrinth}
+	type outcome struct {
+		name  provider.Name
+		items []provider.Project
+		err   error
+	}
+	slots := make([]outcome, len(known))
+	var wg sync.WaitGroup
+	for i, name := range known {
+		slots[i].name = name
+		ad, err := a.p5Registry().Get(string(name))
+		if err != nil {
+			slots[i].err = errNotConfigured
+			continue
+		}
+		wg.Add(1)
+		go func(i int, ad provider.Adapter) {
+			defer wg.Done()
+			pctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			defer cancel()
+			r, err := ad.Search(pctx, provider.SearchRequest{Query: in.Query, MCVersion: in.MCVersion, Loader: in.Loader, Cursor: in.Cursor, Limit: in.Limit})
+			if err != nil {
+				slots[i].err = err
+				return
+			}
+			slots[i].items = r.Items
+		}(i, ad)
+	}
+	wg.Wait()
+
+	out := ModSearchAllResult{Items: []ModSearchAllItem{}}
+	for _, s := range slots {
+		if s.err != nil {
+			if out.Errors == nil {
+				out.Errors = map[string]string{}
+			}
+			if errors.Is(s.err, errNotConfigured) {
+				out.Errors[string(s.name)] = "not_configured"
+			} else {
+				out.Errors[string(s.name)] = providerErrorCode(s.err)
+			}
+			continue
+		}
+		for _, p := range s.items {
+			out.Items = append(out.Items, ModSearchAllItem{Provider: string(s.name), Project: p})
+		}
+	}
+	// Deterministic merge: most-downloaded first, platform as tiebreak.
+	sort.SliceStable(out.Items, func(i, j int) bool {
+		if out.Items[i].Downloads != out.Items[j].Downloads {
+			return out.Items[i].Downloads > out.Items[j].Downloads
+		}
+		return out.Items[i].Provider < out.Items[j].Provider
+	})
+	out.Total = len(out.Items)
+	return out, nil
+}
+
+var errNotConfigured = errors.New("provider not configured")
 
 func (a *API) ListPackMods(ctx context.Context, packID string) ([]Mod, error) {
 	if err := a.ready(); err != nil {
