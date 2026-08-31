@@ -1,7 +1,7 @@
-import {useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {Checkbox, App} from 'antd';
-import type {Onboarding} from './types';
-import {launchPrismLogin} from './api';
+import type {Onboarding} from '../../api/onboarding';
+import {launchPrismLogin} from '../../api/system';
 import {WorkbenchCard} from '../../ui/workbench/Workbench';
 
 /* 悬浮上手清单(全页面右上角)。第 4 步只负责登录账号:点击唤起 Prism GUI,
@@ -18,6 +18,13 @@ const checklist = [
 export function OnboardingChecklist({onboarding, onSettings, onRefresh}: {onboarding: Onboarding | null; onSettings: () => void; onRefresh?: () => void}) {
   const {message} = App.useApp();
   const [launching, setLaunching] = useState(false);
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 组件卸载时清掉轮询,避免残留定时器在已卸载页面上继续触发刷新。
+  useEffect(() => () => {
+    if (pollTimer.current !== null) clearInterval(pollTimer.current);
+  }, []);
+
   if (!onboarding || Object.values(onboarding.steps).every(Boolean)) return null;
 
   const runLogin = () => {
@@ -26,11 +33,15 @@ export function OnboardingChecklist({onboarding, onSettings, onRefresh}: {onboar
       .then(() => {
         message.info('Prism 已唤起,请在其中添加微软账号;完成后这里会自动打勾');
         // 轮询直到账号就绪(登录动作在用户侧,留 10 分钟上限)
+        if (pollTimer.current !== null) clearInterval(pollTimer.current);
         let tries = 0;
-        const timer = setInterval(() => {
+        pollTimer.current = setInterval(() => {
           tries += 1;
           onRefresh?.();
-          if (tries >= 120) clearInterval(timer);
+          if (tries >= 120 && pollTimer.current !== null) {
+            clearInterval(pollTimer.current);
+            pollTimer.current = null;
+          }
         }, 5000);
       })
       .catch(e => message.error(e instanceof Error ? e.message : String(e)))

@@ -2,8 +2,21 @@ import type {ZodType} from 'zod';
 
 /* fetch + zod 校验的极简封装。契约不符时立刻抛错，不让脏数据进组件。 */
 
+/** ApiError 保留后端错误信封的 status 与 code,界面可按 code 分支
+    (如 revision_conflict → "内容已被他人修改,刷新后重试")。 */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 async function parseResponse<T>(response: Response, schema: ZodType<T>): Promise<T> {
-  if (!response.ok) throw new Error(await readError(response));
+  if (!response.ok) throw await readError(response);
   const body: unknown = await response.json();
   const result = schema.safeParse(body);
   if (!result.success) {
@@ -13,24 +26,28 @@ async function parseResponse<T>(response: Response, schema: ZodType<T>): Promise
 }
 
 /* 后端统一错误信封是 {"error": {"code": ..., "message": ...}}，但也可能直接是纯文本。 */
-async function readError(response: Response): Promise<string> {
+async function readError(response: Response): Promise<ApiError> {
   const fallback = `HTTP ${response.status} ${response.statusText}`;
   try {
     const body: unknown = await response.json();
     if (body && typeof body === 'object' && 'error' in body) {
       const err = (body as {error: unknown}).error;
-      if (err && typeof err === 'object' && 'message' in err) {
-        return String((err as {message: unknown}).message) || fallback;
+      if (err && typeof err === 'object') {
+        const e = err as {message?: unknown; code?: unknown};
+        const message = typeof e.message === 'string' && e.message ? e.message : fallback;
+        const code = typeof e.code === 'string' && e.code ? e.code : 'unknown';
+        return new ApiError(message, response.status, code);
       }
-      if (typeof err === 'string') return err || fallback;
+      if (typeof err === 'string') return new ApiError(err || fallback, response.status, 'unknown');
     }
     if (body && typeof body === 'object' && 'message' in body) {
-      return String((body as {message: unknown}).message) || fallback;
+      const m = (body as {message: unknown}).message;
+      return new ApiError(typeof m === 'string' && m ? m : fallback, response.status, 'unknown');
     }
   } catch {
-    return fallback;
+    return new ApiError(fallback, response.status, 'unknown');
   }
-  return fallback;
+  return new ApiError(fallback, response.status, 'unknown');
 }
 
 export async function get<T>(url: string, schema: ZodType<T>): Promise<T> {
@@ -43,10 +60,10 @@ export async function get<T>(url: string, schema: ZodType<T>): Promise<T> {
   }
 }
 
-/* 非 GET 请求需要 X-MPack-Token。后端读 MPACK_TOKEN，未设置时 dev 兜底为 "test"
-   （后端代码里标注为 P2 待办）。生产部署必须同时设置服务端的 MPACK_TOKEN 和
-   前端构建期的 VITE_MPACK_TOKEN，两边保持一致。 */
-const WRITE_TOKEN: string = import.meta.env.VITE_MPACK_TOKEN ?? (import.meta.env.DEV ? 'test' : '');
+/* 非 GET 请求需要 X-MPack-Token。令牌由 vite.config.ts 在构建期注入
+   （VITE_MPACK_TOKEN 环境变量优先，否则读后端 data/runtime-token)。
+   不存在硬编码兜底；注入为空时写请求会被后端 401，错误会如实抛给界面。 */
+const WRITE_TOKEN: string = typeof __MPACK_WRITE_TOKEN__ === 'string' ? __MPACK_WRITE_TOKEN__ : '';
 
 function writeHeaders(): Record<string, string> {
   return {'content-type': 'application/json', 'X-MPack-Token': WRITE_TOKEN};
@@ -77,6 +94,6 @@ export function patch<T>(url: string, body: unknown, schema: ZodType<T>, options
 
 /* DELETE 返回 204 No Content，没有响应体，不能走 parseResponse。 */
 export async function del(url: string): Promise<void> {
-  const response = await fetch(url, {method: 'DELETE', headers: {'X-MPack-Token': WRITE_TOKEN}});
-  if (!response.ok) throw new Error(await readError(response));
+  const response = await fetch(url, {method: 'DELETE', headers: writeHeaders()});
+  if (!response.ok) throw await readError(response);
 }
