@@ -905,7 +905,7 @@ MC 版本候选，创建包下拉用。
 
 #### `POST /api/packs/{packId}/publish/{provider}/async`
 
-异步发布，出参（202）`{"taskId":"...","releaseId":"..."}`，异常同上。
+异步发布，出参（202）`{"taskId":"...","reused":false}`。release 记录由后台任务执行时才创建，入队响应不含 `releaseId`；事后用 `GET /api/packs/{packId}/releases` 或任务日志查询。异常同上。
 
 #### `GET /api/packs/{packId}/releases`
 
@@ -987,14 +987,14 @@ MC 版本候选，创建包下拉用。
 
 ### 4.2 设置页
 
-`SettingsPage` 目前**零接口调用**，全是硬编码：
+`SettingsPage` 只保留有真实后端的区块（决策 D-11）：
 
-| 界面元素 | 应接接口 |
+| 界面元素 | 接口 |
 |---|---|
-| 平台连接状态 | `GET /api/system/status` 的 `modrinthReachable` / `curseforgeReachable` |
+| 平台连接状态 | `GET /api/system/status` 的 `modrinthStatus` / `curseforgeStatus`（三态 unknown/ok/unavailable）与 reachability |
 | 缓存体积 / 剩余空间 | `GET /api/system/status` 的 `cacheSizeBytes` / `storageFreeBytes` |
-| 「清理缓存」 | 无对应接口 —— 需新增或移除 UI |
-| 「默认包配置」 | **后端无 `/api/settings`** —— 需新增或移除 UI |
+
+「清理缓存」「默认包配置」「恢复默认」「界面」四个无后端支撑的 UI 区块已移除；需要时另行立项 `/api/settings` 与 cache purge 接口。
 
 ---
 
