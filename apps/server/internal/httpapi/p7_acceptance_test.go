@@ -213,7 +213,7 @@ func TestP7ArtifactHashAndDownloadContract(t *testing.T) {
 	if got := hex.EncodeToString(digest[:]); got != built.Artifact.SHA256 || int64(len(body)) != built.Artifact.SizeBytes {
 		t.Fatalf("P7-ARTIFACT-001 digest=%q/%d, registered=%q/%d", hex.EncodeToString(digest[:]), len(body), built.Artifact.SHA256, built.Artifact.SizeBytes)
 	}
-	handler := NewRouter(db, "test")
+	handler := NewRouter(db, "test", "test")
 	res := p7Do(t, handler, http.MethodGet, "/api/packs/"+packID+"/artifacts/"+built.Artifact.ID+"/download", nil, false)
 	if res.Code != http.StatusOK {
 		t.Fatalf("P7-ARTIFACT-001 download status=%d body=%s", res.Code, res.Body.String())
@@ -468,7 +468,7 @@ func (a *p7CountingAdapter) statusCalls() int { a.mu.Lock(); defer a.mu.Unlock()
 func p7HTTPFixture(t *testing.T) (http.Handler, *sql.DB, string, string) {
 	t.Helper()
 	db, _, packID, versionID := newP7ServiceFixture(t)
-	return NewRouter(db, "test"), db, packID, versionID
+	return NewRouter(db, "test", "test"), db, packID, versionID
 }
 
 func newP7ServiceFixture(t *testing.T) (*sql.DB, *service.API, string, string) {

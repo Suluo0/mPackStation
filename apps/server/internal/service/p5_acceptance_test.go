@@ -59,7 +59,7 @@ func TestP5AcceptanceModLifecycleAndCrossPackIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if modA.Status != "installed" || modA.SHA1 != p5SHA1 {
+	if modA.Status != "installed" || modA.SHA1 == nil || *modA.SHA1 != p5SHA1 {
 		t.Fatalf("added mod = %#v", modA)
 	}
 	if _, err := app.AddPackMod(context.Background(), packA.ID, AddModInput{Provider: "curseforge", ProjectID: "p1", VersionID: "v1"}, "p5-duplicate"); !IsConflict(err) {
@@ -97,7 +97,7 @@ func TestP5AcceptanceModLifecycleAndCrossPackIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.VersionID != version || updated.SHA1 != "2222222222222222222222222222222222222222" || updated.Status != "installed" {
+	if updated.VersionID == nil || *updated.VersionID != version || updated.SHA1 == nil || *updated.SHA1 != "2222222222222222222222222222222222222222" || updated.Status != "installed" {
 		t.Fatalf("version update = %#v", updated)
 	}
 

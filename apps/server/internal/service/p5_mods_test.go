@@ -34,7 +34,7 @@ func TestP5ModChainSearchAddResolveAndHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Status != "installed" || m.SHA1 == "" {
+	if m.Status != "installed" || m.SHA1 == nil {
 		t.Fatalf("mod = %#v", m)
 	}
 	mods, err := a.ListPackMods(context.Background(), p.ID)

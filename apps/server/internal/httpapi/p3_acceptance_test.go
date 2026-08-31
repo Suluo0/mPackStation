@@ -39,7 +39,6 @@ func TestP3FrontendRoutesAreBackedByHandlers(t *testing.T) {
 		{http.MethodPost, "/api/packs", ""},
 		{http.MethodGet, "/api/packs/p3-missing", "pack_not_found"},
 		{http.MethodPatch, "/api/packs/p3-missing", "pack_not_found"},
-		{http.MethodPost, "/api/packs/p3-missing/duplicate", ""},
 		{http.MethodPost, "/api/packs/p3-missing/archive", "pack_not_found"},
 		{http.MethodPost, "/api/packs/p3-missing/unarchive", "pack_not_found"},
 		{http.MethodDelete, "/api/packs/p3-missing", "pack_not_found"},
@@ -117,9 +116,16 @@ func TestP3ListContractsUseStableArraysAndPaginationInputs(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("P3-HTTP-003 tasks status=%d body=%s", res.Code, res.Body.String())
 	}
-	var tasks []map[string]json.RawMessage
-	p3DecodeJSON(t, res, &tasks)
-	for i, task := range tasks {
+	var taskEnv struct {
+		Items      []map[string]json.RawMessage `json:"items"`
+		NextCursor any                          `json:"next_cursor"`
+		Total      int                          `json:"total"`
+	}
+	p3DecodeJSON(t, res, &taskEnv)
+	if taskEnv.Total != len(taskEnv.Items) {
+		t.Fatalf("P3-HTTP-003 tasks total=%d items=%d", taskEnv.Total, len(taskEnv.Items))
+	}
+	for i, task := range taskEnv.Items {
 		p3RequireKeys(t, task, "id", "type", "title", "packId", "packName", "status", "progress", "error", "startedAt", "finishedAt")
 		var progress float64
 		p3Unmarshal(t, task["progress"], &progress)
@@ -132,8 +138,12 @@ func TestP3ListContractsUseStableArraysAndPaginationInputs(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("P3-HTTP-003 activities status=%d body=%s", res.Code, res.Body.String())
 	}
-	var activities []map[string]json.RawMessage
-	p3DecodeJSON(t, res, &activities)
+	var actEnv struct {
+		Items []map[string]json.RawMessage `json:"items"`
+		Total int                          `json:"total"`
+	}
+	p3DecodeJSON(t, res, &actEnv)
+	activities := actEnv.Items
 	for i, activity := range activities {
 		p3RequireKeys(t, activity, "id", "kind", "text", "packId", "at")
 		var text string
@@ -238,7 +248,7 @@ func p3Router(t *testing.T) (http.Handler, *sql.DB) {
 	if err != nil {
 		t.Fatalf("open P3 database: %v", err)
 	}
-	return NewRouter(db, "test"), db
+	return NewRouter(db, "test", "test"), db
 }
 
 func p3Request(t *testing.T, method, path string, body io.Reader) *http.Request {

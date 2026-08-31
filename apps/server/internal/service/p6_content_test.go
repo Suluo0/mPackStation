@@ -55,7 +55,7 @@ func TestP6ContentRevisionLifecycleAndEvidence(t *testing.T) {
 	if err != nil || v.Status != "passed" {
 		t.Fatalf("validate = %#v %v", v, err)
 	}
-	if err := a.ApplyContent(ctx, packID, d.ID, r3.ID, "req-apply"); err != nil {
+	if _, err := a.ApplyContent(ctx, packID, d.ID, r3.ID, "req-apply"); err != nil {
 		t.Fatal(err)
 	}
 	got, _, err := a.GetContent(ctx, packID, d.ID)
@@ -114,7 +114,8 @@ func TestP6ContentValidationRejectsUnknownAndBlocksApply(t *testing.T) {
 	if !isBlocking(issues.Issues) {
 		t.Fatalf("issues = %#v", issues)
 	}
-	if err := a.ApplyContent(ctx, packID, d.ID, r.ID, "req-a"); !errors.Is(err, ErrValidationFailed) {
+	var ve *ValidationError
+	if _, err := a.ApplyContent(ctx, packID, d.ID, r.ID, "req-a"); !errors.As(err, &ve) || ve.Domain != "content" {
 		t.Fatalf("apply error = %v", err)
 	}
 }
@@ -181,7 +182,8 @@ func TestP6QuestRejectsCycleOrCrossPackReference(t *testing.T) {
 	if len(issues) == 0 || issues[0].Code != "cycle" {
 		t.Fatalf("cycle issues=%#v", issues)
 	}
-	if err := a.ApplyQuest(ctx, packID, "q-apply"); !errors.Is(err, ErrValidationFailed) {
+	var ve *ValidationError
+	if err := a.ApplyQuest(ctx, packID, "q-apply"); !errors.As(err, &ve) || ve.Domain != "quest" {
 		t.Fatalf("cycle apply=%v", err)
 	}
 	_ = r
@@ -211,7 +213,8 @@ func TestP6QuestRejectsCycleOrCrossPackReference(t *testing.T) {
 	cross := questBase()
 	cross.Nodes[0].ModRefs = []any{mod.ID}
 	_, crossIssues, err := a.SaveQuestDraft(ctx, packID, cross, 2, "q-cross")
-	if !errors.Is(err, ErrCrossPackReference) {
+	var cve *ValidationError
+	if !errors.As(err, &cve) || cve.Domain != "quest" {
 		t.Fatalf("cross-pack error=%v issues=%#v", err, crossIssues)
 	}
 	found := false

@@ -36,7 +36,7 @@ func TestP5HTTPModChainAndStableProviderErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	app.SetProviderRegistry(provider.NewRegistry(adapter))
-	handler := NewRouterWithService(app, "test")
+	handler := NewRouterWithService(app, "test", "test")
 	pack, err := app.CreatePack(context.Background(), service.CreatePackInput{Name: "P5 HTTP", MCVersion: "1.20.1", Loader: "fabric", LoaderVersion: "0.15"}, "p5-http-pack")
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +50,7 @@ func TestP5HTTPModChainAndStableProviderErrors(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&search); err != nil {
 		t.Fatalf("search JSON: %v", err)
 	}
-	for _, key := range []string{"items", "nextCursor", "total"} {
+	for _, key := range []string{"items", "next_cursor", "total"} {
 		if _, ok := search[key]; !ok {
 			t.Fatalf("search response missing %q: %s", key, res.Body.String())
 		}
@@ -64,7 +64,7 @@ func TestP5HTTPModChainAndStableProviderErrors(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&mod); err != nil {
 		t.Fatalf("add JSON: %v", err)
 	}
-	if mod.ID == "" || mod.Status != "installed" || mod.SHA1 == "" {
+	if mod.ID == "" || mod.Status != "installed" || mod.SHA1 == nil {
 		t.Fatalf("add response=%#v", mod)
 	}
 

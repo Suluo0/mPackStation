@@ -60,5 +60,5 @@ func p4HTTPRouter(t *testing.T) (http.Handler, *sql.DB) {
 	if err != nil {
 		t.Fatalf("open P4 HTTP database: %v", err)
 	}
-	return NewRouter(db, "test"), db
+	return NewRouter(db, "test", "test"), db
 }

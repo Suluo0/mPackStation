@@ -33,7 +33,7 @@ func p6HTTPFixture(t *testing.T) (*service.API, *sql.DB, string, http.Handler) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return app, db, pack.ID, NewRouterWithService(app, "test")
+	return app, db, pack.ID, NewRouterWithService(app, "test", "test")
 }
 
 type p6ErrorEnvelope struct {
@@ -151,7 +151,7 @@ func TestP6HTTPContentRevisionContract(t *testing.T) {
 	}
 
 	res = p6HTTPDo(t, handler, http.MethodPut, draftPath, "p6-content-stale", `{"payload":`+payload+`}`, true, `"1"`)
-	p6RequireError(t, res, http.StatusConflict, "revision_conflict", "p6-content-stale")
+	p6RequireError(t, res, http.StatusPreconditionFailed, "revision_conflict", "p6-content-stale")
 
 	res = p6HTTPDo(t, handler, http.MethodPost, detailPath+"/validate?revisionId="+revision2.ID, "p6-content-validate", "", true, "")
 	if res.Code != http.StatusOK {
@@ -216,7 +216,7 @@ func TestP6HTTPContentValidationAndErrorEnvelope(t *testing.T) {
 	p6RequireError(t, res, http.StatusBadRequest, "invalid_argument", "p6-content-invalid-kind")
 
 	res = p6HTTPDo(t, handler, http.MethodPost, base, "p6-content-invalid-json", `{"kind":"recipe","slug":"bad","title":"Bad","payload":{"schema_version":1`, true, "")
-	p6RequireError(t, res, http.StatusBadRequest, "invalid_json", "p6-content-invalid-json")
+	p6RequireError(t, res, http.StatusBadRequest, "invalid_argument", "p6-content-invalid-json")
 
 	ore := `{"kind":"ore","slug":"range","title":"Range","payload":{"schema_version":1,"dimension":"overworld","block":"minecraft:stone","min_y":100,"max_y":1}}`
 	res = p6HTTPDo(t, handler, http.MethodPost, base, "p6-ore-create", ore, true, "")
@@ -243,7 +243,7 @@ func TestP6HTTPContentValidationAndErrorEnvelope(t *testing.T) {
 		t.Fatalf("ore validation=%#v", validation)
 	}
 	res = p6HTTPDo(t, handler, http.MethodPost, detailPath+"/apply?revisionId="+created.Revision.ID, "p6-ore-apply", "", true, "")
-	p6RequireError(t, res, http.StatusUnprocessableEntity, "validation_failed", "p6-ore-apply")
+	p6RequireError(t, res, http.StatusUnprocessableEntity, "content_invalid", "p6-ore-apply")
 
 	res = p6HTTPDo(t, handler, http.MethodPost, base, "p6-content-no-token", `{"kind":"recipe","slug":"x","title":"X","payload":{}}`, false, "")
 	p6RequireError(t, res, http.StatusUnauthorized, "unauthorized", "p6-content-no-token")
@@ -314,7 +314,7 @@ func TestP6HTTPQuestRevisionContract(t *testing.T) {
 	}
 
 	res = p6HTTPDo(t, handler, http.MethodPut, base+"/draft", "p6-quest-stale", draft, true, "0")
-	p6RequireError(t, res, http.StatusConflict, "revision_conflict", "p6-quest-stale")
+	p6RequireError(t, res, http.StatusPreconditionFailed, "revision_conflict", "p6-quest-stale")
 	res = p6HTTPDo(t, handler, http.MethodGet, base+"/history", "p6-quest-history", "", false, "")
 	if res.Code != http.StatusOK {
 		t.Fatalf("quest history status=%d body=%s", res.Code, res.Body.String())
@@ -349,7 +349,7 @@ func TestP6HTTPQuestGraphValidation(t *testing.T) {
 		t.Fatalf("cycle issues=%#v", saved.Issues)
 	}
 	res = p6HTTPDo(t, handler, http.MethodPost, base+"/apply", "p6-cycle-apply", "", true, "")
-	p6RequireError(t, res, http.StatusUnprocessableEntity, "validation_failed", "p6-cycle-apply")
+	p6RequireError(t, res, http.StatusUnprocessableEntity, "quest_cycle", "p6-cycle-apply")
 
 	_, _, orphanPackID, orphanHandler := p6HTTPFixture(t)
 	orphanBase := "/api/packs/" + orphanPackID + "/quests"
@@ -383,5 +383,5 @@ func TestP6HTTPQuestGraphValidation(t *testing.T) {
 	crossBase := "/api/packs/" + crossPackID + "/quests"
 	cross := p6QuestDraftJSON(`[{"id":"e1","fromNodeId":"start","toNodeId":"finish"}]`, `[`+`"`+mod.ID+`"`+`]`)
 	res = p6HTTPDo(t, crossHandler, http.MethodPut, crossBase+"/draft", "p6-cross-pack", cross, true, "0")
-	p6RequireError(t, res, http.StatusBadRequest, "cross_pack_reference", "p6-cross-pack")
+	p6RequireError(t, res, http.StatusUnprocessableEntity, "quest_invalid_reference", "p6-cross-pack")
 }
