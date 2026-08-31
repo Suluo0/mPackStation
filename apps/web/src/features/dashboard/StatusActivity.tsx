@@ -1,4 +1,5 @@
-import type {DashboardActivity, SystemStatus} from './types';
+import type {DashboardActivity} from '../../api/dashboard';
+import type {SystemStatus} from '../../api/system';
 import {formatBytes, relativeTime} from './signals';
 import {WorkbenchCard} from '../../ui/workbench/Workbench';
 

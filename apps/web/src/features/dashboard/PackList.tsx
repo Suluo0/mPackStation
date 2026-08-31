@@ -1,7 +1,7 @@
 import {useMemo, useState} from 'react';
 import {App, Button, Dropdown, Switch, Tooltip} from 'antd';
 import {MoreOutlined, PlayCircleOutlined} from '@ant-design/icons';
-import type {DashboardPack} from './types';
+import type {DashboardPack} from '../../api/dashboard';
 import {AlertSignals, ConflictSignal, relativeTime} from './signals';
 import {PackCover, loaderLabel} from './ContinueCard';
 import {WorkbenchCard, WorkbenchSectionHeader} from '../../ui/workbench/Workbench';

@@ -1,12 +1,9 @@
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useState} from 'react';
 import {App, Button, Skeleton} from 'antd';
 import {PlusOutlined, ImportOutlined} from '@ant-design/icons';
 import {useNavigate} from 'react-router-dom';
-import {
-  fetchActivities, fetchDashboard, fetchHealth, fetchStatus, fetchTasks,
-  deletePack as deletePackRequest,
-} from '../features/dashboard/api';
-import type {DashboardActivity, DashboardData, DashboardTask, SystemHealth, SystemStatus} from '../features/dashboard/types';
+import {deletePack} from '../api/packs';
+import {useDashboard} from '../hooks/useDashboard';
 import {EnvHealthBanner} from '../features/dashboard/EnvHealthBanner';
 import {OnboardingView} from '../features/dashboard/OnboardingView';
 import {ContinueCard} from '../features/dashboard/ContinueCard';
@@ -15,64 +12,30 @@ import {TaskPanel} from '../features/dashboard/TaskPanel';
 import {StatusActivity} from '../features/dashboard/StatusActivity';
 import {CreatePackModal, ImportPackModal} from '../features/dashboard/PackModals';
 
-/* 看板页：迎新（空态）/ 数据总览（有包态）二态页面。 */
+/* 看板页:迎新(空态)/ 数据总览(有包态)二态页面。
+   数据聚合与任务轮询在 useDashboard;本组件只管布局与弹窗开关。 */
 
 export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
   const {message} = App.useApp();
   const navigate = useNavigate();
+  const {
+    dashboard, dashError, clearDashError,
+    tasks, activities, health, status,
+    loadDashboard, loadHealth, refreshTasks,
+  } = useDashboard();
 
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
-  const [dashError, setDashError] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<DashboardTask[]>([]);
-  const [activities, setActivities] = useState<DashboardActivity[] | null>(null);
-  const [health, setHealth] = useState<SystemHealth | null>(null);
-  const [status, setStatus] = useState<SystemStatus | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
-  const loadDashboard = useCallback(() => {
-    fetchDashboard().then(setDashboard).catch(err => setDashError(err instanceof Error ? err.message : String(err)));
-  }, []);
-
-  const loadHealth = useCallback(() => {
-    fetchHealth().then(setHealth).catch(() => setHealth(null));
-  }, []);
-
-  const refreshTasks = useCallback(() => {
-    void fetchTasks().then(setTasks).catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    loadDashboard();
-    loadHealth();
-    void fetchActivities().then(setActivities).catch(() => setActivities([]));
-    void fetchStatus().then(setStatus).catch(() => setStatus(null));
-    void fetchTasks().then(setTasks).catch(() => setTasks([]));
-  }, [loadDashboard, loadHealth]);
-
-  // 任务轮询：仅在有 running 任务且页面可见时每 3 秒刷新
-  const timerRef = useRef<number | null>(null);
-  useEffect(() => {
-    const hasRunning = tasks.some(t => t.status === 'running');
-    if (!hasRunning) return;
-    const tick = () => {
-      if (!document.hidden) void fetchTasks().then(setTasks).catch(() => undefined);
-    };
-    timerRef.current = window.setInterval(tick, 3000);
-    return () => {
-      if (timerRef.current !== null) window.clearInterval(timerRef.current);
-    };
-  }, [tasks]);
-
   const openPack = (id: string) => navigate(`/packs/${id}`);
 
-  const deletePack = async (id: string) => {
+  const onDelete = async (id: string) => {
     try {
-      await deletePackRequest(id);
+      await deletePack(id);
       message.success('整合包已删除');
       loadDashboard();
     } catch (err) {
-      message.error(`删除失败：${err instanceof Error ? err.message : String(err)}`);
+      message.error(`删除失败:${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -83,7 +46,7 @@ export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
   const onImported = (_id: string | null) => {
     setImportOpen(false);
     loadDashboard();
-    void fetchTasks().then(setTasks).catch(() => undefined);
+    refreshTasks();
   };
 
   if (dashError) {
@@ -92,7 +55,7 @@ export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
         <div className="db-card" style={{padding: 24, textAlign: 'center'}}>
           <p className="db-h2">看板数据加载失败</p>
           <p className="db-muted" style={{margin: '8px 0 16px'}}>{dashError}</p>
-          <Button type="primary" onClick={() => {setDashError(null); loadDashboard();}}>重试</Button>
+          <Button type="primary" onClick={() => {clearDashError(); loadDashboard();}}>重试</Button>
         </div>
       </div>
     );
@@ -114,7 +77,7 @@ export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
 
   return (
     <div className="db-page">
-      {health && <EnvHealthBanner health={health} onRetry={loadHealth} suppressKeys={isEmpty ? ['cf-key'] : []}/>} 
+      {health && <EnvHealthBanner health={health} onRetry={loadHealth} suppressKeys={isEmpty ? ['cf-key'] : []}/>}
 
       {isEmpty ? (
         <OnboardingView
@@ -139,7 +102,7 @@ export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
             <div className="db-dash-main">
               {lastEdited && <ContinueCard pack={lastEdited} onOpen={openPack}/>}
 
-              <PackList packs={visiblePacks} onOpen={openPack} onDelete={deletePack}/>
+              <PackList packs={visiblePacks} onOpen={openPack} onDelete={onDelete}/>
 
               <StatusActivity status={status} activities={activities ?? []}/>
             </div>

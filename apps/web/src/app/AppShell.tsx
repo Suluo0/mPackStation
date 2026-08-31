@@ -6,9 +6,8 @@ import {
   WarningOutlined, SettingOutlined, SearchOutlined, ApartmentOutlined,
 } from '@ant-design/icons';
 import './shell.css';
-import {fetchOnboarding} from '../features/dashboard/api';
-import {listPacks} from '../features/pack/api';
-import type {Onboarding} from '../features/dashboard/types';
+import {fetchOnboarding, type Onboarding} from '../api/onboarding';
+import {listPacks} from '../api/packs';
 import {OnboardingChecklist} from '../features/dashboard/OnboardingChecklist';
 
 /* 应用外壳：左侧导航 + 顶栏 + 内容区，所有页面共享。 */

@@ -1,9 +1,10 @@
 import {useEffect, useState} from 'react';
 import {App, Form, Input, Modal, Radio, Select, Tabs, Upload} from 'antd';
 import {InboxOutlined} from '@ant-design/icons';
-import {createPack, confirmImport, fetchMcVersions, inspectImport} from './api';
-import type {ImportPreview, ImportSource} from './types';
-import type {DashboardPack} from './types';
+import {createPack} from '../../api/packs';
+import {confirmImport, inspectImport, type ImportPreview, type ImportSource} from '../../api/imports';
+import {fetchMcVersions} from '../../api/system';
+import type {DashboardPack} from '../../api/dashboard';
 
 /* 新建 / 导入整合包对话框（看板页的直接子功能）。
    导入走后端真实的两阶段流程：先解析出预览，用户确认后才入队。 */

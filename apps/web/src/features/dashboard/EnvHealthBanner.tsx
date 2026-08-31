@@ -2,7 +2,7 @@ import {useState} from 'react';
 import {Button} from 'antd';
 import {CloseOutlined, WarningFilled} from '@ant-design/icons';
 import {useNavigate} from 'react-router-dom';
-import type {SystemHealth} from './types';
+import type {SystemHealth} from '../../api/system';
 import {formatBytes} from './signals';
 
 /* 环境自检条：仅在发现问题时渲染，可关闭（本次会话不再出现）。 */

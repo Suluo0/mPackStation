@@ -1,6 +1,6 @@
 import {Progress} from 'antd';
 import {ArrowRightOutlined, StarOutlined} from '@ant-design/icons';
-import type {DashboardPack} from './types';
+import type {DashboardPack} from '../../api/dashboard';
 import {AlertSignals, ConflictSignal, EditCounts, SignalGroup, relativeTime} from './signals';
 import {packCoverGradient} from './cover';
 import {WorkbenchCard, WorkbenchButton} from '../../ui/workbench/Workbench';

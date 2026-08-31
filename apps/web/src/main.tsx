@@ -6,7 +6,7 @@ import {BrowserRouter, Navigate, Route, Routes} from 'react-router-dom';
 import {AppShell} from './app/AppShell';
 import {DashboardPage} from './pages/DashboardPage';
 import {ContentEditorPage, DependenciesPage, PackModsPage, PackWorkbenchPage, PacksPage, PublishPage, QuestEditorPage, SettingsPage} from './pages/PackPages';
-import {listPacks} from './features/pack/api';
+import {listPacks} from './api/packs';
 import './features/dashboard/dashboard.css';
 import './ui/workbench/workbench.css';
 import './pages/pack-pages.css';

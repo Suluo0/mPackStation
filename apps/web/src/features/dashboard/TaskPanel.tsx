@@ -2,8 +2,7 @@ import {App, Button, Drawer, Progress} from 'antd';
 import {useState} from 'react';
 import {DatabaseOutlined, ImportOutlined, RocketOutlined, SyncOutlined} from '@ant-design/icons';
 import type {ReactNode} from 'react';
-import type {DashboardTask} from './types';
-import {cancelTask, pauseTask, resumeTask, retryTask} from './api';
+import {cancelTask, pauseTask, resumeTask, retryTask, type Task} from '../../api/tasks';
 import {WorkbenchCard, WorkbenchSectionHeader} from '../../ui/workbench/Workbench';
 
 /* 后台任务区（右列卡）：仅存在任务时渲染；进行中可暂停/取消，失败可重试/查看错误。 */
@@ -27,16 +26,16 @@ const statusText: Record<string, string> = {
   success: '已完成', failed: '失败', cancelled: '已取消', paused: '已暂停',
 };
 
-function taskSubText(task: DashboardTask): string {
+function taskSubText(task: Task): string {
   if (task.status === 'running') return runningVerb[task.type] ?? '处理中…';
   return statusText[task.status] ?? task.status;
 }
 
 type TaskAction = (id: string) => Promise<unknown>;
 
-export function TaskPanel({tasks, onChanged}: {tasks: DashboardTask[]; onChanged: () => void}) {
+export function TaskPanel({tasks, onChanged}: {tasks: Task[]; onChanged: () => void}) {
   const {message} = App.useApp();
-  const [errorOf, setErrorOf] = useState<DashboardTask | null>(null);
+  const [errorOf, setErrorOf] = useState<Task | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   if (tasks.length === 0) return null;
