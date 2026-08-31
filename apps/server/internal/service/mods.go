@@ -60,8 +60,13 @@ type Mod struct {
 	SHA1        *string `json:"sha1"`
 	Status      string  `json:"status"`
 	Required    bool    `json:"required"`
-	AddedAt     string  `json:"addedAt"`
-	UpdatedAt   string  `json:"updatedAt"`
+	// Mirror* name the pinned counterpart on the other platform (null when the
+	// mod is single-platform here). Versions are pinned at add time on both
+	// sides and never auto-updated.
+	MirrorSource    *string `json:"mirrorSource"`
+	MirrorProjectID *string `json:"mirrorProjectId"`
+	AddedAt         string  `json:"addedAt"`
+	UpdatedAt       string  `json:"updatedAt"`
 }
 type Lock struct {
 	ID             string `json:"id"`
@@ -166,10 +171,23 @@ func mapProviderError(err error) error {
 	}
 }
 
+// ModSearchMirror is the other-platform half of a merged catalog hit. Present
+// only when the same mod was found on both platforms (identity table first,
+// normalized-name pairing as fallback).
+type ModSearchMirror struct {
+	Provider  string `json:"provider"`
+	ProjectID string `json:"projectId"`
+	Slug      string `json:"slug"`
+	Downloads int64  `json:"downloads"`
+}
+
 // ModSearchAllItem is one catalog hit tagged with the platform it came from.
+// When Mirror is set the two entries are the same mod; Downloads is then the
+// sum of both platforms so dual-platform mods rank first.
 type ModSearchAllItem struct {
 	Provider string `json:"provider"`
 	provider.Project
+	Mirror *ModSearchMirror `json:"mirror,omitempty"`
 }
 
 // ModSearchAllResult merges every platform's hits and reports per-platform
@@ -254,15 +272,82 @@ func (a *API) ModSearchAll(ctx context.Context, packID string, in ModSearchInput
 			out.Items = append(out.Items, ModSearchAllItem{Provider: string(s.name), Project: p})
 		}
 	}
-	// Deterministic merge: most-downloaded first, platform as tiebreak.
+	// 跨平台合并: 身份表(本机已确认 + 内置知识库)优先, 名称规范化相同兜底;
+	// 配对成功的合并成一张卡, 下载量取两边之和。
+	identities, err := a.repo.ListModIdentities(ctx)
+	if err != nil {
+		identities = nil // 合并是增强, 身份表读取失败不阻塞搜索
+	}
+	identities = append(identities, baselineModIdentities()...)
+	out.Items = pairSearchItems(out.Items, identities)
+	// Deterministic merge: most-downloaded first, provider+name as tiebreak.
 	sort.SliceStable(out.Items, func(i, j int) bool {
 		if out.Items[i].Downloads != out.Items[j].Downloads {
 			return out.Items[i].Downloads > out.Items[j].Downloads
 		}
-		return out.Items[i].Provider < out.Items[j].Provider
+		if out.Items[i].Provider != out.Items[j].Provider {
+			return out.Items[i].Provider < out.Items[j].Provider
+		}
+		return out.Items[i].Name < out.Items[j].Name
 	})
 	out.Total = len(out.Items)
 	return out, nil
+}
+
+// normalizeModName folds a mod name for cross-platform comparison: case,
+// spaces and punctuation are ignored ("Just Enough Items (JEI)" matches
+// "just enough items jei"). Conservative on purpose: only exact normalized
+// equality pairs two entries — a missed pair shows two cards, a wrong pair
+// would weld two different mods together.
+func normalizeModName(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r > 127 {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// pairSearchItems merges cross-platform duplicates of the same mod. The
+// higher-download entry stays primary; the other platform becomes its Mirror.
+// Same-provider name collisions are never merged.
+func pairSearchItems(items []ModSearchAllItem, identities []store.ModIdentityRecord) []ModSearchAllItem {
+	byID := make(map[string]string, 2*len(identities))
+	for _, id := range identities {
+		k := "pair:" + id.MRProjectID + "|" + id.CFProjectID
+		byID["modrinth:"+id.MRProjectID] = k
+		byID["curseforge:"+id.CFProjectID] = k
+	}
+	out := make([]ModSearchAllItem, 0, len(items))
+	pos := map[string]int{}
+	providerAt := map[string]string{}
+	for _, it := range items {
+		k := "name:" + normalizeModName(it.Name)
+		if pk, ok := byID[it.Provider+":"+it.ID]; ok {
+			k = pk
+		}
+		idx, seen := pos[k]
+		if !seen || providerAt[k] == it.Provider {
+			if !seen {
+				pos[k] = len(out)
+				providerAt[k] = it.Provider
+			}
+			out = append(out, it)
+			continue
+		}
+		if it.Downloads > out[idx].Downloads {
+			mirror := &ModSearchMirror{Provider: out[idx].Provider, ProjectID: out[idx].ID, Slug: out[idx].Slug, Downloads: out[idx].Downloads}
+			it.Downloads += out[idx].Downloads
+			it.Mirror = mirror
+			out[idx] = it
+			providerAt[k] = it.Provider
+		} else {
+			out[idx].Mirror = &ModSearchMirror{Provider: it.Provider, ProjectID: it.ID, Slug: it.Slug, Downloads: it.Downloads}
+			out[idx].Downloads += it.Downloads
+		}
+	}
+	return out
 }
 
 var errNotConfigured = errors.New("provider not configured")
@@ -291,7 +376,111 @@ func modDTO(m store.PackModRecord) Mod {
 		}
 		return &s
 	}
-	return Mod{ID: m.ID, PackID: m.PackID, Source: m.Source, ProjectID: strPtr(m.ProjectID), VersionID: strPtr(m.VersionID), DisplayName: m.DisplayName, FileName: m.FileName, SHA1: strPtr(m.SHA1), Status: m.Status, Required: m.Required, AddedAt: iso(m.AddedAt), UpdatedAt: iso(m.UpdatedAt)}
+	return Mod{ID: m.ID, PackID: m.PackID, Source: m.Source, ProjectID: strPtr(m.ProjectID), VersionID: strPtr(m.VersionID), DisplayName: m.DisplayName, FileName: m.FileName, SHA1: strPtr(m.SHA1), Status: m.Status, Required: m.Required, MirrorSource: strPtr(m.MirrorSource), MirrorProjectID: strPtr(m.MirrorProjectID), AddedAt: iso(m.AddedAt), UpdatedAt: iso(m.UpdatedAt)}
+}
+
+// otherProviderOf names the opposite catalog platform, or "" for local mods.
+func otherProviderOf(source string) string {
+	switch source {
+	case "modrinth":
+		return "curseforge"
+	case "curseforge":
+		return "modrinth"
+	}
+	return ""
+}
+
+// resolveMirror best-effort pins the counterpart project+version on the other
+// platform at add time. Every failure path is silent by design (用户拍板:
+// 镜像查不到照常添加, 标"仅单平台"), and once pinned the mirror never follows
+// newer releases — rebuilding the pack reproduces exactly what was debugged.
+func (a *API) resolveMirror(ctx context.Context, m *store.PackModRecord, pack store.PackRecord, primaryVersionNumber string) {
+	otherName := otherProviderOf(m.Source)
+	if otherName == "" || m.ProjectID == "" {
+		return
+	}
+	ad, err := a.p5Adapter(otherName)
+	if err != nil {
+		return // 对方平台未配置/不可用: 仅单平台
+	}
+	// 1. 定位对方平台项目: 已知镜像 > 身份表 > 名称精确搜索
+	otherProject := m.MirrorProjectID
+	if otherProject == "" {
+		if ids, err := a.repo.ListModIdentities(ctx); err == nil {
+			ids = append(ids, baselineModIdentities()...)
+			for _, id := range ids {
+				if m.Source == "modrinth" && id.MRProjectID == m.ProjectID {
+					otherProject = id.CFProjectID
+				} else if m.Source == "curseforge" && id.CFProjectID == m.ProjectID {
+					otherProject = id.MRProjectID
+				}
+				if otherProject != "" {
+					break
+				}
+			}
+		}
+	}
+	if otherProject == "" {
+		r, err := ad.Search(ctx, provider.SearchRequest{Query: m.DisplayName, Limit: 10})
+		if err != nil {
+			return
+		}
+		for _, p := range r.Items {
+			if normalizeModName(p.Name) == normalizeModName(m.DisplayName) {
+				otherProject = p.ID
+				break
+			}
+		}
+	}
+	if otherProject == "" {
+		return
+	}
+	m.MirrorSource, m.MirrorProjectID = otherName, otherProject
+	// 2. 立即钉版本: 兼容当前包(MC 版本+loader)优先, 同版本号优先, 否则最新兼容
+	if vs, err := ad.Versions(ctx, otherProject); err == nil {
+		if best := pickMirrorVersion(vs, pack.MCVersion, pack.Loader, primaryVersionNumber); best != "" {
+			m.MirrorVersionID = best
+		}
+	}
+	// 3. 项目级配对永久复用(即使版本没钉到)
+	mr, cf := otherProject, m.ProjectID
+	if m.Source == "modrinth" {
+		mr, cf = m.ProjectID, otherProject
+	}
+	_ = a.repo.UpsertModIdentity(ctx, store.ModIdentityRecord{MRProjectID: mr, CFProjectID: cf, DisplayName: m.DisplayName, ConfirmedAt: time.Now().UnixMilli()})
+}
+
+// pickMirrorVersion chooses the counterpart file: same version number wins,
+// otherwise the newest file compatible with the pack (versions arrive
+// newest-first from the provider layer). "" means no compatible file exists.
+func pickMirrorVersion(vs []provider.Version, mcVersion, loader, wantVersionNumber string) string {
+	loader = strings.ToLower(loader)
+	firstCompatible := ""
+	for _, v := range vs {
+		mcOK, loaderOK := false, loader == ""
+		for _, g := range v.GameVersions {
+			if g == mcVersion {
+				mcOK = true
+				break
+			}
+		}
+		for _, l := range v.Loaders {
+			if strings.ToLower(l) == loader {
+				loaderOK = true
+				break
+			}
+		}
+		if !mcOK || !loaderOK {
+			continue
+		}
+		if firstCompatible == "" {
+			firstCompatible = v.ID
+		}
+		if wantVersionNumber != "" && v.VersionNumber == wantVersionNumber {
+			return v.ID
+		}
+	}
+	return firstCompatible
 }
 
 func (a *API) AddPackMod(ctx context.Context, packID string, in AddModInput, requestID string) (Mod, error) {
@@ -301,7 +490,8 @@ func (a *API) AddPackMod(ctx context.Context, packID string, in AddModInput, req
 	if strings.TrimSpace(in.Provider) == "" || strings.TrimSpace(in.ProjectID) == "" || strings.TrimSpace(in.VersionID) == "" {
 		return Mod{}, ErrInvalidArgument
 	}
-	if _, err := a.repo.GetPack(ctx, packID); err != nil {
+	packRec, err := a.repo.GetPack(ctx, packID)
+	if err != nil {
 		return Mod{}, err
 	}
 	ad, err := a.p5Adapter(in.Provider)
@@ -328,6 +518,8 @@ func (a *API) AddPackMod(ctx context.Context, packID string, in AddModInput, req
 	now := time.Now().UnixMilli()
 	id := newID("mod")
 	m := store.PackModRecord{ID: id, PackID: packID, Source: string(ad.Name()), ProjectID: in.ProjectID, VersionID: in.VersionID, DisplayName: meta.Project.Name, FileName: dl.FileName, SHA1: strings.ToLower(dl.SHA1), Status: "installed", Required: in.Required, AddedAt: now, UpdatedAt: now}
+	// 添加时立即钉死另一平台的对应版本(查不到不阻塞: 照常添加, 仅单平台)。
+	a.resolveMirror(ctx, &m, packRec, meta.Version.VersionNumber)
 	err = a.repo.WithTx(ctx, func(tx *store.Repository) error {
 		if err := tx.UpsertJarIndex(ctx, store.JarIndexRecord{SHA1: m.SHA1, SHA256: dl.SHA256, FilePath: "jar://" + m.SHA1, SizeBytes: dl.Size, ModIDs: []string{id}, ParsedAt: now}); err != nil {
 			return err
@@ -426,6 +618,10 @@ func (a *API) UpdatePackMod(ctx context.Context, packID, modID string, in Update
 				return Mod{}, ErrInvalidSHA1
 			}
 			found.VersionID, found.SHA1, found.FileName, found.DisplayName, found.Status = *in.VersionID, strings.ToLower(dl.SHA1), dl.FileName, meta.Project.Name, "installed"
+			// 主版本换了, 镜像版本跟着重钉(镜像项目沿用已配对的, 不重新找)。
+			if packRec, e := a.repo.GetPack(ctx, packID); e == nil {
+				a.resolveMirror(ctx, &found, packRec, meta.Version.VersionNumber)
+			}
 			now := time.Now().UnixMilli()
 			found.UpdatedAt = now
 			if err := a.repo.WithTx(ctx, func(tx *store.Repository) error {

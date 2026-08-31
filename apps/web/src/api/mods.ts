@@ -20,6 +20,9 @@ export const modSchema = z.object({
   sha1: z.string().nullable(),
   status: z.string(),
   required: z.boolean(),
+  /* 镜像源: 另一平台钉死的对应项目; null = 仅单平台。 */
+  mirrorSource: z.string().nullable(),
+  mirrorProjectId: z.string().nullable(),
   addedAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -85,8 +88,18 @@ export const modVersionSchema = z.object({
 });
 export type ModVersion = z.infer<typeof modVersionSchema>;
 
-/* 双平台并行搜索:单平台失败只进 errors 映射,不阻塞另一平台。 */
-export const searchAllItemSchema = projectSchema.extend({provider: z.string()});
+/* 双平台并行搜索:单平台失败只进 errors 映射,不阻塞另一平台。
+   mirror: 同一模组在另一平台的对应项(后端已按身份表/名称配对合并)。 */
+export const searchMirrorSchema = z.object({
+  provider: z.string(),
+  projectId: z.string(),
+  slug: z.string(),
+  downloads: z.number(),
+});
+export const searchAllItemSchema = projectSchema.extend({
+  provider: z.string(),
+  mirror: searchMirrorSchema.optional(),
+});
 export type SearchAllItem = z.infer<typeof searchAllItemSchema>;
 export const modSearchAllSchema = z.object({
   items: z.array(searchAllItemSchema),

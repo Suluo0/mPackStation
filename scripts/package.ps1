@@ -32,6 +32,12 @@ $readme = @(
 ) -join "`n"
 Set-Content -LiteralPath (Join-Path $packageDir 'README.txt') -Value $readme -NoNewline
 
+# 双库红线(设计约定, 勿删): 模组身份知识库(mod_identity_baseline.json)通过
+# go:embed 编进 exe 随分发; 用户库(整合包/模组/key/任务)只存在于用户指定的
+# -data 目录, 永不进包。这里机械断言包内不出现任何数据库文件。
+$leaked = Get-ChildItem -LiteralPath $packageDir -Recurse -Include '*.db','*.db-*','*.sqlite*' -File
+if ($leaked) { throw "Package must never contain user database files: $($leaked.FullName -join ', ')" }
+
 New-Item -ItemType Directory -Force -Path $script:DistRoot | Out-Null
 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
 Compress-Archive -LiteralPath (Join-Path $packageDir '*') -DestinationPath $zipPath

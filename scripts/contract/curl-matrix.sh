@@ -134,8 +134,12 @@ if [ -n "${CURSEFORGE_API_KEY:-}" ]; then
   ck "清除→204" "$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/system/providers/curseforge/key -H "X-MPack-Token: $T")" 204
   ck "清除后未配置" "$(curl -s $B/api/system/health)" '"curseforgeKeyConfigured":false'
   ck "恢复真key→204" "$(curl -s -o /dev/null -w '%{http_code}' -X PUT $B/api/system/providers/curseforge/key -H "X-MPack-Token: $T" -H 'content-type: application/json' -d "{\"key\":\"$CURSEFORGE_API_KEY\"}")" 204
+  # --- 双平台合并(JEI 在内置身份知识库, 双平台可达时必合并) ---
+  curl -s "$B/api/packs/$PID/mod-search?q=jei&limit=10" -o $TMP/c-merge.json
+  ck "JEI合并为一张卡" "$(python -c "import json; d=json.load(open(r'$TMP/c-merge.json',encoding='utf-8')); print(len([i for i in d['items'] if 'justenoughitems' in i['name'].lower().replace(' ','')]))")" "1"
+  ck "合并卡带mirror双平台" "$(python -c "import json; d=json.load(open(r'$TMP/c-merge.json',encoding='utf-8')); i=[x for x in d['items'] if 'justenoughitems' in x['name'].lower().replace(' ','')][0]; print(sorted([i['provider'], i.get('mirror',{}).get('provider','')]))")" "['curseforge', 'modrinth']"
 else
-  echo "SKIP: CF key 管理 7 项(环境无 CURSEFORGE_API_KEY)"
+  echo "SKIP: CF key 管理 7 项 + 双平台合并 2 项(环境无 CURSEFORGE_API_KEY)"
 fi
 
 echo "================================"

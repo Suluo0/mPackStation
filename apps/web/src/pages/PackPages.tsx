@@ -75,6 +75,8 @@ const searchErrorText: Record<string, string> = {
   not_found: '资源不存在',
 };
 
+const platformTag = (pl: string) => <Tag key={pl} color={pl === 'modrinth' ? 'green' : pl === 'curseforge' ? 'orange' : 'default'}>{pl === 'modrinth' ? 'Modrinth' : pl === 'curseforge' ? 'CurseForge' : pl}</Tag>;
+
 export function PackModsPage() {
   const {id} = useParams();
   const {pack} = usePack(id);
@@ -98,7 +100,8 @@ export function PackModsPage() {
         return <div className="mod-row" key={k}>
           <span className="mod-symbol"><CodeOutlined/></span>
           <div className="mod-row-main"><strong>{p.name}</strong><span>{fmtDownloads(p.downloads)} 下载</span><small>{p.summary}</small></div>
-          <Tag color={p.provider === 'modrinth' ? 'green' : 'orange'}>{p.provider === 'modrinth' ? 'Modrinth' : 'CurseForge'}</Tag>
+          {/* 双平台合并卡: 两个平台的标签都打上; 未配对只有单平台标签。 */}
+          {[p.provider, ...(p.mirror ? [p.mirror.provider] : [])].map(platformTag)}
           <Select size="small" style={{minWidth: 240}} placeholder="选择版本" value={s.choice[k]}
             onFocus={() => s.loadVersions(p)}
             onChange={v => s.setChoice(prev => ({...prev, [k]: v}))}
@@ -114,6 +117,8 @@ export function PackModsPage() {
       {s.installed.map(m => <div className="mod-row" key={m.id}>
         <span className="mod-symbol"><CodeOutlined/></span>
         <div className="mod-row-main"><strong>{m.displayName}</strong><span>{m.source} · {m.versionId || '—'}</span><small>{m.fileName}</small></div>
+        {[m.source, ...(m.mirrorSource ? [m.mirrorSource] : [])].filter(pl => pl === 'modrinth' || pl === 'curseforge').map(platformTag)}
+        {!m.mirrorSource && (m.source === 'modrinth' || m.source === 'curseforge') && <Tag>仅单平台</Tag>}
         <Tag color={m.status === 'disabled' ? 'gold' : 'green'}>{m.status}</Tag>
         <Button size="small" danger={m.status !== 'disabled'} onClick={() => s.toggleInstalled(m)}>{m.status === 'disabled' ? '启用' : '移除'}</Button>
       </div>)}

@@ -615,10 +615,10 @@ MC 版本候选，创建包下拉用。
 
 #### `POST /api/packs/{packId}/mods`
 
-添加模组。
+添加模组。**添加即钉版**：主源版本由调用方指定并固定；服务端同时尽力解析另一平台的对应项目与版本（身份表 → 名称精确匹配），钉入 `mirrorSource`/`mirrorProjectId`（+ 库内 `mirror_version_id`），之后**永不追新**——重建包复现的是调试过的版本。镜像查不到不阻塞添加，`Mod.mirrorSource` 为 null 表示"仅单平台"。
 
 **(a) 请求参数** — `packId`；body 由调用方构造，至少含来源与项目标识；支持 `Idempotency-Key`
-**(b) 校验** — 结构错 400；引用的模组不属于该包作用域 422 `mod_invalid_reference`；出参 `Mod`
+**(b) 校验** — 结构错 400；引用的模组不属于该包作用域 422 `mod_invalid_reference`；出参 `Mod`（含 `mirrorSource`/`mirrorProjectId`，恒发 null 而非缺省）
 **(c) 异常处理** — 400 / 401 / 404 `pack_not_found` / 422 `mod_invalid_reference` / 422 `idempotency_conflict` / 502 `provider_unavailable`（可重试）/ 503
 
 #### `PATCH /api/packs/{packId}/mods/{modId}`
@@ -655,11 +655,12 @@ MC 版本候选，创建包下拉用。
 - 出参：
 
 ```json
-{"items":[Project + provider],"errors":{"modrinth":"..."},"total":0,"next_cursor":null}
+{"items":[Project + provider + 可选 mirror],"errors":{"modrinth":"..."},"total":0,"next_cursor":null}
 ```
 
 - `errors` 记录单平台失败原因，**另一侧结果照常返回**；两侧都失败才报错
 - `Project`：`{id, slug, name, summary, iconUrl, downloads}`，聚合版多一个 `provider`
+- **跨平台合并**：同一模组在两个平台的命中合并为一张卡——身份表（本机已确认配对 + 随二进制分发的只读知识库）优先，名称规范化（忽略大小写/空格/括号）完全相同兜底；slug 不参与配对。合并卡的 `downloads` 为两边之和，并携带 `mirror: {provider, projectId, slug, downloads}` 指向另一平台；未配对时 `mirror` 缺省。
 
 **(c) 异常处理**
 

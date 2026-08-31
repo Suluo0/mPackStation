@@ -11,8 +11,12 @@ import (
 )
 
 // PackModRecord is the transport-neutral representation of a selected mod.
+// One row is one logical mod: Source/ProjectID/VersionID are the primary
+// (user-picked) platform pin; Mirror* are the pinned counterpart on the other
+// platform, resolved once at add time and never auto-updated.
 type PackModRecord struct {
 	ID, PackID, Source, ProjectID, VersionID, DisplayName, FileName, SHA1, Status string
+	MirrorSource, MirrorProjectID, MirrorVersionID                                 string
 	Required                                                                      bool
 	AddedAt, UpdatedAt                                                            int64
 }
@@ -40,7 +44,7 @@ type LockRecord struct {
 }
 
 func (r *Repository) ListPackMods(ctx context.Context, packID string) ([]PackModRecord, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at FROM pack_mods WHERE pack_id=? AND status<>'removed' ORDER BY display_name COLLATE NOCASE,id`, packID)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,'') FROM pack_mods WHERE pack_id=? AND status<>'removed' ORDER BY display_name COLLATE NOCASE,id`, packID)
 	if err != nil {
 		return nil, fmt.Errorf("list pack mods: %w", err)
 	}
@@ -49,7 +53,7 @@ func (r *Repository) ListPackMods(ctx context.Context, packID string) ([]PackMod
 	for rows.Next() {
 		var m PackModRecord
 		var req int
-		if err := rows.Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt, &m.MirrorSource, &m.MirrorProjectID, &m.MirrorVersionID); err != nil {
 			return nil, err
 		}
 		m.Required = req != 0
@@ -58,7 +62,7 @@ func (r *Repository) ListPackMods(ctx context.Context, packID string) ([]PackMod
 	return out, rows.Err()
 }
 func (r *Repository) AddPackMod(ctx context.Context, m PackModRecord) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO pack_mods(id,pack_id,source,project_id,version_id,display_name,file_name,sha1,status,required,added_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, m.ID, m.PackID, m.Source, nullString(m.ProjectID), nullString(m.VersionID), m.DisplayName, m.FileName, nullString(m.SHA1), m.Status, boolInt(m.Required), m.AddedAt, m.UpdatedAt)
+	_, err := r.db.ExecContext(ctx, `INSERT INTO pack_mods(id,pack_id,source,project_id,version_id,display_name,file_name,sha1,status,required,added_at,updated_at,mirror_source,mirror_project_id,mirror_version_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, m.ID, m.PackID, m.Source, nullString(m.ProjectID), nullString(m.VersionID), m.DisplayName, m.FileName, nullString(m.SHA1), m.Status, boolInt(m.Required), m.AddedAt, m.UpdatedAt, m.MirrorSource, nullString(m.MirrorProjectID), nullString(m.MirrorVersionID))
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return fmt.Errorf("%w: mod already selected", ErrConflict)
@@ -67,8 +71,41 @@ func (r *Repository) AddPackMod(ctx context.Context, m PackModRecord) error {
 	}
 	return nil
 }
+// ModIdentityRecord is one confirmed cross-platform pairing: the same mod as
+// Modrinth project + CurseForge project. The user db holds pairings confirmed
+// on this machine; a read-only baseline ships with the app (knowledge pack).
+type ModIdentityRecord struct {
+	MRProjectID, CFProjectID, DisplayName string
+	ConfirmedAt                           int64
+}
+
+// UpsertModIdentity records or refreshes a confirmed pairing.
+func (r *Repository) UpsertModIdentity(ctx context.Context, m ModIdentityRecord) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO mod_identity(mr_project_id,cf_project_id,display_name,confirmed_at) VALUES(?,?,?,?)
+		ON CONFLICT(mr_project_id,cf_project_id) DO UPDATE SET display_name=excluded.display_name,confirmed_at=excluded.confirmed_at`, m.MRProjectID, m.CFProjectID, m.DisplayName, m.ConfirmedAt)
+	return err
+}
+
+// ListModIdentities returns every pairing confirmed on this machine.
+func (r *Repository) ListModIdentities(ctx context.Context) ([]ModIdentityRecord, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT mr_project_id,cf_project_id,display_name,confirmed_at FROM mod_identity`)
+	if err != nil {
+		return nil, fmt.Errorf("list mod identities: %w", err)
+	}
+	defer rows.Close()
+	var out []ModIdentityRecord
+	for rows.Next() {
+		var m ModIdentityRecord
+		if err := rows.Scan(&m.MRProjectID, &m.CFProjectID, &m.DisplayName, &m.ConfirmedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) UpdatePackMod(ctx context.Context, m PackModRecord) error {
-	res, err := r.db.ExecContext(ctx, `UPDATE pack_mods SET version_id=?,display_name=?,file_name=?,sha1=?,status=?,required=?,updated_at=? WHERE pack_id=? AND id=? AND status<>'removed'`, nullString(m.VersionID), m.DisplayName, m.FileName, nullString(m.SHA1), m.Status, boolInt(m.Required), m.UpdatedAt, m.PackID, m.ID)
+	res, err := r.db.ExecContext(ctx, `UPDATE pack_mods SET version_id=?,display_name=?,file_name=?,sha1=?,status=?,required=?,updated_at=?,mirror_source=?,mirror_project_id=?,mirror_version_id=? WHERE pack_id=? AND id=? AND status<>'removed'`, nullString(m.VersionID), m.DisplayName, m.FileName, nullString(m.SHA1), m.Status, boolInt(m.Required), m.UpdatedAt, m.MirrorSource, nullString(m.MirrorProjectID), nullString(m.MirrorVersionID), m.PackID, m.ID)
 	if err != nil {
 		return fmt.Errorf("update pack mod: %w", err)
 	}
