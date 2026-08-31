@@ -48,8 +48,11 @@ export function useModSearch(packId: string | undefined, pack: Pack | null) {
   const loadVersions = (p: SearchAllItem) => {
     if (!packId || versions[keyOf(p)]) return;
     listModVersions(packId, p.provider, p.id).then(vs => {
-      setVersions(prev => ({...prev, [keyOf(p)]: vs}));
-      const first = vs.find(compatible) ?? vs[0];
+      // 后端已按日期新→旧;这里稳定排序把兼容当前包的版本提到最前,
+      // 默认选中即"最新兼容版",不兼容的沉底但仍可见。
+      const sorted = [...vs].sort((a, b) => Number(compatible(b)) - Number(compatible(a)));
+      setVersions(prev => ({...prev, [keyOf(p)]: sorted}));
+      const first = sorted[0];
       if (first) setChoice(prev => ({...prev, [keyOf(p)]: first.id}));
     }).catch(e => message.error(e instanceof Error ? e.message : String(e)));
   };
