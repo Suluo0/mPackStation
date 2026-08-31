@@ -25,14 +25,19 @@ ck "无content-type→415" "$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/
 ck "坏JSON→400 invalid_argument" "$(curl -s -X POST $B/api/packs -H "X-MPack-Token: $T" -H 'content-type: application/json' -d '{bad')" '"code":"invalid_argument"'
 ck "recent=101→400(不静默clamp)" "$(curl -s -o /dev/null -w '%{http_code}' "$B/api/tasks?recent=101")" "400"
 ck "大body→413 payload_too_large" "$(python -c "
-import json,urllib.request
+import json,urllib.request,http.client
 body=json.dumps({'name':'x','mcVersion':'1.20.1','loader':'fabric','description':'d'*9_000_000}).encode()
-req=urllib.request.Request('$B/api/packs',data=body,headers={'content-type':'application/json','X-MPack-Token':'$T'})
-try: urllib.request.urlopen(req)
-except Exception as e:
-    try: b=e.read().decode()[:80]
-    except Exception: b=''
-    print(getattr(e,'code','ERR'), b)
+code='ERR'
+for _ in range(3):
+    # 服务端恒回 413;但连接可能在响应送达前被重置(9MB 在途),重试取首个可读状态码
+    req=urllib.request.Request('$B/api/packs',data=body,headers={'content-type':'application/json','X-MPack-Token':'$T'})
+    try:
+        urllib.request.urlopen(req); code='200'; break
+    except urllib.error.HTTPError as e:
+        code=str(e.code); break
+    except Exception:
+        continue
+print(code)
 ")" "413"
 
 # --- 包 CRUD ---
@@ -119,6 +124,19 @@ ck "mod-versions缺参→400" "$(curl -s -o /dev/null -w '%{http_code}' "$B/api/
 
 # --- 发布异步出参 ---
 ck "publish async缺包→404 pack_not_found" "$(curl -s -X POST $B/api/packs/nope/publish/modrinth/async -H "X-MPack-Token: $T" -H 'content-type: application/json' -d '{"packVersionId":"v","artifactId":"a","projectId":"p"}')" '"code":"pack_not_found"'
+
+# --- CurseForge key 管理(需环境有真 key 才能跑验证调用) ---
+if [ -n "${CURSEFORGE_API_KEY:-}" ]; then
+  ck "CF坏key→400" "$(curl -s -o /dev/null -w '%{http_code}' -X PUT $B/api/system/providers/curseforge/key -H "X-MPack-Token: $T" -H 'content-type: application/json' -d '{"key":"invalid-key-for-matrix-test"}')" 400
+  ck "CF坏key错误码" "$(curl -s -X PUT $B/api/system/providers/curseforge/key -H "X-MPack-Token: $T" -H 'content-type: application/json' -d '{"key":"invalid-key-for-matrix-test"}')" "invalid_argument"
+  ck "CF真key→204" "$(curl -s -o /dev/null -w '%{http_code}' -X PUT $B/api/system/providers/curseforge/key -H "X-MPack-Token: $T" -H 'content-type: application/json' -d "{\"key\":\"$CURSEFORGE_API_KEY\"}")" 204
+  ck "保存后已配置" "$(curl -s $B/api/system/health)" '"curseforgeKeyConfigured":true'
+  ck "清除→204" "$(curl -s -o /dev/null -w '%{http_code}' -X DELETE $B/api/system/providers/curseforge/key -H "X-MPack-Token: $T")" 204
+  ck "清除后未配置" "$(curl -s $B/api/system/health)" '"curseforgeKeyConfigured":false'
+  ck "恢复真key→204" "$(curl -s -o /dev/null -w '%{http_code}' -X PUT $B/api/system/providers/curseforge/key -H "X-MPack-Token: $T" -H 'content-type: application/json' -d "{\"key\":\"$CURSEFORGE_API_KEY\"}")" 204
+else
+  echo "SKIP: CF key 管理 7 项(环境无 CURSEFORGE_API_KEY)"
+fi
 
 echo "================================"
 echo "curl-matrix: PASS=$PASS FAIL=$FAIL"

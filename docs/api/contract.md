@@ -240,6 +240,37 @@
 
 ---
 
+#### `PUT /api/system/providers/curseforge/key`
+
+保存 CurseForge API Key(设置页「平台连接」)。保存前用一次真实平台调用验证 key
+有效性;验证通过才持久化(secrets 表)并即时热注册适配器,无需重启。环境变量
+`CURSEFORGE_API_KEY` 优先级高于此处保存的 key。key 值任何读取接口都不回传。
+
+**(a) 请求参数**
+
+```json
+{"key":"<curseforge-api-key>"}
+```
+
+**(b) 校验**
+
+- 入参:`key` 必填非空
+- 出参:204 No Content
+
+**(c) 异常处理**
+
+| 状态码 | 错误码 | 触发 | 可重试 |
+|---|---|---|---|
+| 400 | `invalid_argument` | key 为空,或平台拒绝(key 无效/过期) | 否 |
+| 502 | `provider_unavailable` | 平台不可达,未能完成验证 | 是 |
+| 503 | `not_ready` | 服务未就绪 | 是 |
+
+#### `DELETE /api/system/providers/curseforge/key`
+
+清除保存的 key 并即时注销适配器。出参 204 No Content;异常仅 503 `not_ready`。
+
+---
+
 #### `GET /api/onboarding`
 
 迎新四步完成状态。

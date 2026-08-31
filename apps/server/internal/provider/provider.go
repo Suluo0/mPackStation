@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 )
 
 var (
@@ -189,7 +190,12 @@ type Adapter interface {
 }
 
 // Registry resolves adapters without exposing platform SDK types.
-type Registry struct{ adapters map[Name]Adapter }
+// The map is guarded because provider credentials can be added/removed at
+// runtime (settings page) while searches read concurrently.
+type Registry struct {
+	mu       sync.RWMutex
+	adapters map[Name]Adapter
+}
 
 func NewRegistry(adapters ...Adapter) *Registry {
 	r := &Registry{adapters: make(map[Name]Adapter, len(adapters))}
@@ -204,11 +210,34 @@ func (r *Registry) Get(name string) (Adapter, error) {
 	if r == nil {
 		return nil, ErrUnavailable
 	}
+	r.mu.RLock()
 	a, ok := r.adapters[Name(name)]
+	r.mu.RUnlock()
 	if !ok {
 		return nil, ErrNotFound
 	}
 	return a, nil
+}
+
+// Set registers or replaces an adapter at runtime (e.g. after the user saves
+// a CurseForge key in settings).
+func (r *Registry) Set(a Adapter) {
+	if r == nil || a == nil {
+		return
+	}
+	r.mu.Lock()
+	r.adapters[a.Name()] = a
+	r.mu.Unlock()
+}
+
+// Remove unregisters a provider at runtime (e.g. after the user clears a key).
+func (r *Registry) Remove(name Name) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	delete(r.adapters, name)
+	r.mu.Unlock()
 }
 
 // List returns every registered adapter. Used by fan-out search; the order is
@@ -217,10 +246,12 @@ func (r *Registry) List() []Adapter {
 	if r == nil {
 		return nil
 	}
+	r.mu.RLock()
 	out := make([]Adapter, 0, len(r.adapters))
 	for _, a := range r.adapters {
 		out = append(out, a)
 	}
+	r.mu.RUnlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
 	return out
 }

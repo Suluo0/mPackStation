@@ -97,3 +97,9 @@ export async function del(url: string): Promise<void> {
   const response = await fetch(url, {method: 'DELETE', headers: writeHeaders()});
   if (!response.ok) throw await readError(response);
 }
+
+/* PUT 204 No Content 变体(如设置类端点,无响应体)。 */
+export async function putVoid(url: string, body: unknown): Promise<void> {
+  const response = await fetch(url, {method: 'PUT', headers: writeHeaders(), body: JSON.stringify(body)});
+  if (!response.ok) throw await readError(response);
+}

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"flag"
@@ -57,9 +58,11 @@ func resolveWriteToken(dataDir string) (string, error) {
 }
 
 // providerRegistry assembles real provider adapters. Modrinth works without a
-// token for public catalog reads; CurseForge is enabled only when
-// CURSEFORGE_API_KEY is set (https://console.curseforge.com).
-func providerRegistry() *provider.Registry {
+// token for public catalog reads; CurseForge is enabled when a key exists —
+// the CURSEFORGE_API_KEY environment variable wins, otherwise the key saved
+// from the settings page (secrets table) is used.
+// (https://console.curseforge.com).
+func providerRegistry(db *sql.DB) *provider.Registry {
 	adapters := []provider.Adapter{}
 	// Adapter paths already carry the API version prefix (/v2, /v1), so the
 	// base URLs must be bare hosts.
@@ -67,7 +70,15 @@ func providerRegistry() *provider.Registry {
 	if err == nil {
 		adapters = append(adapters, mr)
 	}
-	if key := os.Getenv("CURSEFORGE_API_KEY"); key != "" {
+	key := os.Getenv("CURSEFORGE_API_KEY")
+	if key == "" && db != nil {
+		if saved, err := store.NewRepository(db).GetSecret(context.Background(), "curseforge_api_key"); err == nil {
+			key = saved
+		} else {
+			log.Printf("load saved curseforge key: %v", err)
+		}
+	}
+	if key != "" {
 		if cf, err := provider.NewHTTPAdapter(provider.CurseForge, "https://api.curseforge.com", key, nil); err == nil {
 			adapters = append(adapters, cf)
 		}
@@ -137,9 +148,20 @@ func main() {
 		log.Fatalf("resolve write token: %v", err)
 	}
 
+	registry := providerRegistry(db)
+	// 启动后探测一次双平台可达性并写入 settings, 让状态卡片反映真实结果
+	// 而不是永远停在"未探测"。尽力而为, 失败不影响启动。
+	go func() {
+		probe := service.New(db)
+		probe.SetProviderRegistry(registry)
+		pctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		probe.ProbeProviderStatus(pctx)
+	}()
+
 	log.Printf("mpackstation server listening on http://%s (data: %s)", *addr, *dataDir)
 	server := &http.Server{
-		Addr: *addr, Handler: httpapi.NewRouterWithProviders(db, version, token, providerRegistry(), queue),
+		Addr: *addr, Handler: httpapi.NewRouterWithProviders(db, version, token, registry, queue),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second,
 	}

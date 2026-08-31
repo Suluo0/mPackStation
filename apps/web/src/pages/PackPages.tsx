@@ -11,7 +11,7 @@ import {WorkbenchButton, WorkbenchCard, WorkbenchSectionHeader} from '../ui/work
 import './pack-pages.css';
 import {listMods, type Mod} from '../api/mods';
 import {listDeliveryChecks, runDeliveryChecks, listVersions, listArtifacts, buildPack} from '../api/releases';
-import {fetchStatus, type SystemStatus} from '../api/system';
+import {fetchHealth, fetchStatus, saveCurseForgeKey, clearCurseForgeKey, type SystemHealth, type SystemStatus} from '../api/system';
 import {usePack} from '../hooks/usePack';
 import {usePacks} from '../hooks/usePacks';
 import {useModSearch} from '../hooks/useModSearch';
@@ -162,11 +162,32 @@ const providerStatusText: Record<string, {label: string; color: string}> = {
    存储占用来自 GET /api/system/status;"清理缓存""默认包配置""恢复默认"
    无对应接口,已移除,后续需要时立项补 /api/settings 与缓存清理接口。 */
 export function SettingsPage() {
+  const {message} = App.useApp();
   const [status, setStatus] = useState<SystemStatus | null>(null);
+  const [health, setHealth] = useState<SystemHealth | null>(null);
   const [error, setError] = useState('');
-  useEffect(() => {
-    void fetchStatus().then(setStatus).catch(e => setError(e instanceof Error ? e.message : String(e)));
-  }, []);
+  const [cfKey, setCfKey] = useState('');
+  const [keyBusy, setKeyBusy] = useState(false);
+  const refresh = () => {
+    fetchStatus().then(setStatus).catch(e => setError(e instanceof Error ? e.message : String(e)));
+    fetchHealth().then(setHealth).catch(() => {});
+  };
+  useEffect(refresh, []);
+  const onSaveKey = () => {
+    if (!cfKey.trim()) { message.error('请先粘贴 CurseForge API Key'); return; }
+    setKeyBusy(true);
+    saveCurseForgeKey(cfKey.trim())
+      .then(() => { message.success('Key 已验证并保存,立即生效'); setCfKey(''); refresh(); })
+      .catch(e => message.error(e instanceof Error ? e.message : String(e)))
+      .finally(() => setKeyBusy(false));
+  };
+  const onClearKey = () => {
+    setKeyBusy(true);
+    clearCurseForgeKey()
+      .then(() => { message.success('已清除保存的 Key'); refresh(); })
+      .catch(e => message.error(e instanceof Error ? e.message : String(e)))
+      .finally(() => setKeyBusy(false));
+  };
   return <div className="workspace-page settings-page">
     <div className="page-heading"><div><span className="eyebrow">WORKSPACE / PREFERENCES</span><h1>设置</h1><p>平台连接状态与本地存储占用。</p></div></div>
     <div className="settings-layout">
@@ -176,6 +197,13 @@ export function SettingsPage() {
         <section className="settings-section">
           <WorkbenchSectionHeader title="平台连接"/>
           <ProviderCard name="CurseForge" status={status?.curseforgeStatus ?? 'unknown'} reachable={status?.curseforgeReachable ?? false}/>
+          <div className="cf-key-editor" style={{display: 'flex', gap: 8, alignItems: 'center', margin: '8px 0 16px'}}>
+            <Input.Password
+              placeholder={health?.curseforgeKeyConfigured ? '已配置,粘贴新 Key 可覆盖' : '粘贴 CurseForge API Key(console.curseforge.com 申请)'}
+              value={cfKey} onChange={e => setCfKey(e.target.value)} style={{maxWidth: 420}}/>
+            <Button type="primary" loading={keyBusy} onClick={onSaveKey}>验证并保存</Button>
+            {health?.curseforgeKeyConfigured && <Button danger loading={keyBusy} onClick={onClearKey}>清除</Button>}
+          </div>
           <ProviderCard name="Modrinth" status={status?.modrinthStatus ?? 'unknown'} reachable={status?.modrinthReachable ?? false}/>
         </section>
         <section className="settings-section">

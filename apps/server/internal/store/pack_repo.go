@@ -349,7 +349,9 @@ func (r *Repository) System(ctx context.Context) (SystemRecord, error) {
 	}
 	s.CurseForgeReachable = cf == "true"
 	s.ModrinthReachable = mr == "true"
-	s.CurseForgeStatus, s.ModrinthStatus = cf, mr
+	// settings 里存机器值(true/false/缺省), DTO 出口翻译成契约枚举
+	// unknown/ok/unavailable。
+	s.CurseForgeStatus, s.ModrinthStatus = probeStatus(cf), probeStatus(mr)
 	if err := r.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(size_bytes),0) FROM remote_cache`).Scan(&s.CacheSizeBytes); err != nil {
 		return s, err
 	}
@@ -409,6 +411,51 @@ func (r *Repository) AcknowledgeOnboarding(ctx context.Context, step string, at 
 		return ErrNotFound
 	}
 	return nil
+}
+
+// probeStatus maps the stored probe value to the contract status enum.
+func probeStatus(v string) string {
+	switch v {
+	case "true":
+		return "ok"
+	case "false":
+		return "unavailable"
+	default:
+		return "unknown"
+	}
+}
+
+// PutSecret stores a credential. The column is named ciphertext with a
+// key_version to leave room for real at-rest encryption; today the local
+// single-user database holds the value as-is (the process token guards the
+// HTTP surface, and the db file sits next to the equally-sensitive runtime
+// token file).
+func (r *Repository) PutSecret(ctx context.Context, key, value string, at int64) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO secrets(key,ciphertext,key_version,updated_at) VALUES(?,?,1,?)
+		ON CONFLICT(key) DO UPDATE SET ciphertext=excluded.ciphertext,key_version=1,updated_at=excluded.updated_at`, key, value, at)
+	return err
+}
+
+// GetSecret returns the stored credential, or ("", nil) when absent.
+func (r *Repository) GetSecret(ctx context.Context, key string) (string, error) {
+	var v string
+	err := r.db.QueryRowContext(ctx, `SELECT ciphertext FROM secrets WHERE key=?`, key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return v, err
+}
+
+func (r *Repository) DeleteSecret(ctx context.Context, key string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM secrets WHERE key=?`, key)
+	return err
+}
+
+// SetSetting upserts a settings row (used for provider reachability probes).
+func (r *Repository) SetSetting(ctx context.Context, key, value string, at int64) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO settings(key,value,updated_at) VALUES(?,?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, key, value, at)
+	return err
 }
 
 func (r *Repository) ExportDir(ctx context.Context) (string, error) { return "", nil }

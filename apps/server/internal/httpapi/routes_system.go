@@ -45,6 +45,30 @@ func registerSystemRoutes(mux *http.ServeMux, app *service.API, version string) 
 			WriteJSON(w, http.StatusOK, v)
 		}
 	})
+	// CurseForge key management (settings page). PUT validates the key against
+	// the live platform before persisting; DELETE clears the stored key. Both
+	// take effect immediately, no restart needed. The key value is never
+	// returned by any read endpoint.
+	mux.HandleFunc("PUT /api/system/providers/curseforge/key", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Key string `json:"key"`
+		}
+		if !decodeJSON(w, r, &in) {
+			return
+		}
+		if err := app.SetCurseForgeKey(r.Context(), in.Key); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("DELETE /api/system/providers/curseforge/key", func(w http.ResponseWriter, r *http.Request) {
+		if err := app.ClearCurseForgeKey(r.Context()); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /api/tools/prism/install", func(w http.ResponseWriter, r *http.Request) {
 		t, reused, err := app.SubmitPrismInstall(r.Context())
 		if err != nil {

@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {get, post} from './http';
+import {del, get, post, putVoid} from './http';
 
 /* 系统域:平台健康/状态、MC 版本候选、Prism 便携工具。 */
 
@@ -46,4 +46,14 @@ export function installPrism(): Promise<{started: boolean; taskId?: string}> {
 /* 唤起 Prism GUI(便携 -d 目录)让用户登录微软账号;登录完成由后端检测 accounts.json 自动打勾。 */
 export function launchPrismLogin(): Promise<{launched: boolean}> {
   return post('/api/tools/prism/login', {}, z.object({launched: z.boolean()}));
+}
+
+/* CurseForge key 管理:保存前后端会用真实平台调用验证 key 有效性,
+   保存/清除立即生效无需重启。key 值任何读取接口都不会回传。 */
+export function saveCurseForgeKey(key: string): Promise<void> {
+  return putVoid('/api/system/providers/curseforge/key', {key});
+}
+
+export function clearCurseForgeKey(): Promise<void> {
+  return del('/api/system/providers/curseforge/key');
 }
