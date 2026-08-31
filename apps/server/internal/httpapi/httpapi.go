@@ -122,7 +122,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.Dashboard(r.Context())
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 		} else {
 			WriteJSON(w, http.StatusOK, v)
 		}
@@ -139,7 +139,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := app.ListTasks(r.Context(), limit)
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 		} else {
 			WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
 		}
@@ -151,7 +151,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := taskAPI.Get(r.Context(), r.PathValue("taskId"))
 		if err != nil {
-			writeTaskError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -162,12 +162,12 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 			return
 		}
 		if err := taskAPI.Pause(r.Context(), r.PathValue("taskId")); err != nil {
-			writeTaskError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := taskAPI.Get(r.Context(), r.PathValue("taskId"))
 		if err != nil {
-			writeTaskError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -178,12 +178,12 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 			return
 		}
 		if err := taskAPI.Resume(r.Context(), r.PathValue("taskId")); err != nil {
-			writeTaskError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := taskAPI.Get(r.Context(), r.PathValue("taskId"))
 		if err != nil {
-			writeTaskError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -194,12 +194,12 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 			return
 		}
 		if err := taskAPI.Cancel(r.Context(), r.PathValue("taskId")); err != nil {
-			writeTaskError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := taskAPI.Get(r.Context(), r.PathValue("taskId"))
 		if err != nil {
-			writeTaskError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -210,12 +210,12 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 			return
 		}
 		if err := taskAPI.Retry(r.Context(), r.PathValue("taskId")); err != nil {
-			writeTaskError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := taskAPI.Get(r.Context(), r.PathValue("taskId"))
 		if err != nil {
-			writeTaskError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -227,7 +227,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		events, err := taskAPI.Events(r.Context(), r.PathValue("taskId"))
 		if err != nil {
-			writeTaskError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
@@ -245,7 +245,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := app.ListActivities(r.Context(), limit)
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 		} else {
 			WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
 		}
@@ -253,7 +253,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/system/health", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.SystemHealth(r.Context())
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 		} else {
 			WriteJSON(w, http.StatusOK, v)
 		}
@@ -261,7 +261,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/system/status", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.SystemStatus(r.Context())
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 		} else {
 			WriteJSON(w, http.StatusOK, v)
 		}
@@ -269,7 +269,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/onboarding", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.Onboarding(r.Context())
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 		} else {
 			WriteJSON(w, http.StatusOK, v)
 		}
@@ -282,12 +282,12 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 			return
 		}
 		if err := app.AcknowledgeOnboarding(r.Context(), body.Steps, RequestID(r.Context())); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := app.Onboarding(r.Context())
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 		} else {
 			WriteJSON(w, http.StatusOK, v)
 		}
@@ -295,7 +295,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("POST /api/tools/prism/install", func(w http.ResponseWriter, r *http.Request) {
 		t, reused, err := app.SubmitPrismInstall(r.Context())
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		if t == nil {
@@ -306,7 +306,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	})
 	mux.HandleFunc("POST /api/tools/prism/login", func(w http.ResponseWriter, r *http.Request) {
 		if err := app.LaunchPrismLogin(r.Context()); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusAccepted, map[string]any{"launched": true})
@@ -314,7 +314,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/meta/mc-versions", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.MCVersions(r.Context())
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 		} else {
 			WriteJSON(w, http.StatusOK, v)
 		}
@@ -322,7 +322,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/packs", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ListPacks(r.Context())
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
@@ -337,7 +337,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := app.CreatePack(r.Context(), body, RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusCreated, v)
@@ -345,7 +345,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/packs/{packId}", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.GetPack(r.Context(), r.PathValue("packId"))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -360,7 +360,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := app.UpdatePack(r.Context(), r.PathValue("packId"), body, RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -368,7 +368,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("POST /api/packs/{packId}/archive", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ArchivePack(r.Context(), r.PathValue("packId"), RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -376,14 +376,14 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("POST /api/packs/{packId}/unarchive", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.UnarchivePack(r.Context(), r.PathValue("packId"), RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
 	})
 	mux.HandleFunc("DELETE /api/packs/{packId}", func(w http.ResponseWriter, r *http.Request) {
 		if err := app.DeletePack(r.Context(), r.PathValue("packId"), RequestID(r.Context())); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -391,7 +391,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/packs/{packId}/mods", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ListPackMods(r.Context(), r.PathValue("packId"))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
@@ -403,7 +403,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := app.AddPackMod(r.Context(), r.PathValue("packId"), body, RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusCreated, v)
@@ -415,7 +415,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := app.AddLocalPackMod(r.Context(), r.PathValue("packId"), body, RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusCreated, v)
@@ -427,14 +427,14 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := app.UpdatePackMod(r.Context(), r.PathValue("packId"), r.PathValue("modId"), body, RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
 	})
 	mux.HandleFunc("DELETE /api/packs/{packId}/mods/{modId}", func(w http.ResponseWriter, r *http.Request) {
 		if err := app.RemovePackMod(r.Context(), r.PathValue("packId"), r.PathValue("modId"), RequestID(r.Context())); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -454,7 +454,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		if strings.TrimSpace(in.Provider) == "" {
 			v, err := app.ModSearchAll(r.Context(), r.PathValue("packId"), in)
 			if err != nil {
-				writeServiceError(w, r, err)
+				writeError(w, r, err)
 				return
 			}
 			WriteJSON(w, http.StatusOK, v)
@@ -462,7 +462,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := app.ModSearch(r.Context(), r.PathValue("packId"), in)
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -475,7 +475,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := app.ModVersions(r.Context(), r.PathValue("packId"), provider, projectID)
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
@@ -483,7 +483,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("POST /api/packs/{packId}/resolve", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ResolvePack(r.Context(), r.PathValue("packId"), RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusAccepted, map[string]any{"lock": v, "status": "resolved"})
@@ -491,7 +491,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/packs/{packId}/locks", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ListLocks(r.Context(), r.PathValue("packId"))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
@@ -499,21 +499,21 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/packs/{packId}/conflicts", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ListConflicts(r.Context(), r.PathValue("packId"))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/conflicts/{conflictId}/resolve", func(w http.ResponseWriter, r *http.Request) {
 		if err := app.ResolveConflict(r.Context(), r.PathValue("packId"), r.PathValue("conflictId"), "resolved", RequestID(r.Context())); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"status": "resolved"})
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/conflicts/{conflictId}/ignore", func(w http.ResponseWriter, r *http.Request) {
 		if err := app.ResolveConflict(r.Context(), r.PathValue("packId"), r.PathValue("conflictId"), "ignored", RequestID(r.Context())); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"status": "ignored"})
@@ -521,7 +521,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/packs/{packId}/health", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.PackHealth(r.Context(), r.PathValue("packId"))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -529,7 +529,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/packs/{packId}/content", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ListContent(r.Context(), r.PathValue("packId"), r.URL.Query().Get("kind"))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
@@ -541,7 +541,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		doc, rev, err := app.CreateContent(r.Context(), r.PathValue("packId"), body, RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusCreated, map[string]any{"document": doc, "revision": rev})
@@ -549,7 +549,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/packs/{packId}/content/{documentId}", func(w http.ResponseWriter, r *http.Request) {
 		doc, rev, err := app.GetContent(r.Context(), r.PathValue("packId"), r.PathValue("documentId"))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"document": doc, "revision": rev})
@@ -568,7 +568,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		rev, err := app.SaveContentDraft(r.Context(), r.PathValue("packId"), r.PathValue("documentId"), service.SaveContentDraftInput{IfMatch: match, Payload: body.Payload}, RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, rev)
@@ -576,7 +576,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("POST /api/packs/{packId}/content/{documentId}/validate", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ValidateContent(r.Context(), r.PathValue("packId"), r.PathValue("documentId"), r.URL.Query().Get("revisionId"), RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -584,7 +584,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("POST /api/packs/{packId}/content/{documentId}/apply", func(w http.ResponseWriter, r *http.Request) {
 		rev, err := app.ApplyContent(r.Context(), r.PathValue("packId"), r.PathValue("documentId"), r.URL.Query().Get("revisionId"), RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"status": "applied", "revision": rev})
@@ -598,7 +598,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := app.RollbackContent(r.Context(), r.PathValue("packId"), r.PathValue("documentId"), body.RevisionID, RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -606,7 +606,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/packs/{packId}/content/{documentId}/history", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ContentHistory(r.Context(), r.PathValue("packId"), r.PathValue("documentId"))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
@@ -614,7 +614,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/packs/{packId}/quests", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.GetQuest(r.Context(), r.PathValue("packId"))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -631,7 +631,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, issues, err := app.SaveQuestDraft(r.Context(), r.PathValue("packId"), body, match, RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"revision": v, "issues": issues})
@@ -639,14 +639,14 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("POST /api/packs/{packId}/quests/validate", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ValidateQuest(r.Context(), r.PathValue("packId"), RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"issues": v})
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/quests/apply", func(w http.ResponseWriter, r *http.Request) {
 		if err := app.ApplyQuest(r.Context(), r.PathValue("packId"), RequestID(r.Context())); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"status": "applied"})
@@ -660,7 +660,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := app.RollbackQuest(r.Context(), r.PathValue("packId"), body.RevisionID, RequestID(r.Context()))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -668,7 +668,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/packs/{packId}/quests/history", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.QuestHistory(r.Context(), r.PathValue("packId"))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
@@ -676,7 +676,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("GET /api/packs/{packId}/quests/preview", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.QuestPreview(r.Context(), r.PathValue("packId"))
 		if err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
@@ -687,26 +687,26 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 			return
 		}
 		if err := app.RegisterExportDirectory(r.Context(), body.Name, body.Directory); err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusCreated, map[string]any{"name": body.Name, "status": "ready"})
 	})
 	mux.HandleFunc("GET /api/packs/{packId}/delivery-checks", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := p7.ListDeliveryChecks(r.Context(), r.PathValue("packId"), r.URL.Query().Get("packVersionId"))
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/delivery-checks/run", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		var body struct {
@@ -718,19 +718,19 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := p7.RunDeliveryChecks(r.Context(), r.PathValue("packId"), body.PackVersionID, body.Checks)
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v})
 	})
 	mux.HandleFunc("GET /api/packs/{packId}/versions", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := app.ListPackVersions(r.Context(), r.PathValue("packId"))
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
@@ -747,7 +747,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := app.CreatePackVersion(r.Context(), r.PathValue("packId"), body.Version, body.Channel, body.Changelog, body.Source)
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusCreated, v)
@@ -776,7 +776,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		result, err := app.BuildPack(r.Context(), service.BuildInput{PackID: r.PathValue("packId"), PackVersionID: r.PathValue("versionId"), ExportDirName: body.ExportDirName, Files: files, LockSnapshot: body.LockSnapshot, ContentSnapshot: body.ContentSnapshot, QuestSnapshot: body.QuestSnapshot, BuildConfig: body.BuildConfig, Checks: body.Checks})
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusCreated, result)
@@ -809,31 +809,31 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		result, err := app.BuildPack(r.Context(), service.BuildInput{PackID: r.PathValue("packId"), PackVersionID: body.PackVersionID, ExportDirName: body.ExportDirName, Files: files, LockSnapshot: body.LockSnapshot, ContentSnapshot: body.ContentSnapshot, QuestSnapshot: body.QuestSnapshot, BuildConfig: body.BuildConfig, Checks: body.Checks})
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusCreated, result)
 	})
 	mux.HandleFunc("GET /api/packs/{packId}/artifacts", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := p7.ListArtifacts(r.Context(), r.PathValue("packId"), r.URL.Query().Get("packVersionId"))
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
 	})
 	mux.HandleFunc("GET /api/packs/{packId}/artifacts/{artifactId}/download", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		a, b, err := p7.ReadArtifact(r.Context(), r.PathValue("packId"), r.PathValue("artifactId"))
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/zip")
@@ -843,19 +843,19 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	})
 	mux.HandleFunc("GET /api/packs/{packId}/releases", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := p7.ListReleases(r.Context(), r.PathValue("packId"), r.URL.Query().Get("packVersionId"))
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
 	})
 	mux.HandleFunc("POST /api/releases", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		var body service.PublishInput
@@ -864,7 +864,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := p7.PublishPack(r.Context(), body)
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusAccepted, v)
@@ -874,7 +874,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	// publish task and returns its observable task state.
 	mux.HandleFunc("POST /api/releases/async", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		if taskAPI == nil {
@@ -890,19 +890,19 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		t, _, err := p7.SubmitPublishTask(r.Context(), body)
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := taskAPI.Get(r.Context(), t.ID)
 		if err != nil {
-			writeTaskError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusAccepted, v)
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/publish/{provider}", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		var body struct {
@@ -920,14 +920,14 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := p7.PublishPack(r.Context(), service.PublishInput{PackID: r.PathValue("packId"), PackVersionID: body.PackVersionID, Provider: r.PathValue("provider"), ArtifactID: body.ArtifactID, IdempotencyKey: body.IdempotencyKey, ProjectID: body.ProjectID, VersionID: body.VersionID})
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusAccepted, v)
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/publish/{provider}/async", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		if taskAPI == nil {
@@ -943,43 +943,43 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		t, _, err := p7.SubmitPublishTask(r.Context(), service.PublishInput{PackID: r.PathValue("packId"), PackVersionID: body.PackVersionID, Provider: r.PathValue("provider"), ArtifactID: body.ArtifactID, IdempotencyKey: body.IdempotencyKey, ProjectID: body.ProjectID, VersionID: body.VersionID})
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := taskAPI.Get(r.Context(), t.ID)
 		if err != nil {
-			writeTaskError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusAccepted, v)
 	})
 	mux.HandleFunc("GET /api/releases/{releaseId}", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := p7.GetRelease(r.Context(), r.PathValue("releaseId"))
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
 	})
 	mux.HandleFunc("POST /api/releases/{releaseId}/poll", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		v, err := p7.PollRelease(r.Context(), r.PathValue("releaseId"))
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
 	})
 	mux.HandleFunc("POST /api/releases/{releaseId}/retry", func(w http.ResponseWriter, r *http.Request) {
 		if err := p7Ready(p7); err != nil {
-			writeServiceError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		var body struct{ ProjectID, VersionID string }
@@ -988,14 +988,14 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := p7.RetryPublish(r.Context(), r.PathValue("releaseId"), body.ProjectID, body.VersionID)
 		if err != nil {
-			writeP7Error(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusAccepted, v)
 	})
 	mux.HandleFunc("POST /api/packs/import/inspect", func(w http.ResponseWriter, r *http.Request) {
 		if importer == nil {
-			writeServiceError(w, r, service.ErrUnavailable)
+			writeError(w, r, service.ErrUnavailable)
 			return
 		}
 		var body struct{ Source, URL, Content string }
@@ -1009,14 +1009,14 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, err := importer.Inspect(r.Context(), service.ImportPreviewInput{Source: body.Source, URL: body.URL, Content: content})
 		if err != nil {
-			writeImportError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, v)
 	})
 	mux.HandleFunc("POST /api/packs/import", func(w http.ResponseWriter, r *http.Request) {
 		if importer == nil {
-			writeServiceError(w, r, service.ErrUnavailable)
+			writeError(w, r, service.ErrUnavailable)
 			return
 		}
 		var body struct{ PreviewID, Token, InputHash, IdempotencyKey string }
@@ -1028,7 +1028,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		}
 		v, reused, err := importer.Confirm(r.Context(), service.ImportConfirmInput{PreviewID: body.PreviewID, Token: body.Token, InputHash: body.InputHash, IdempotencyKey: body.IdempotencyKey})
 		if err != nil {
-			writeImportError(w, r, err)
+			writeError(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusAccepted, map[string]any{"importId": body.PreviewID, "taskId": v.ID, "packId": v.PackID, "reused": reused})
@@ -1046,7 +1046,7 @@ func checkMCVersionCandidate(w http.ResponseWriter, r *http.Request, app *servic
 	}
 	versions, err := app.MCVersions(r.Context())
 	if err != nil {
-		writeServiceError(w, r, err)
+		writeError(w, r, err)
 		return false
 	}
 	if !slices.Contains(versions, mcVersion) {
@@ -1105,7 +1105,14 @@ func parseIfMatch(r *http.Request) (int, bool) {
 	value, err := strconv.Atoi(raw)
 	return value, err == nil && value >= 0
 }
-func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
+
+// writeError is the single error translator at the HTTP boundary (B3 merges
+// the four previous per-family translators). Whatever the interior layers
+// return, the response envelope is always the contract shape. Order: typed
+// DomainError > ValidationError > domain sentinels > generic fallbacks.
+// Contract: same idempotency key with different input is 422
+// idempotency_conflict on every endpoint (contract.md).
+func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var de *service.DomainError
 	if errors.As(err, &de) {
 		apiError(w, r, de.Status, de.Code, de.Message, de.Details)
@@ -1117,10 +1124,49 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	switch {
-	// Contract: same idempotency key with different input -> 422 idempotency_conflict
-	// (task queue is the enforcement point for import/publish submit paths).
+	// import preview lifecycle
+	case errors.Is(err, service.ErrImportInvalidSource):
+		apiError(w, r, http.StatusUnprocessableEntity, "import_invalid_source", "import source is invalid")
+	case errors.Is(err, service.ErrImportUnsafeArchive):
+		apiError(w, r, http.StatusUnprocessableEntity, "unsafe_archive", "archive failed safety checks")
+	case errors.Is(err, service.ErrImportConsumed):
+		apiError(w, r, http.StatusConflict, "import_preview_consumed", "import preview was already consumed")
+	case errors.Is(err, service.ErrImportExpired):
+		apiError(w, r, http.StatusGone, "import_preview_expired", "import preview is expired")
+	// idempotency: the task queue is the enforcement point for import/publish
+	// submit paths; the contract fixes 422 idempotency_conflict for key reuse
+	// with different input on every endpoint.
 	case errors.Is(err, task.ErrIdempotencyConflict), errors.Is(err, task.ErrIdempotencyConsumed):
 		apiError(w, r, http.StatusUnprocessableEntity, "idempotency_conflict", "idempotency key was used with a different request")
+	// task control surface
+	case service.IsTaskNotFound(err):
+		apiError(w, r, http.StatusNotFound, "task_not_found", "task not found")
+	case service.IsTaskInvalidTransition(err):
+		apiError(w, r, http.StatusConflict, "task_invalid_transition", "task state transition is not allowed")
+	case service.IsTaskLeaseLost(err):
+		apiError(w, r, http.StatusConflict, "task_lease_lost", "task lease is no longer valid")
+	case service.IsTaskNotAvailable(err):
+		apiError(w, r, http.StatusConflict, "task_not_available", "task is not available")
+	case service.IsTaskUnknownKind(err):
+		apiError(w, r, http.StatusInternalServerError, "task_unknown_kind", "task kind is not registered")
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		apiError(w, r, http.StatusRequestTimeout, "request_canceled", "task request was canceled")
+	// build / publish (P7)
+	case errors.Is(err, service.ErrInvalidBuildInput):
+		apiError(w, r, http.StatusBadRequest, "invalid_argument", "build or publish input is invalid")
+	case errors.Is(err, service.ErrExportDirNotAllowed):
+		apiError(w, r, http.StatusForbidden, "export_dir_not_allowed", "export directory is not approved")
+	case errors.Is(err, service.ErrDeliveryBlocked):
+		apiError(w, r, http.StatusUnprocessableEntity, "build_blocked", "delivery checks are blocked")
+	case errors.Is(err, service.ErrPublishFailed):
+		apiError(w, r, http.StatusBadGateway, "provider_unavailable", "publication failed; retry is explicit")
+	case errors.Is(err, service.ErrPublishIdempotencyConflict):
+		apiError(w, r, http.StatusUnprocessableEntity, "idempotency_conflict", "publication key or artifact conflicts")
+	case errors.Is(err, service.ErrProviderStatusUnavailable):
+		apiError(w, r, http.StatusBadGateway, "provider_unavailable", "remote status is unavailable")
+	case errors.Is(err, service.ErrArtifactMissing):
+		apiError(w, r, http.StatusGone, "artifact_expired", "artifact is no longer available")
+	// provider / revision / generic service sentinels
 	case errors.Is(err, service.ErrProviderNotFound):
 		apiError(w, r, http.StatusNotFound, "provider_not_found", "provider resource not found")
 	case errors.Is(err, service.ErrProviderUnavailable):
@@ -1135,7 +1181,7 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		apiError(w, r, http.StatusConflict, "conflict", "resource conflict")
 	case errors.Is(err, service.ErrInvalidArgument):
 		apiError(w, r, http.StatusBadRequest, "invalid_argument", "request argument is invalid")
-	case errors.Is(err, service.ErrUnavailable):
+	case service.IsTaskUnavailable(err), errors.Is(err, service.ErrUnavailable):
 		apiError(w, r, http.StatusServiceUnavailable, "not_ready", "service is not ready")
 	default:
 		apiError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
@@ -1164,81 +1210,11 @@ func validationErrorCode(ve *service.ValidationError) string {
 	return "quest_invalid"
 }
 
-func writeImportError(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, service.ErrImportInvalidSource):
-		apiError(w, r, http.StatusUnprocessableEntity, "import_invalid_source", "import source is invalid")
-	case errors.Is(err, service.ErrImportUnsafeArchive):
-		apiError(w, r, http.StatusUnprocessableEntity, "unsafe_archive", "archive failed safety checks")
-	case errors.Is(err, service.ErrImportConsumed):
-		apiError(w, r, http.StatusConflict, "import_preview_consumed", "import preview was already consumed")
-	case errors.Is(err, service.ErrImportExpired):
-		apiError(w, r, http.StatusGone, "import_preview_expired", "import preview is expired")
-	default:
-		writeServiceError(w, r, err)
-	}
-}
-
 func p7Ready(p7 *service.P7Service) error {
 	if p7 == nil {
 		return service.ErrUnavailable
 	}
 	return nil
-}
-
-func writeP7Error(w http.ResponseWriter, r *http.Request, err error) {
-	var de *service.DomainError
-	if errors.As(err, &de) {
-		apiError(w, r, de.Status, de.Code, de.Message, de.Details)
-		return
-	}
-	switch {
-	case service.IsNotFound(err):
-		apiError(w, r, http.StatusNotFound, "resource_not_found", "resource not found")
-	case errors.Is(err, service.ErrInvalidBuildInput):
-		apiError(w, r, http.StatusBadRequest, "invalid_argument", "build or publish input is invalid")
-	case errors.Is(err, service.ErrExportDirNotAllowed):
-		apiError(w, r, http.StatusForbidden, "export_dir_not_allowed", "export directory is not approved")
-	case errors.Is(err, service.ErrDeliveryBlocked):
-		apiError(w, r, http.StatusUnprocessableEntity, "build_blocked", "delivery checks are blocked")
-	case errors.Is(err, service.ErrPublishFailed):
-		apiError(w, r, http.StatusBadGateway, "provider_unavailable", "publication failed; retry is explicit")
-	case errors.Is(err, service.ErrPublishIdempotencyConflict):
-		apiError(w, r, http.StatusUnprocessableEntity, "idempotency_conflict", "publication key or artifact conflicts")
-	case errors.Is(err, service.ErrProviderStatusUnavailable):
-		apiError(w, r, http.StatusBadGateway, "provider_unavailable", "remote status is unavailable")
-	case errors.Is(err, service.ErrArtifactMissing):
-		apiError(w, r, http.StatusGone, "artifact_expired", "artifact is no longer available")
-	default:
-		writeServiceError(w, r, err)
-	}
-}
-
-func writeTaskError(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case service.IsTaskNotFound(err):
-		apiError(w, r, http.StatusNotFound, "task_not_found", "task not found")
-	case service.IsTaskInvalidTransition(err):
-		apiError(w, r, http.StatusConflict, "task_invalid_transition", "task state transition is not allowed")
-	case service.IsTaskLeaseLost(err):
-		apiError(w, r, http.StatusConflict, "task_lease_lost", "task lease is no longer valid")
-	case service.IsTaskNotAvailable(err):
-		apiError(w, r, http.StatusConflict, "task_not_available", "task is not available")
-	case service.IsTaskIdempotencyConflict(err):
-		apiError(w, r, http.StatusConflict, "idempotency_conflict", "idempotency key was already used with different input")
-	case service.IsTaskIdempotencyConsumed(err):
-		apiError(w, r, http.StatusConflict, "idempotency_consumed", "idempotency key was already consumed")
-	case service.IsTaskUnknownKind(err):
-		apiError(w, r, http.StatusInternalServerError, "task_unknown_kind", "task kind is not registered")
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		apiError(w, r, http.StatusRequestTimeout, "request_canceled", "task request was canceled")
-	default:
-		if service.IsTaskUnavailable(err) {
-			apiError(w, r, http.StatusServiceUnavailable, "not_ready", "task service is not ready")
-			return
-		}
-		apiError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
-	}
 }
 
 func requestIDMiddleware(next http.Handler) http.Handler {
