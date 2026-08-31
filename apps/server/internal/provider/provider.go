@@ -48,6 +48,9 @@ type Version struct {
 	VersionNumber string       `json:"versionNumber,omitempty"`
 	GameVersions  []string     `json:"gameVersions,omitempty"`
 	Loaders       []string     `json:"loaders,omitempty"`
+	// DatePublished is RFC3339 when the provider reports it; versions are
+	// returned newest-first so "the first compatible entry" is the latest.
+	DatePublished string       `json:"datePublished,omitempty"`
 	Files         []File       `json:"files,omitempty"`
 	Dependencies  []Dependency `json:"dependencies,omitempty"`
 }

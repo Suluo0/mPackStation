@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sort"
 	"time"
 )
 
@@ -308,6 +309,8 @@ func (h *HTTPAdapter) Versions(ctx context.Context, id string) ([]Version, error
 			Relation       string `json:"relationType"`
 			Constraint     string `json:"version_range"`
 		} `json:"dependencies"`
+		DatePublished string `json:"date_published"` // Modrinth
+		FileDate      string `json:"fileDate"`       // CurseForge
 	}
 	if e := json.Unmarshal(payload, &raw); e != nil {
 		return nil, fmt.Errorf("decode versions: %w", e)
@@ -366,8 +369,24 @@ func (h *HTTPAdapter) Versions(ctx context.Context, id string) ([]Version, error
 			}
 			deps = append(deps, Dependency{ProjectID: pid, VersionID: vid, Constraint: d.Constraint, Kind: kind, Reason: "provider dependency"})
 		}
-		out = append(out, Version{ID: versionID, ProjectID: id, Name: name, VersionNumber: x.VersionNumber, GameVersions: gameVersions, Loaders: loaders, Files: files, Dependencies: deps})
+		date := x.DatePublished
+		if date == "" {
+			date = x.FileDate
+		}
+		if t, e := time.Parse(time.RFC3339, date); e == nil {
+			date = t.UTC().Format(time.RFC3339)
+		}
+		out = append(out, Version{ID: versionID, ProjectID: id, Name: name, VersionNumber: x.VersionNumber, GameVersions: gameVersions, Loaders: loaders, DatePublished: date, Files: files, Dependencies: deps})
 	}
+	// Providers do not guarantee order (CurseForge files come oldest-first).
+	// Normalize to newest-first so the default "first compatible" pick is the
+	// latest version; entries without a date sink to the end, original order
+	// preserved within ties.
+	dates := make([]time.Time, len(out))
+	for i, v := range out {
+		dates[i], _ = time.Parse(time.RFC3339, v.DatePublished)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return dates[i].After(dates[j]) })
 	return out, nil
 }
 func (h *HTTPAdapter) Metadata(ctx context.Context, pid, vid string) (Metadata, error) {
