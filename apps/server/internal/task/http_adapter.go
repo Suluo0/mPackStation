@@ -16,11 +16,10 @@ type HTTPAdapter struct {
 	queue *Queue
 }
 
-// NewHTTPAdapter creates a task facade from the process database source. The
-// source is intentionally opaque to callers outside the task boundary.
-func NewHTTPAdapter(source any) *HTTPAdapter {
-	db, ok := source.(*sql.DB)
-	if !ok || db == nil {
+// NewHTTPAdapter creates a task facade over an explicit database handle.
+// A nil db or a queue construction failure yields an unavailable adapter.
+func NewHTTPAdapter(db *sql.DB) *HTTPAdapter {
+	if db == nil {
 		return &HTTPAdapter{}
 	}
 	queue, err := NewQueue(db)

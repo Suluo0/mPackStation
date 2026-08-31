@@ -61,15 +61,6 @@ func New(db *sql.DB) *API {
 	return api
 }
 
-// NewFromSource is a compatibility assembly hook for the current process
-// entrypoint. HTTP only passes an opaque source; database knowledge stays here.
-func NewFromSource(source any) *API {
-	if db, ok := source.(*sql.DB); ok {
-		return New(db)
-	}
-	return New(nil)
-}
-
 func (a *API) ready() error {
 	if a == nil || a.repo == nil {
 		return ErrUnavailable

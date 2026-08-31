@@ -6,6 +6,7 @@ package httpapi
 import (
 	"context"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -67,12 +68,11 @@ func apiError(w http.ResponseWriter, r *http.Request, status int, code, message 
 	WriteJSON(w, status, map[string]any{"error": map[string]any{"code": code, "message": message, "request_id": RequestID(r.Context()), "details": d}})
 }
 
-// NewRouter assembles the local API. source is intentionally opaque here so
-// this package cannot import database/sql; service owns database composition.
+// NewRouter assembles the local API over an explicit database handle.
 // token is the required write-token (see auth.md); an empty token rejects all
 // write requests with 503 auth_not_configured.
-func NewRouter(source any, version, token string) http.Handler {
-	return newRouter(service.NewFromSource(source), service.NewTaskAPI(source), service.NewP7ServiceFromSource(source), service.NewImportServiceFromSource(source), version, token)
+func NewRouter(db *sql.DB, version, token string) http.Handler {
+	return newRouter(service.New(db), service.NewTaskAPI(db), service.NewP7Service(db), service.NewImportService(db), version, token)
 }
 
 // NewRouterWithService is useful to tests and future composition roots.
@@ -83,16 +83,16 @@ func NewRouterWithService(app *service.API, version, token string) http.Handler 
 // NewRouterWithProviders wires real provider adapters (Modrinth/CurseForge)
 // into both the catalog service and the publish pipeline. A non-nil queue
 // additionally enables task-based tool installation.
-func NewRouterWithProviders(source any, version, token string, reg *provider.Registry, q *task.Queue) http.Handler {
-	app := service.NewFromSource(source)
+func NewRouterWithProviders(db *sql.DB, version, token string, reg *provider.Registry, q *task.Queue) http.Handler {
+	app := service.New(db)
 	app.SetProviderRegistry(reg)
 	if q != nil {
 		app.SetTaskQueue(q)
 		_ = q.RegisterHandler(task.KindToolInstall, task.HandlerFunc(app.HandleToolInstallTask))
 	}
-	p7 := service.NewP7ServiceFromSource(source)
+	p7 := service.NewP7Service(db)
 	p7.SetProviderRegistry(reg)
-	return newRouter(app, service.NewTaskAPI(source), p7, service.NewImportServiceFromSource(source), version, token)
+	return newRouter(app, service.NewTaskAPI(db), p7, service.NewImportService(db), version, token)
 }
 
 func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service, importer *service.ImportService, version, token string) http.Handler {

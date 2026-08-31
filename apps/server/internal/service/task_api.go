@@ -15,9 +15,10 @@ type TaskAPI struct {
 	adapter *task.HTTPAdapter
 }
 
-// NewTaskAPI assembles the task facade from the opaque process database.
-func NewTaskAPI(source any) *TaskAPI {
-	if db, ok := source.(*sql.DB); ok && db != nil {
+// NewTaskAPI assembles the task facade over an explicit database handle.
+// A nil db yields an unavailable facade (ready() reports ErrUnavailable).
+func NewTaskAPI(db *sql.DB) *TaskAPI {
+	if db != nil {
 		return &TaskAPI{adapter: task.NewHTTPAdapter(db)}
 	}
 	return &TaskAPI{}

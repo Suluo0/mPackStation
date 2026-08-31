@@ -65,16 +65,6 @@ func NewP7Service(db *sql.DB) *P7Service {
 	return &P7Service{repo: store.NewRepository(db), now: time.Now, queue: q}
 }
 
-// NewP7ServiceFromSource is the composition-root adapter used by httpapi. It
-// accepts the same opaque source as the rest of the service layer so HTTP
-// remains unaware of database types.
-func NewP7ServiceFromSource(source any) *P7Service {
-	if db, ok := source.(*sql.DB); ok {
-		return NewP7Service(db)
-	}
-	return NewP7Service(nil)
-}
-
 // RegisterExportDirectory forwards the explicit destination approval through
 // the same API rule set used by non-HTTP callers.
 func (s *P7Service) RegisterExportDirectory(ctx context.Context, name, directory string) error {

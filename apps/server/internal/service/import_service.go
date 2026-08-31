@@ -76,13 +76,6 @@ func NewImportService(db *sql.DB) *ImportService {
 	return s
 }
 
-func NewImportServiceFromSource(source any) *ImportService {
-	if db, ok := source.(*sql.DB); ok {
-		return NewImportService(db)
-	}
-	return NewImportService(nil)
-}
-
 func (s *ImportService) Inspect(ctx context.Context, in ImportPreviewInput) (ImportPreview, error) {
 	if s == nil || s.repo == nil {
 		return ImportPreview{}, ErrUnavailable
