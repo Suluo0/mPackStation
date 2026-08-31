@@ -234,10 +234,13 @@ func (a *API) ReadArtifact(ctx context.Context, packID, artifactID string) (Arti
 	}
 	r, err := a.repo.GetArtifact(ctx, artifactID)
 	if err != nil {
+		if IsNotFound(err) {
+			return Artifact{}, nil, NotFoundError("artifact_not_found", "artifact not found")
+		}
 		return Artifact{}, nil, err
 	}
 	if r.PackID != packID {
-		return Artifact{}, nil, store.ErrNotFound
+		return Artifact{}, nil, NotFoundError("artifact_not_found", "artifact not found")
 	}
 	if err := verifyArtifactFile(r.Path, r.SHA256, r.SizeBytes); err != nil {
 		return Artifact{}, nil, err
@@ -260,6 +263,9 @@ func (a *API) BuildPack(ctx context.Context, in BuildInput) (BuildResult, error)
 	}
 	version, err := a.repo.GetPackVersion(ctx, in.PackID, in.PackVersionID)
 	if err != nil {
+		if IsNotFound(err) {
+			return BuildResult{}, NotFoundError("pack_version_not_found", "pack version not found")
+		}
 		return BuildResult{}, err
 	}
 	// A version with a designated lock must build from that exact immutable

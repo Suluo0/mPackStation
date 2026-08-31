@@ -90,6 +90,13 @@ func (s *P7Service) SubmitPublishTask(ctx context.Context, in PublishInput) (*ta
 	if s == nil || s.queue == nil {
 		return nil, false, ErrUnavailable
 	}
+	// Contract: unknown pack is a 404 pack_not_found, not an opaque task failure.
+	if _, err := s.repo.GetPack(ctx, in.PackID); err != nil {
+		if IsNotFound(err) {
+			return nil, false, NotFoundError("pack_not_found", "pack not found")
+		}
+		return nil, false, err
+	}
 	p := PublishTaskPayload{PackID: in.PackID, PackVersionID: in.PackVersionID, Provider: in.Provider, ArtifactID: in.ArtifactID, ProjectID: in.ProjectID, VersionID: in.VersionID}
 	b, err := json.Marshal(p)
 	if err != nil {

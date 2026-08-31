@@ -8,8 +8,11 @@ import (
 
 type ImportPreviewRecord struct {
 	ID, TokenHash, InputHash, Source, StagedPath string
+	ConsumedTaskID                               string
 	ExpiresAt, ConsumedAt, CreatedAt             sql.NullInt64
 }
+
+const importPreviewCols = `id,token_hash,input_hash,source,staged_path,expires_at,consumed_at,created_at,consumed_task_id`
 
 func (r *Repository) CreateImportPreview(ctx context.Context, p ImportPreviewRecord) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO import_previews(id,token_hash,input_hash,source,staged_path,expires_at,consumed_at,created_at) VALUES(?,?,?,?,?,?,?,?)`, p.ID, p.TokenHash, p.InputHash, p.Source, p.StagedPath, p.ExpiresAt.Int64, nullInt64Arg(p.ConsumedAt), p.CreatedAt.Int64)
@@ -21,7 +24,7 @@ func (r *Repository) CreateImportPreview(ctx context.Context, p ImportPreviewRec
 
 func (r *Repository) GetImportPreview(ctx context.Context, id string) (ImportPreviewRecord, error) {
 	var p ImportPreviewRecord
-	err := r.db.QueryRowContext(ctx, `SELECT id,token_hash,input_hash,source,staged_path,expires_at,consumed_at,created_at FROM import_previews WHERE id=?`, id).Scan(&p.ID, &p.TokenHash, &p.InputHash, &p.Source, &p.StagedPath, &p.ExpiresAt, &p.ConsumedAt, &p.CreatedAt)
+	err := r.db.QueryRowContext(ctx, `SELECT `+importPreviewCols+` FROM import_previews WHERE id=?`, id).Scan(&p.ID, &p.TokenHash, &p.InputHash, &p.Source, &p.StagedPath, &p.ExpiresAt, &p.ConsumedAt, &p.CreatedAt, &p.ConsumedTaskID)
 	if err == sql.ErrNoRows {
 		return ImportPreviewRecord{}, ErrNotFound
 	}
@@ -35,7 +38,7 @@ func (r *Repository) ConsumeImportPreview(ctx context.Context, id, tokenHash, in
 	var out ImportPreviewRecord
 	err := r.WithTx(ctx, func(tx *Repository) error {
 		var p ImportPreviewRecord
-		err := tx.db.QueryRowContext(ctx, `SELECT id,token_hash,input_hash,source,staged_path,expires_at,consumed_at,created_at FROM import_previews WHERE id=?`, id).Scan(&p.ID, &p.TokenHash, &p.InputHash, &p.Source, &p.StagedPath, &p.ExpiresAt, &p.ConsumedAt, &p.CreatedAt)
+		err := tx.db.QueryRowContext(ctx, `SELECT `+importPreviewCols+` FROM import_previews WHERE id=?`, id).Scan(&p.ID, &p.TokenHash, &p.InputHash, &p.Source, &p.StagedPath, &p.ExpiresAt, &p.ConsumedAt, &p.CreatedAt, &p.ConsumedTaskID)
 		if err == sql.ErrNoRows {
 			return ErrNotFound
 		}
@@ -64,6 +67,16 @@ func (r *Repository) ConsumeImportPreview(ctx context.Context, id, tokenHash, in
 		return ImportPreviewRecord{}, err
 	}
 	return out, nil
+}
+
+// SetImportPreviewConsumedTask records which task a consumed preview was
+// submitted as, enabling replay of the original confirm response.
+func (r *Repository) SetImportPreviewConsumedTask(ctx context.Context, id, taskID string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE import_previews SET consumed_task_id=? WHERE id=?`, taskID, id)
+	if err != nil {
+		return fmt.Errorf("set import preview task: %w", err)
+	}
+	return nil
 }
 
 func nullInt64Arg(v sql.NullInt64) any {

@@ -29,7 +29,7 @@ type ModSearchInput struct {
 }
 type ModSearchResult struct {
 	Items      []provider.Project `json:"items"`
-	NextCursor string             `json:"nextCursor"`
+	NextCursor string             `json:"next_cursor"`
 	Total      int                `json:"total"`
 }
 type AddModInput struct {
@@ -50,18 +50,18 @@ type UpdateModInput struct {
 	Required  *bool   `json:"required"`
 }
 type Mod struct {
-	ID          string `json:"id"`
-	PackID      string `json:"packId"`
-	Source      string `json:"source"`
-	ProjectID   string `json:"projectId,omitempty"`
-	VersionID   string `json:"versionId,omitempty"`
-	DisplayName string `json:"displayName"`
-	FileName    string `json:"fileName"`
-	SHA1        string `json:"sha1,omitempty"`
-	Status      string `json:"status"`
-	Required    bool   `json:"required"`
-	AddedAt     string `json:"addedAt"`
-	UpdatedAt   string `json:"updatedAt"`
+	ID          string  `json:"id"`
+	PackID      string  `json:"packId"`
+	Source      string  `json:"source"`
+	ProjectID   *string `json:"projectId"`
+	VersionID   *string `json:"versionId"`
+	DisplayName string  `json:"displayName"`
+	FileName    string  `json:"fileName"`
+	SHA1        *string `json:"sha1"`
+	Status      string  `json:"status"`
+	Required    bool    `json:"required"`
+	AddedAt     string  `json:"addedAt"`
+	UpdatedAt   string  `json:"updatedAt"`
 }
 type Lock struct {
 	ID             string `json:"id"`
@@ -175,9 +175,10 @@ type ModSearchAllItem struct {
 // ModSearchAllResult merges every platform's hits and reports per-platform
 // failures independently, so one missing key or outage never blocks the rest.
 type ModSearchAllResult struct {
-	Items  []ModSearchAllItem `json:"items"`
-	Errors map[string]string  `json:"errors,omitempty"`
-	Total  int                `json:"total"`
+	Items      []ModSearchAllItem `json:"items"`
+	Errors     map[string]string  `json:"errors"`
+	Total      int                `json:"total"`
+	NextCursor *string            `json:"next_cursor"`
 }
 
 // providerErrorCode maps provider failures to stable per-platform codes.
@@ -284,7 +285,13 @@ func (a *API) ListPackMods(ctx context.Context, packID string) ([]Mod, error) {
 	return out, nil
 }
 func modDTO(m store.PackModRecord) Mod {
-	return Mod{ID: m.ID, PackID: m.PackID, Source: m.Source, ProjectID: m.ProjectID, VersionID: m.VersionID, DisplayName: m.DisplayName, FileName: m.FileName, SHA1: m.SHA1, Status: m.Status, Required: m.Required, AddedAt: iso(m.AddedAt), UpdatedAt: iso(m.UpdatedAt)}
+	strPtr := func(s string) *string {
+		if s == "" {
+			return nil
+		}
+		return &s
+	}
+	return Mod{ID: m.ID, PackID: m.PackID, Source: m.Source, ProjectID: strPtr(m.ProjectID), VersionID: strPtr(m.VersionID), DisplayName: m.DisplayName, FileName: m.FileName, SHA1: strPtr(m.SHA1), Status: m.Status, Required: m.Required, AddedAt: iso(m.AddedAt), UpdatedAt: iso(m.UpdatedAt)}
 }
 
 func (a *API) AddPackMod(ctx context.Context, packID string, in AddModInput, requestID string) (Mod, error) {

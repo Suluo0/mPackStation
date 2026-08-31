@@ -17,10 +17,6 @@ import (
 var (
 	// ErrRevisionConflict means the caller edited a stale revision.
 	ErrRevisionConflict = errors.New("revision conflict")
-	// ErrValidationFailed means a revision contains blocking validation issues.
-	ErrValidationFailed = errors.New("validation failed")
-	// ErrCrossPackReference means a quest refers to a mod owned by another pack.
-	ErrCrossPackReference = errors.New("cross-pack reference")
 )
 
 // ValidationIssue is stable, human-readable validation output.
@@ -99,6 +95,9 @@ func (a *API) CreateContent(ctx context.Context, packID string, in CreateContent
 	d := store.ContentDocumentRecord{ID: docID, PackID: packID, Kind: kind, Slug: slug, Title: title, CreatedAt: now, UpdatedAt: now}
 	r := store.ContentRevisionRecord{ID: revID, DocumentID: docID, Revision: 1, State: "draft", Payload: string(payload), CreatedAt: now}
 	if err := a.repo.CreateContentDocument(ctx, d, r, requestID); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return ContentDocument{}, ContentRevision{}, &DomainError{Status: 422, Code: "content_duplicate_slug", Message: "a document with this kind and slug already exists in the pack", Wrapped: err}
+		}
 		return ContentDocument{}, ContentRevision{}, err
 	}
 	return contentDocDTO(d), contentRevDTO(r), nil
@@ -110,6 +109,9 @@ func (a *API) GetContent(ctx context.Context, packID, documentID string) (Conten
 	}
 	d, r, e := a.repo.GetContentDocument(ctx, packID, documentID)
 	if e != nil {
+		if IsNotFound(e) {
+			return ContentDocument{}, ContentRevision{}, NotFoundError("content_not_found", "content document not found")
+		}
 		return ContentDocument{}, ContentRevision{}, e
 	}
 	return contentDocDTO(d), contentRevDTO(r), nil
@@ -142,6 +144,9 @@ func (a *API) SaveContentDraft(ctx context.Context, packID, documentID string, i
 	}
 	d, _, e := a.repo.GetContentDocument(ctx, packID, documentID)
 	if e != nil {
+		if IsNotFound(e) {
+			return ContentRevision{}, NotFoundError("content_not_found", "content document not found")
+		}
 		return ContentRevision{}, e
 	}
 	payload, e := canonicalContentPayload(d.Kind, in.Payload)
@@ -169,6 +174,9 @@ func (a *API) ValidateContent(ctx context.Context, packID, documentID, revisionI
 	}
 	d, r, e := a.repo.GetContentDocument(ctx, packID, documentID)
 	if e != nil {
+		if IsNotFound(e) {
+			return ContentValidation{}, NotFoundError("content_not_found", "content document not found")
+		}
 		return ContentValidation{}, e
 	}
 	if revisionID != "" {
@@ -185,7 +193,7 @@ func (a *API) ValidateContent(ctx context.Context, packID, documentID, revisionI
 			}
 		}
 		if !found {
-			return ContentValidation{}, store.ErrNotFound
+			return ContentValidation{}, NotFoundError("validation_revision_not_found", "validation revision not found")
 		}
 	}
 	issues := validateContentSemantics(d.Kind, []byte(r.Payload))
@@ -206,20 +214,25 @@ func (a *API) ValidateContent(ctx context.Context, packID, documentID, revisionI
 	return ContentValidation{ID: v.ID, RevisionID: r.ID, Status: status, Issues: issues, AffectedMods: []string{}, CreatedAt: iso(v.CreatedAt)}, nil
 }
 
-func (a *API) ApplyContent(ctx context.Context, packID, documentID, revisionID, requestID string) error {
+// ApplyContent promotes the draft to the active revision and returns the
+// applied revision (contract: POST .../apply responds {status, revision}).
+func (a *API) ApplyContent(ctx context.Context, packID, documentID, revisionID, requestID string) (ContentRevision, error) {
 	if err := a.ready(); err != nil {
-		return err
+		return ContentRevision{}, err
 	}
 	d, r, e := a.repo.GetContentDocument(ctx, packID, documentID)
 	if e != nil {
-		return e
+		if IsNotFound(e) {
+			return ContentRevision{}, NotFoundError("content_not_found", "content document not found")
+		}
+		return ContentRevision{}, e
 	}
 	if revisionID == "" {
 		revisionID = r.ID
 	}
 	hist, e := a.repo.ListContentHistory(ctx, packID, documentID)
 	if e != nil {
-		return e
+		return ContentRevision{}, e
 	}
 	var target store.ContentRevisionRecord
 	for _, x := range hist {
@@ -229,15 +242,19 @@ func (a *API) ApplyContent(ctx context.Context, packID, documentID, revisionID, 
 		}
 	}
 	if target.ID == "" {
-		return store.ErrNotFound
+		return ContentRevision{}, NotFoundError("content_not_found", "content revision not found")
 	}
 	if target.ID != r.ID {
-		return fmt.Errorf("%w: only the latest revision can be applied", ErrRevisionConflict)
+		return ContentRevision{}, fmt.Errorf("%w: only the latest revision can be applied", ErrRevisionConflict)
 	}
-	if isBlocking(validateContentSemantics(d.Kind, []byte(target.Payload))) {
-		return ErrValidationFailed
+	if issues := validateContentSemantics(d.Kind, []byte(target.Payload)); isBlocking(issues) {
+		return ContentRevision{}, &ValidationError{Domain: "content", Issues: issues}
 	}
-	return a.repo.ApplyContent(ctx, packID, documentID, revisionID, requestID, time.Now().UnixMilli())
+	if err := a.repo.ApplyContent(ctx, packID, documentID, revisionID, requestID, time.Now().UnixMilli()); err != nil {
+		return ContentRevision{}, err
+	}
+	target.State = "applied"
+	return contentRevDTO(target), nil
 }
 
 func (a *API) RollbackContent(ctx context.Context, packID, documentID, targetRevisionID, requestID string) (ContentRevision, error) {
@@ -249,6 +266,9 @@ func (a *API) RollbackContent(ctx context.Context, packID, documentID, targetRev
 	}
 	r, e := a.repo.RollbackContent(ctx, packID, documentID, targetRevisionID, store.ContentRevisionRecord{ID: newID("content-revision"), DocumentID: documentID, CreatedAt: time.Now().UnixMilli()}, requestID)
 	if e != nil {
+		if IsNotFound(e) {
+			return ContentRevision{}, NotFoundError("revision_not_found", "content revision not found")
+		}
 		return ContentRevision{}, e
 	}
 	return contentRevDTO(r), nil
@@ -451,7 +471,7 @@ func (a *API) SaveQuestDraft(ctx context.Context, packID string, in QuestDraft, 
 	}
 	for _, i := range issues {
 		if i.Code == "cross_pack_reference" {
-			return QuestRevision{}, issues, ErrCrossPackReference
+			return QuestRevision{}, issues, &ValidationError{Domain: "quest", Issues: issues}
 		}
 		if i.Severity == "error" && (i.Code == "duplicate_id" || i.Code == "duplicate_position" || i.Code == "missing_chapter" || i.Code == "missing_node" || i.Code == "self_edge" || i.Code == "invalid_reward" || i.Code == "cross_pack_reference") {
 			return QuestRevision{}, issues, ErrInvalidArgument
@@ -516,7 +536,7 @@ func (a *API) ApplyQuest(ctx context.Context, packID, requestID string) error {
 		return e
 	}
 	if isBlocking(issues) {
-		return ErrValidationFailed
+		return &ValidationError{Domain: "quest", Issues: issues}
 	}
 	return a.repo.ApplyQuest(ctx, packID, b.Revision.ID, requestID, time.Now().UnixMilli())
 }

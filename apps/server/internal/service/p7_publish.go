@@ -150,14 +150,20 @@ func (s *P7Service) PublishPack(ctx context.Context, in PublishInput) (Release, 
 		return Release{}, err
 	}
 	if _, err := s.repo.GetPackVersion(ctx, in.PackID, in.PackVersionID); err != nil {
+		if IsNotFound(err) {
+			return Release{}, NotFoundError("pack_version_not_found", "pack version not found")
+		}
 		return Release{}, err
 	}
 	artifact, err := s.repo.GetArtifact(ctx, in.ArtifactID)
 	if err != nil {
+		if IsNotFound(err) {
+			return Release{}, NotFoundError("artifact_not_found", "artifact not found")
+		}
 		return Release{}, err
 	}
 	if artifact.PackID != in.PackID || artifact.PackVersionID != in.PackVersionID || artifact.Status != "ready" {
-		return Release{}, ErrPublishIdempotencyConflict
+		return Release{}, &DomainError{Status: 422, Code: "release_artifact_not_ready", Message: "artifact is not ready for publication"}
 	}
 	now := s.nowMillis()
 	requestState, _ := json.Marshal(map[string]any{"request": map[string]string{"projectId": in.ProjectID, "versionId": in.VersionID}})
@@ -194,10 +200,13 @@ func (s *P7Service) RetryPublish(ctx context.Context, releaseID, projectID, vers
 	}
 	rel, err := s.repo.GetRelease(ctx, releaseID)
 	if err != nil {
+		if IsNotFound(err) {
+			return Release{}, NotFoundError("release_not_found", "release not found")
+		}
 		return Release{}, err
 	}
 	if rel.Status != "failed" {
-		return releaseDTO(rel), nil
+		return Release{}, &DomainError{Status: 409, Code: "release_not_retryable", Message: "only a failed release can be retried"}
 	}
 	artifact, err := s.repo.GetArtifact(ctx, rel.ArtifactID)
 	if err != nil {
@@ -329,6 +338,9 @@ func (s *P7Service) GetRelease(ctx context.Context, releaseID string) (Release, 
 	}
 	rel, err := s.repo.GetRelease(ctx, releaseID)
 	if err != nil {
+		if IsNotFound(err) {
+			return Release{}, NotFoundError("release_not_found", "release not found")
+		}
 		return Release{}, err
 	}
 	return releaseDTO(rel), nil

@@ -4,12 +4,17 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"flag"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,6 +27,34 @@ import (
 )
 
 var version = "dev"
+
+// resolveWriteToken implements auth.md: MPACK_TOKEN takes precedence;
+// otherwise a random high-entropy token is generated on first start and
+// persisted to <data>/runtime-token (0600) for reuse on later starts. No
+// hardcoded fallback exists anywhere in the chain.
+func resolveWriteToken(dataDir string) (string, error) {
+	if v := strings.TrimSpace(os.Getenv("MPACK_TOKEN")); v != "" {
+		return v, nil
+	}
+	path := filepath.Join(dataDir, "runtime-token")
+	b, err := os.ReadFile(path)
+	if err == nil {
+		if t := strings.TrimSpace(string(b)); t != "" {
+			return t, nil
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", err
+	}
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	token := hex.EncodeToString(raw)
+	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
+		return "", err
+	}
+	return token, nil
+}
 
 // providerRegistry assembles real provider adapters. Modrinth works without a
 // token for public catalog reads; CurseForge is enabled only when
@@ -99,9 +132,14 @@ func main() {
 		}
 	}()
 
+	token, err := resolveWriteToken(*dataDir)
+	if err != nil {
+		log.Fatalf("resolve write token: %v", err)
+	}
+
 	log.Printf("mpackstation server listening on http://%s (data: %s)", *addr, *dataDir)
 	server := &http.Server{
-		Addr: *addr, Handler: httpapi.NewRouterWithProviders(db, version, providerRegistry(), queue),
+		Addr: *addr, Handler: httpapi.NewRouterWithProviders(db, version, token, providerRegistry(), queue),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second,
 	}

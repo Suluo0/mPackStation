@@ -37,26 +37,21 @@ var errHTTPAdapterUnavailable = errors.New("task adapter unavailable")
 // exposing the sentinel itself.
 func IsAdapterUnavailable(err error) bool { return errors.Is(err, errHTTPAdapterUnavailable) }
 
-// TaskView is the stable, non-sensitive task detail representation exposed to
-// HTTP. Payloads, filesystem paths and lease ownership are intentionally not
-// included in this view.
+// TaskView is the single contract Task DTO (docs/api/dto.md) exposed to HTTP:
+// list, detail and control endpoints all return this exact shape. Payloads,
+// filesystem paths and lease ownership are intentionally not included; extra
+// runtime detail (message/attempt/log) is available via the log endpoint.
 type TaskView struct {
-	ID           string     `json:"id"`
-	PackID       *string    `json:"packId,omitempty"`
-	Type         string     `json:"type"`
-	Title        string     `json:"title"`
-	Status       string     `json:"status"`
-	Progress     float64    `json:"progress"`
-	Message      string     `json:"message"`
-	ErrorCode    string     `json:"errorCode,omitempty"`
-	ErrorMessage string     `json:"errorMessage,omitempty"`
-	Attempt      int        `json:"attempt"`
-	MaxAttempts  int        `json:"maxAttempts"`
-	RecoverCount int        `json:"recoverCount"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
-	StartedAt    *time.Time `json:"startedAt,omitempty"`
-	FinishedAt   *time.Time `json:"finishedAt,omitempty"`
+	ID         string     `json:"id"`
+	Type       string     `json:"type"`
+	Title      string     `json:"title"`
+	PackID     *string    `json:"packId"`
+	PackName   *string    `json:"packName"`
+	Status     string     `json:"status"`
+	Progress   int        `json:"progress"`
+	Error      *string    `json:"error"`
+	StartedAt  *time.Time `json:"startedAt"`
+	FinishedAt *time.Time `json:"finishedAt"`
 }
 
 // EventView is the safe task event representation used by detail and log
@@ -154,20 +149,41 @@ func (a *HTTPAdapter) Retry(ctx context.Context, id string) error {
 	return a.queue.Retry(ctx, id)
 }
 
-func view(item *Task) TaskView {
-	result := TaskView{
-		ID: item.ID, PackID: item.PackID, Type: publicKind(item.Kind),
-		Title: item.Title, Status: publicStatus(item.Status), Progress: item.Progress,
-		Message: item.Message, ErrorCode: item.ErrorCode, ErrorMessage: item.ErrorMessage,
-		Attempt: item.Attempt, MaxAttempts: item.MaxAttempts, RecoverCount: item.RecoverCount,
-		CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
+// PublicView maps a task to the contract Task DTO. PackName is left nil here;
+// callers with a pack-name join (e.g. service.ListTasks) may fill it.
+func PublicView(item *Task) TaskView {
+	var errMsg *string
+	if item.ErrorMessage != "" {
+		v := item.ErrorMessage
+		errMsg = &v
+	} else if item.ErrorCode != "" {
+		v := item.ErrorCode
+		errMsg = &v
 	}
-	result.StartedAt = item.StartedAt
-	result.FinishedAt = item.FinishedAt
-	return result
+	return TaskView{
+		ID: item.ID, PackID: item.PackID, Type: PublicKind(item.Kind),
+		Title: item.Title, Status: PublicStatus(item.Status), Progress: ProgressPercent(item.Progress),
+		Error: errMsg, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt,
+	}
 }
 
-func publicKind(kind Kind) string {
+// ProgressPercent normalizes the internal float progress to the contract's
+// 0-100 integer.
+func ProgressPercent(p float64) int {
+	if p < 0 {
+		return 0
+	}
+	if p > 100 {
+		return 100
+	}
+	return int(p + 0.5)
+}
+
+func view(item *Task) TaskView { return PublicView(item) }
+
+// PublicKind maps internal task kinds to the contract's open-string type.
+// Unknown kinds pass through unchanged, never as an empty string.
+func PublicKind(kind Kind) string {
 	switch kind {
 	case KindIndex:
 		return "index-mod"
@@ -181,6 +197,8 @@ func publicKind(kind Kind) string {
 		return "download-mod"
 	case KindPublish:
 		return "publish-pack"
+	case KindToolInstall:
+		return "tool-install"
 	case KindCacheGC:
 		return "cache-cleanup"
 	default:
@@ -188,9 +206,13 @@ func publicKind(kind Kind) string {
 	}
 }
 
-func publicStatus(status Status) string {
+// PublicStatus maps internal states to the contract enum:
+// queued/running/paused/success/failed/cancelled.
+func PublicStatus(status Status) string {
 	switch status {
-	case StatusQueued, StatusLeased:
+	case StatusQueued:
+		return "queued"
+	case StatusLeased, StatusRunning:
 		return "running"
 	case StatusSucceeded:
 		return "success"

@@ -115,15 +115,15 @@ type DashboardPack struct {
 type Pack struct {
 	ID            string  `json:"id"`
 	Name          string  `json:"name"`
-	IconURL       *string `json:"iconUrl,omitempty"`
+	IconURL       *string `json:"iconUrl"`
 	MCVersion     string  `json:"mcVersion"`
 	Loader        string  `json:"loader"`
-	LoaderVersion string  `json:"loaderVersion,omitempty"`
-	Description   string  `json:"description,omitempty"`
+	LoaderVersion *string `json:"loaderVersion"`
+	Description   *string `json:"description"`
 	Status        string  `json:"status"`
 	PackVersion   string  `json:"packVersion"`
-	CreatedAt     string  `json:"createdAt,omitempty"`
-	UpdatedAt     string  `json:"updatedAt,omitempty"`
+	CreatedAt     string  `json:"createdAt"`
+	UpdatedAt     string  `json:"updatedAt"`
 }
 
 type CreatePackInput struct {
@@ -141,18 +141,10 @@ type UpdatePackInput struct {
 	Description   *string `json:"description"`
 }
 
-type Task struct {
-	ID         string  `json:"id"`
-	Type       string  `json:"type"`
-	Title      string  `json:"title"`
-	PackID     *string `json:"packId"`
-	PackName   *string `json:"packName"`
-	Status     string  `json:"status"`
-	Progress   float64 `json:"progress"`
-	Error      *string `json:"error"`
-	StartedAt  string  `json:"startedAt"`
-	FinishedAt *string `json:"finishedAt"`
-}
+// Task is the contract task DTO (docs/api/dto.md). The HTTP layer returns
+// task.TaskView, which has the identical JSON shape; ListTasks fills PackName
+// from the repository join.
+type Task = task.TaskView
 type Activity struct {
 	ID     string  `json:"id"`
 	Kind   string  `json:"kind"`
@@ -280,6 +272,9 @@ func (a *API) CreatePack(ctx context.Context, input CreatePackInput, requestID s
 		return tx.AddAudit(ctx, newID("audit"), id, "pack.create", requestID, map[string]any{"name": p.Name}, now)
 	})
 	if err != nil {
+		if IsConflict(err) {
+			return Pack{}, &DomainError{Status: 422, Code: "pack_name_duplicate", Message: "a pack with this name already exists", Wrapped: err}
+		}
 		return Pack{}, err
 	}
 	return a.pack(p, v.Version), nil
@@ -326,6 +321,9 @@ func (a *API) UpdatePack(ctx context.Context, id string, input UpdatePackInput, 
 		return tx.AddAudit(ctx, newID("audit"), id, "pack.update", requestID, nil, p.UpdatedAt)
 	})
 	if err != nil {
+		if IsConflict(err) {
+			return Pack{}, &DomainError{Status: 422, Code: "pack_name_duplicate", Message: "a pack with this name already exists", Wrapped: err}
+		}
 		return Pack{}, err
 	}
 	return a.pack(p, "0.1.0"), nil
@@ -430,15 +428,6 @@ func (a *API) ListTasks(ctx context.Context, limit int) ([]Task, error) {
 	}
 	out := make([]Task, 0, len(rows))
 	for _, t := range rows {
-		typ := map[string]string{"index": "index-mod", "build": "build-pack", "import": "import-pack", "resolve": "update-preflight"}[t.Kind]
-		status := map[string]string{"succeeded": "success", "canceled": "cancelled", "queued": "running", "leased": "running"}[t.Status]
-		if status == "" {
-			status = t.Status
-		}
-		started := t.StartedAt
-		if !started.Valid {
-			started = sql.NullInt64{Int64: t.CreatedAt, Valid: true}
-		}
 		var packID, packName *string
 		if t.PackID != "" {
 			v := t.PackID
@@ -453,12 +442,16 @@ func (a *API) ListTasks(ctx context.Context, limit int) ([]Task, error) {
 			v := t.ErrorMessage
 			msg = &v
 		}
-		var fin *string
-		if t.FinishedAt.Valid {
-			v := iso(t.FinishedAt.Int64)
-			fin = &v
+		var started, finished *time.Time
+		if t.StartedAt.Valid {
+			v := time.UnixMilli(t.StartedAt.Int64).UTC()
+			started = &v
 		}
-		out = append(out, Task{ID: t.ID, Type: typ, Title: t.Title, PackID: packID, PackName: packName, Status: status, Progress: t.Progress, Error: msg, StartedAt: iso(started.Int64), FinishedAt: fin})
+		if t.FinishedAt.Valid {
+			v := time.UnixMilli(t.FinishedAt.Int64).UTC()
+			finished = &v
+		}
+		out = append(out, Task{ID: t.ID, Type: task.PublicKind(task.Kind(t.Kind)), Title: t.Title, PackID: packID, PackName: packName, Status: task.PublicStatus(task.Status(t.Status)), Progress: task.ProgressPercent(t.Progress), Error: msg, StartedAt: started, FinishedAt: finished})
 	}
 	return out, nil
 }
@@ -595,7 +588,8 @@ func (a *API) prismAccountReady() bool {
 
 // SubmitPrismInstall enqueues the installer as a first-class task; the task
 // log is the source of truth for success. A currently-active install is
-// reused; a finished one is not, so reinstall after deletion works.
+// rejected with 409 task_invalid_transition per contract; a finished one does
+// not block reinstall after deletion.
 func (a *API) SubmitPrismInstall(ctx context.Context) (*task.Task, bool, error) {
 	if err := a.ready(); err != nil {
 		return nil, false, err
@@ -616,7 +610,7 @@ func (a *API) SubmitPrismInstall(ctx context.Context) (*task.Task, bool, error) 
 		}
 		switch t.Status {
 		case task.StatusQueued, task.StatusLeased, task.StatusRunning, task.StatusPaused:
-			return t, true, nil
+			return nil, false, &DomainError{Status: 409, Code: "task_invalid_transition", Message: "a prism install task is already active", Details: map[string]any{"taskId": t.ID}}
 		}
 	}
 	t, _, err := a.queue.Submit(ctx, task.SubmitRequest{
@@ -651,7 +645,7 @@ func (a *API) HandleToolInstallTask(ctx context.Context, ex *task.Execution) err
 	if _, err := os.Stat(script); err != nil {
 		return &task.TaskError{Code: "installer_missing", Message: "scripts/prism-install.bat not found"}
 	}
-	_ = ex.Progress(ctx, 0.05, "starting prism-install.bat")
+	_ = ex.Progress(ctx, 5, "starting prism-install.bat")
 	cmd := exec.CommandContext(ctx, "cmd.exe", "/c", script)
 	cmd.Dir = root
 	stdout, err := cmd.StdoutPipe()
@@ -675,7 +669,7 @@ func (a *API) HandleToolInstallTask(ctx context.Context, ex *task.Execution) err
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_ = ex.Progress(ctx, 0.5, "installer running…")
+				_ = ex.Progress(ctx, 50, "installer running…")
 			}
 		}
 	}()
@@ -688,7 +682,7 @@ func (a *API) HandleToolInstallTask(ctx context.Context, ex *task.Execution) err
 		}
 		// Throttle: one output event per second keeps the log readable.
 		if time.Since(last) >= time.Second {
-			_ = ex.Progress(ctx, 0.5, line)
+			_ = ex.Progress(ctx, 50, line)
 			last = time.Now()
 		}
 	}
@@ -730,9 +724,16 @@ func (a *API) AcknowledgeOnboarding(ctx context.Context, steps map[string]bool, 
 	if err := a.ready(); err != nil {
 		return err
 	}
-	for step, acknowledged := range steps {
-		if acknowledged && step != "curseforgeKey" && step != "firstPack" && step != "firstMod" {
-			return fmt.Errorf("%w: unknown onboarding step", ErrInvalidArgument)
+	for step := range steps {
+		switch step {
+		case "curseforgeKey", "firstPack", "firstMod":
+			// client-acknowledgeable steps
+		case "prismAccount":
+			// Backend-owned step: set automatically when the portable Prism
+			// accounts.json appears. Writing it is rejected per contract.
+			return &DomainError{Status: 422, Code: "onboarding_step_readonly", Message: "prismAccount is set by the backend and cannot be written"}
+		default:
+			return &DomainError{Status: 422, Code: "onboarding_unknown_step", Message: "unknown onboarding step: " + step}
 		}
 	}
 	for _, step := range []string{"curseforgeKey", "firstPack", "firstMod"} {
@@ -759,11 +760,19 @@ func (a *API) MCVersions(ctx context.Context) ([]string, error) {
 }
 
 func (a *API) pack(p store.PackRecord, version string) Pack {
-	var icon *string
+	var icon, loaderVersion, description *string
 	if p.IconPath != "" {
 		icon = &p.IconPath
 	}
-	return Pack{ID: p.ID, Name: p.Name, IconURL: icon, MCVersion: p.MCVersion, Loader: normalizeLoader(p.Loader), LoaderVersion: p.LoaderVersion, Description: p.Description, Status: p.Status, PackVersion: version, CreatedAt: iso(p.CreatedAt), UpdatedAt: iso(p.UpdatedAt)}
+	if p.LoaderVersion != "" {
+		v := p.LoaderVersion
+		loaderVersion = &v
+	}
+	if p.Description != "" {
+		v := p.Description
+		description = &v
+	}
+	return Pack{ID: p.ID, Name: p.Name, IconURL: icon, MCVersion: p.MCVersion, Loader: normalizeLoader(p.Loader), LoaderVersion: loaderVersion, Description: description, Status: p.Status, PackVersion: version, CreatedAt: iso(p.CreatedAt), UpdatedAt: iso(p.UpdatedAt)}
 }
 func validateCreate(i CreatePackInput) error {
 	p := store.PackRecord{Name: strings.TrimSpace(i.Name), MCVersion: strings.TrimSpace(i.MCVersion), Loader: i.Loader, LoaderVersion: i.LoaderVersion}

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -57,7 +58,9 @@ func WriteError(w http.ResponseWriter, status int, code, message string, details
 func apiError(w http.ResponseWriter, r *http.Request, status int, code, message string, details ...any) {
 	d := map[string]any{}
 	if len(details) > 0 && details[0] != nil {
-		if value, ok := details[0].(map[string]any); ok {
+		// A typed nil map (e.g. DomainError.Details unset) is not nil as `any`;
+		// guard explicitly so the envelope always carries an object, not null.
+		if value, ok := details[0].(map[string]any); ok && value != nil {
 			d = value
 		}
 	}
@@ -66,19 +69,21 @@ func apiError(w http.ResponseWriter, r *http.Request, status int, code, message 
 
 // NewRouter assembles the local API. source is intentionally opaque here so
 // this package cannot import database/sql; service owns database composition.
-func NewRouter(source any, version string) http.Handler {
-	return newRouter(service.NewFromSource(source), service.NewTaskAPI(source), service.NewP7ServiceFromSource(source), service.NewImportServiceFromSource(source), version)
+// token is the required write-token (see auth.md); an empty token rejects all
+// write requests with 503 auth_not_configured.
+func NewRouter(source any, version, token string) http.Handler {
+	return newRouter(service.NewFromSource(source), service.NewTaskAPI(source), service.NewP7ServiceFromSource(source), service.NewImportServiceFromSource(source), version, token)
 }
 
 // NewRouterWithService is useful to tests and future composition roots.
-func NewRouterWithService(app *service.API, version string) http.Handler {
-	return newRouter(app, nil, nil, nil, version)
+func NewRouterWithService(app *service.API, version, token string) http.Handler {
+	return newRouter(app, nil, nil, nil, version, token)
 }
 
 // NewRouterWithProviders wires real provider adapters (Modrinth/CurseForge)
 // into both the catalog service and the publish pipeline. A non-nil queue
 // additionally enables task-based tool installation.
-func NewRouterWithProviders(source any, version string, reg *provider.Registry, q *task.Queue) http.Handler {
+func NewRouterWithProviders(source any, version, token string, reg *provider.Registry, q *task.Queue) http.Handler {
 	app := service.NewFromSource(source)
 	app.SetProviderRegistry(reg)
 	if q != nil {
@@ -87,10 +92,10 @@ func NewRouterWithProviders(source any, version string, reg *provider.Registry, 
 	}
 	p7 := service.NewP7ServiceFromSource(source)
 	p7.SetProviderRegistry(reg)
-	return newRouter(app, service.NewTaskAPI(source), p7, service.NewImportServiceFromSource(source), version)
+	return newRouter(app, service.NewTaskAPI(source), p7, service.NewImportServiceFromSource(source), version, token)
 }
 
-func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service, importer *service.ImportService, version string) http.Handler {
+func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service, importer *service.ImportService, version, token string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": version})
@@ -136,7 +141,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		if err != nil {
 			writeServiceError(w, r, err)
 		} else {
-			WriteJSON(w, http.StatusOK, v)
+			WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
 		}
 	})
 	mux.HandleFunc("GET /api/tasks/{taskId}", func(w http.ResponseWriter, r *http.Request) {
@@ -242,7 +247,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		if err != nil {
 			writeServiceError(w, r, err)
 		} else {
-			WriteJSON(w, http.StatusOK, v)
+			WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
 		}
 	})
 	mux.HandleFunc("GET /api/system/health", func(w http.ResponseWriter, r *http.Request) {
@@ -327,6 +332,9 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		if !decodeJSON(w, r, &body) {
 			return
 		}
+		if !checkMCVersionCandidate(w, r, app, body.MCVersion) {
+			return
+		}
 		v, err := app.CreatePack(r.Context(), body, RequestID(r.Context()))
 		if err != nil {
 			writeServiceError(w, r, err)
@@ -345,6 +353,9 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	mux.HandleFunc("PATCH /api/packs/{packId}", func(w http.ResponseWriter, r *http.Request) {
 		var body service.UpdatePackInput
 		if !decodeJSON(w, r, &body) {
+			return
+		}
+		if body.MCVersion != nil && !checkMCVersionCandidate(w, r, app, *body.MCVersion) {
 			return
 		}
 		v, err := app.UpdatePack(r.Context(), r.PathValue("packId"), body, RequestID(r.Context()))
@@ -429,7 +440,12 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /api/packs/{packId}/mod-search", func(w http.ResponseWriter, r *http.Request) {
-		in := service.ModSearchInput{Provider: r.URL.Query().Get("provider"), Query: r.URL.Query().Get("query"), MCVersion: r.URL.Query().Get("mcVersion"), Loader: r.URL.Query().Get("loader"), Cursor: r.URL.Query().Get("cursor"), Limit: queryLimit(r, "limit", 20)}
+		// Contract query param is `q`; `query` kept as a legacy alias.
+		q := r.URL.Query().Get("q")
+		if q == "" {
+			q = r.URL.Query().Get("query")
+		}
+		in := service.ModSearchInput{Provider: r.URL.Query().Get("provider"), Query: q, MCVersion: r.URL.Query().Get("mcVersion"), Loader: r.URL.Query().Get("loader"), Cursor: r.URL.Query().Get("cursor"), Limit: queryLimit(r, "limit", 20)}
 		if in.Limit < 0 {
 			apiError(w, r, http.StatusBadRequest, "invalid_argument", "limit must be a positive integer")
 			return
@@ -452,12 +468,17 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		WriteJSON(w, http.StatusOK, v)
 	})
 	mux.HandleFunc("GET /api/packs/{packId}/mod-versions", func(w http.ResponseWriter, r *http.Request) {
-		v, err := app.ModVersions(r.Context(), r.PathValue("packId"), r.URL.Query().Get("provider"), r.URL.Query().Get("projectId"))
+		provider, projectID := r.URL.Query().Get("provider"), r.URL.Query().Get("projectId")
+		if strings.TrimSpace(provider) == "" || strings.TrimSpace(projectID) == "" {
+			apiError(w, r, http.StatusBadRequest, "invalid_argument", "provider and projectId are required")
+			return
+		}
+		v, err := app.ModVersions(r.Context(), r.PathValue("packId"), provider, projectID)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
-		WriteJSON(w, http.StatusOK, map[string]any{"items": v})
+		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/resolve", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ResolvePack(r.Context(), r.PathValue("packId"), RequestID(r.Context()))
@@ -561,11 +582,12 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 		WriteJSON(w, http.StatusOK, v)
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/content/{documentId}/apply", func(w http.ResponseWriter, r *http.Request) {
-		if err := app.ApplyContent(r.Context(), r.PathValue("packId"), r.PathValue("documentId"), r.URL.Query().Get("revisionId"), RequestID(r.Context())); err != nil {
+		rev, err := app.ApplyContent(r.Context(), r.PathValue("packId"), r.PathValue("documentId"), r.URL.Query().Get("revisionId"), RequestID(r.Context()))
+		if err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
-		WriteJSON(w, http.StatusOK, map[string]any{"status": "applied"})
+		WriteJSON(w, http.StatusOK, map[string]any{"status": "applied", "revision": rev})
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/content/{documentId}/rollback", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -1009,12 +1031,29 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 			writeImportError(w, r, err)
 			return
 		}
-		WriteJSON(w, http.StatusAccepted, map[string]any{"importId": body.PreviewID, "taskId": v.ID, "packId": v.PackID, "task": v, "reused": reused})
+		WriteJSON(w, http.StatusAccepted, map[string]any{"importId": body.PreviewID, "taskId": v.ID, "packId": v.PackID, "reused": reused})
 	})
-	mux.HandleFunc("POST /api/packs/{packId}/duplicate", func(w http.ResponseWriter, r *http.Request) {
-		apiError(w, r, http.StatusNotImplemented, "duplicate_not_ready", "pack duplication is not available yet")
-	})
-	return requestIDMiddleware(accessLogMiddleware(recoverMiddleware(maxBodyMiddleware(securityMiddleware(fallbackEnvelopeMiddleware(mux))))))
+	return requestIDMiddleware(accessLogMiddleware(recoverMiddleware(maxBodyMiddleware(securityMiddleware(token, fallbackEnvelopeMiddleware(mux))))))
+}
+
+// checkMCVersionCandidate enforces the closed candidate list for the pack
+// endpoints (contract §3.2 → 422 pack_unsupported_mc_version). The import path
+// bypasses this on purpose: imported packs keep whatever MC version the archive
+// declares.
+func checkMCVersionCandidate(w http.ResponseWriter, r *http.Request, app *service.API, mcVersion string) bool {
+	if strings.TrimSpace(mcVersion) == "" {
+		return true // required-field check stays in the service layer
+	}
+	versions, err := app.MCVersions(r.Context())
+	if err != nil {
+		writeServiceError(w, r, err)
+		return false
+	}
+	if !slices.Contains(versions, mcVersion) {
+		apiError(w, r, http.StatusUnprocessableEntity, "pack_unsupported_mc_version", "mcVersion is not a supported candidate", map[string]any{"candidates": versions})
+		return false
+	}
+	return true
 }
 
 func appReady(app *service.API, r *http.Request) error {
@@ -1032,7 +1071,12 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		apiError(w, r, http.StatusBadRequest, "invalid_json", "request body is not valid JSON", map[string]any{"error": err.Error()})
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			apiError(w, r, http.StatusRequestEntityTooLarge, "payload_too_large", "request body exceeds the 8MB limit")
+			return false
+		}
+		apiError(w, r, http.StatusBadRequest, "invalid_argument", "request body is not valid JSON", map[string]any{"error": err.Error()})
 		return false
 	}
 	return true
@@ -1043,11 +1087,9 @@ func queryLimit(r *http.Request, key string, def int) int {
 		return def
 	}
 	v, err := strconv.Atoi(raw[0])
-	if err != nil || v < 1 {
+	if err != nil || v < 1 || v > 100 {
+		// Contract: out-of-range pagination params are a 400, not a silent clamp.
 		return -1
-	}
-	if v > 100 {
-		return 100
 	}
 	return v
 }
@@ -1064,7 +1106,21 @@ func parseIfMatch(r *http.Request) (int, bool) {
 	return value, err == nil && value >= 0
 }
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
+	var de *service.DomainError
+	if errors.As(err, &de) {
+		apiError(w, r, de.Status, de.Code, de.Message, de.Details)
+		return
+	}
+	var ve *service.ValidationError
+	if errors.As(err, &ve) {
+		apiError(w, r, http.StatusUnprocessableEntity, validationErrorCode(ve), "resource validation failed", map[string]any{"issues": ve.Issues})
+		return
+	}
 	switch {
+	// Contract: same idempotency key with different input -> 422 idempotency_conflict
+	// (task queue is the enforcement point for import/publish submit paths).
+	case errors.Is(err, task.ErrIdempotencyConflict), errors.Is(err, task.ErrIdempotencyConsumed):
+		apiError(w, r, http.StatusUnprocessableEntity, "idempotency_conflict", "idempotency key was used with a different request")
 	case errors.Is(err, service.ErrProviderNotFound):
 		apiError(w, r, http.StatusNotFound, "provider_not_found", "provider resource not found")
 	case errors.Is(err, service.ErrProviderUnavailable):
@@ -1072,11 +1128,7 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, service.ErrInvalidSHA1):
 		apiError(w, r, http.StatusBadRequest, "invalid_sha1", "provider returned an invalid SHA-1")
 	case errors.Is(err, service.ErrRevisionConflict):
-		apiError(w, r, http.StatusConflict, "revision_conflict", "resource revision is stale")
-	case errors.Is(err, service.ErrValidationFailed):
-		apiError(w, r, http.StatusUnprocessableEntity, "validation_failed", "resource validation failed")
-	case errors.Is(err, service.ErrCrossPackReference):
-		apiError(w, r, http.StatusBadRequest, "cross_pack_reference", "resource references another pack")
+		apiError(w, r, http.StatusPreconditionFailed, "revision_conflict", "resource revision is stale")
 	case service.IsNotFound(err):
 		apiError(w, r, http.StatusNotFound, "pack_not_found", "pack not found")
 	case service.IsConflict(err):
@@ -1090,14 +1142,38 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 }
 
+// validationErrorCode maps per-issue codes to the fine-grained domain code the
+// contract assigns (standards.md D-5). issues are always included in details.
+func validationErrorCode(ve *service.ValidationError) string {
+	if ve.Domain != "quest" {
+		return "content_invalid"
+	}
+	for _, i := range ve.Issues {
+		switch i.Code {
+		case "cycle":
+			return "quest_cycle"
+		case "cross_pack_reference", "missing_mod_reference":
+			return "quest_invalid_reference"
+		}
+	}
+	for _, i := range ve.Issues {
+		if i.Code == "orphan_node" {
+			return "quest_orphan_node"
+		}
+	}
+	return "quest_invalid"
+}
+
 func writeImportError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, service.ErrImportInvalidSource):
-		apiError(w, r, http.StatusBadRequest, "invalid_import_source", "import source is invalid")
+		apiError(w, r, http.StatusUnprocessableEntity, "import_invalid_source", "import source is invalid")
 	case errors.Is(err, service.ErrImportUnsafeArchive):
 		apiError(w, r, http.StatusUnprocessableEntity, "unsafe_archive", "archive failed safety checks")
+	case errors.Is(err, service.ErrImportConsumed):
+		apiError(w, r, http.StatusConflict, "import_preview_consumed", "import preview was already consumed")
 	case errors.Is(err, service.ErrImportExpired):
-		apiError(w, r, http.StatusConflict, "preview_expired", "import preview is expired or already consumed")
+		apiError(w, r, http.StatusGone, "import_preview_expired", "import preview is expired")
 	default:
 		writeServiceError(w, r, err)
 	}
@@ -1111,6 +1187,11 @@ func p7Ready(p7 *service.P7Service) error {
 }
 
 func writeP7Error(w http.ResponseWriter, r *http.Request, err error) {
+	var de *service.DomainError
+	if errors.As(err, &de) {
+		apiError(w, r, de.Status, de.Code, de.Message, de.Details)
+		return
+	}
 	switch {
 	case service.IsNotFound(err):
 		apiError(w, r, http.StatusNotFound, "resource_not_found", "resource not found")
@@ -1119,15 +1200,15 @@ func writeP7Error(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, service.ErrExportDirNotAllowed):
 		apiError(w, r, http.StatusForbidden, "export_dir_not_allowed", "export directory is not approved")
 	case errors.Is(err, service.ErrDeliveryBlocked):
-		apiError(w, r, http.StatusConflict, "delivery_blocked", "delivery checks are blocked")
+		apiError(w, r, http.StatusUnprocessableEntity, "build_blocked", "delivery checks are blocked")
 	case errors.Is(err, service.ErrPublishFailed):
-		apiError(w, r, http.StatusBadGateway, "publish_failed", "publication failed; retry is explicit")
+		apiError(w, r, http.StatusBadGateway, "provider_unavailable", "publication failed; retry is explicit")
 	case errors.Is(err, service.ErrPublishIdempotencyConflict):
-		apiError(w, r, http.StatusConflict, "idempotency_conflict", "publication key or artifact conflicts")
+		apiError(w, r, http.StatusUnprocessableEntity, "idempotency_conflict", "publication key or artifact conflicts")
 	case errors.Is(err, service.ErrProviderStatusUnavailable):
-		apiError(w, r, http.StatusBadGateway, "provider_status_unavailable", "remote status is unavailable")
+		apiError(w, r, http.StatusBadGateway, "provider_unavailable", "remote status is unavailable")
 	case errors.Is(err, service.ErrArtifactMissing):
-		apiError(w, r, http.StatusConflict, "artifact_missing", "artifact is no longer available")
+		apiError(w, r, http.StatusGone, "artifact_expired", "artifact is no longer available")
 	default:
 		writeServiceError(w, r, err)
 	}
@@ -1233,7 +1314,7 @@ func maxBodyMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-func securityMiddleware(next http.Handler) http.Handler {
+func securityMiddleware(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !validHost(r.Host) {
 			apiError(w, r, http.StatusBadRequest, "invalid_host", "request host is not allowed")
@@ -1247,18 +1328,14 @@ func securityMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		token := strings.TrimSpace(os.Getenv("MPACK_TOKEN"))
-		// Until the process bootstrap starts persisting a generated token, the
-		// development composition uses a deterministic token. Production launchers
-		// must set MPACK_TOKEN; this temporary fallback is tracked as a P2 issue.
-		if token == "" {
-			token = "test"
-		}
-		provided := r.Header.Get("X-MPack-Token")
+		// The token is resolved once at process bootstrap (MPACK_TOKEN env, or a
+		// generated random value persisted to <data>/runtime-token). Hardcoded
+		// fallbacks are forbidden by auth.md / decision D-8.
 		if token == "" {
 			apiError(w, r, http.StatusServiceUnavailable, "auth_not_configured", "write authentication is not configured")
 			return
 		}
+		provided := r.Header.Get("X-MPack-Token")
 		if len(token) != len(provided) || subtle.ConstantTimeCompare([]byte(token), []byte(provided)) != 1 {
 			apiError(w, r, http.StatusUnauthorized, "unauthorized", "write authentication failed")
 			return

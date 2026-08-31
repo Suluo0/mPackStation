@@ -27,9 +27,15 @@ const (
 )
 
 var (
+	// ErrImportInvalidSource means the URL is well-formed https but its host
+	// does not belong to the declared platform (semantic, 422).
 	ErrImportInvalidSource = errors.New("invalid import source")
 	ErrImportUnsafeArchive = errors.New("unsafe import archive")
-	ErrImportExpired       = errors.New("import preview expired")
+	// ErrImportExpired means the preview expired before being consumed (410).
+	ErrImportExpired = errors.New("import preview expired")
+	// ErrImportConsumed means the preview was already consumed and the original
+	// task can no longer be located (409 import_preview_consumed).
+	ErrImportConsumed = errors.New("import preview consumed")
 )
 
 type ImportPreviewInput struct {
@@ -136,18 +142,60 @@ func (s *ImportService) Confirm(ctx context.Context, in ImportConfirmInput) (*ta
 	if s == nil || s.repo == nil || s.queue == nil {
 		return nil, false, ErrUnavailable
 	}
-	if strings.TrimSpace(in.PreviewID) == "" || strings.TrimSpace(in.Token) == "" || strings.TrimSpace(in.InputHash) != "" && len(in.InputHash) != 64 || strings.TrimSpace(in.IdempotencyKey) == "" {
+	if strings.TrimSpace(in.PreviewID) == "" || strings.TrimSpace(in.Token) == "" || strings.TrimSpace(in.IdempotencyKey) == "" {
 		return nil, false, ErrInvalidArgument
 	}
-	p, err := s.repo.ConsumeImportPreview(ctx, in.PreviewID, hashToken(in.Token), in.InputHash, s.now().UnixMilli())
+	if strings.TrimSpace(in.InputHash) == "" || len(in.InputHash) != 64 {
+		return nil, false, ErrInvalidArgument
+	}
+	p, err := s.repo.GetImportPreview(ctx, in.PreviewID)
 	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, false, fmt.Errorf("%w: unknown import preview", ErrInvalidArgument)
+		}
+		return nil, false, err
+	}
+	if p.TokenHash != hashToken(in.Token) {
+		return nil, false, fmt.Errorf("%w: token does not match preview", ErrInvalidArgument)
+	}
+	if p.InputHash != in.InputHash {
+		return nil, false, &DomainError{Status: 422, Code: "import_input_mismatch", Message: "inputHash does not match the previewed input"}
+	}
+	if p.ConsumedAt.Valid {
+		// Same input confirmed again: replay the original task (D-6). Only when
+		// the original task is gone do we surface 409 import_preview_consumed.
+		if p.ConsumedTaskID != "" {
+			if t, gerr := s.queue.Get(ctx, p.ConsumedTaskID); gerr == nil {
+				return t, true, nil
+			}
+		}
+		return nil, false, ErrImportConsumed
+	}
+	if p.ExpiresAt.Valid && p.ExpiresAt.Int64 <= s.now().UnixMilli() {
+		return nil, false, ErrImportExpired
+	}
+	if _, err := s.repo.ConsumeImportPreview(ctx, in.PreviewID, p.TokenHash, in.InputHash, s.now().UnixMilli()); err != nil {
 		if errors.Is(err, store.ErrConflict) {
-			return nil, false, ErrImportExpired
+			// Lost a concurrent consume race: re-read and replay that outcome.
+			p2, gerr := s.repo.GetImportPreview(ctx, in.PreviewID)
+			if gerr == nil && p2.ConsumedAt.Valid && p2.ConsumedTaskID != "" {
+				if t, terr := s.queue.Get(ctx, p2.ConsumedTaskID); terr == nil {
+					return t, true, nil
+				}
+			}
+			return nil, false, ErrImportConsumed
 		}
 		return nil, false, err
 	}
 	payload, _ := json.Marshal(map[string]string{"previewId": p.ID})
-	return s.queue.Submit(ctx, task.SubmitRequest{Kind: task.KindImport, Title: "Import pack", Payload: payload, IdempotencyKey: in.IdempotencyKey})
+	t, reused, err := s.queue.Submit(ctx, task.SubmitRequest{Kind: task.KindImport, Title: "Import pack", Payload: payload, IdempotencyKey: in.IdempotencyKey})
+	if err != nil {
+		return nil, false, err
+	}
+	if err := s.repo.SetImportPreviewConsumedTask(ctx, p.ID, t.ID); err != nil {
+		return nil, false, err
+	}
+	return t, reused, nil
 }
 
 func (s *ImportService) RegisterTaskHandler(reg *task.Registry) error {
@@ -200,7 +248,8 @@ func validateImportInput(in ImportPreviewInput) error {
 			return ErrInvalidArgument
 		}
 	default:
-		return ErrImportInvalidSource
+		// source outside the closed enum is a structural error (400).
+		return ErrInvalidArgument
 	}
 	return nil
 }
@@ -219,7 +268,8 @@ func normalizeImportSource(source string) string {
 func validateImportURL(raw, source string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || u.User != nil || u.Host == "" {
-		return ErrImportInvalidSource
+		// Not a well-formed https URL: structural error (400).
+		return ErrInvalidArgument
 	}
 	h := strings.ToLower(u.Hostname())
 	if source == ImportSourceCurseForgeURL && !(h == "curseforge.com" || strings.HasSuffix(h, ".curseforge.com")) {
