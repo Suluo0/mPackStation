@@ -19,10 +19,10 @@ export const importPreviewSchema = z.object({
   token: z.string(),
   inputHash: z.string(),
   source: z.string(),
-  expiresAt: z.iso.datetime().nullable(),
+  expiresAt: z.iso.datetime(),
   entryCount: z.number().int(),
-  /* 后端 packName 带 omitempty,可能缺键(违反 D-4),先 nullish,后端修正后收窄。 */
-  packName: z.string().nullish(),
+  /* 后端已修 D-4(B6): packName 恒在,URL 来源暂未知名称时为 ""。 */
+  packName: z.string(),
 });
 export type ImportPreview = z.infer<typeof importPreviewSchema>;
 

@@ -33,7 +33,7 @@ func TestP6ContentRevisionLifecycleAndEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Revision != 1 || d.ActiveRevisionID != "" {
+	if r.Revision != 1 || d.ActiveRevisionID != nil {
 		t.Fatalf("initial = %#v %#v", d, r)
 	}
 	// Canonical serialization makes an equivalent save idempotent.
@@ -62,14 +62,14 @@ func TestP6ContentRevisionLifecycleAndEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ActiveRevisionID != r3.ID {
+	if got.ActiveRevisionID == nil || *got.ActiveRevisionID != r3.ID {
 		t.Fatalf("active = %#v", got)
 	}
 	rolled, err := a.RollbackContent(ctx, packID, d.ID, r.ID, "req-rollback")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rolled.Revision != 3 || rolled.State != "draft" || rolled.SourceRevisionID != r.ID {
+	if rolled.Revision != 3 || rolled.State != "draft" || rolled.SourceRevisionID == nil || *rolled.SourceRevisionID != r.ID {
 		t.Fatalf("rollback = %#v", rolled)
 	}
 	h, err := a.ContentHistory(ctx, packID, d.ID)
@@ -146,7 +146,7 @@ func TestP6QuestGraphLifecycleAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if q.ActiveRevisionID != r.ID || len(q.Revision.Draft.Nodes) != 2 {
+	if q.ActiveRevisionID == nil || *q.ActiveRevisionID != r.ID || len(q.Revision.Draft.Nodes) != 2 {
 		t.Fatalf("quest = %#v", q)
 	}
 	draft.Nodes[1].Title = "Updated"

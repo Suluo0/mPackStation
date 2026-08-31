@@ -176,7 +176,7 @@ func TestP6HTTPContentRevisionContract(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&detail); err != nil {
 		t.Fatal(err)
 	}
-	if detail.Document.ActiveRevisionID != revision2.ID || detail.Revision.ID != revision2.ID {
+	if detail.Document.ActiveRevisionID == nil || *detail.Document.ActiveRevisionID != revision2.ID || detail.Revision.ID != revision2.ID {
 		t.Fatalf("active detail=%#v", detail)
 	}
 
@@ -188,7 +188,7 @@ func TestP6HTTPContentRevisionContract(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&rollback); err != nil {
 		t.Fatal(err)
 	}
-	if rollback.Revision != 3 || rollback.SourceRevisionID != created.Revision.ID || rollback.State != "draft" {
+	if rollback.Revision != 3 || rollback.SourceRevisionID == nil || *rollback.SourceRevisionID != created.Revision.ID || rollback.State != "draft" {
 		t.Fatalf("rollback=%#v", rollback)
 	}
 

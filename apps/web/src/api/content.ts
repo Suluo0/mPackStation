@@ -2,8 +2,7 @@ import {z} from 'zod';
 import {get, post, put} from './http';
 
 /* 内容域:内容文档(配方/结构等)与任务书,共用一个域文件。
-   注意:后端 ContentDocument 的 activeRevisionId/createdAt/updatedAt 目前带
-   omitempty(可能缺键,违反 D-4),schema 只能先 optional;后端修正后应收窄为 nullable。 */
+   后端已修 D-4(B6): activeRevisionId/sourceRevisionId 恒在、无值发 null。 */
 
 export const contentDocumentSchema = z.object({
   id: z.string(),
@@ -11,9 +10,9 @@ export const contentDocumentSchema = z.object({
   kind: z.string(),
   slug: z.string(),
   title: z.string(),
-  activeRevisionId: z.string().optional(),
-  createdAt: z.iso.datetime().optional(),
-  updatedAt: z.iso.datetime().optional(),
+  activeRevisionId: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 });
 export type ContentDocument = z.infer<typeof contentDocumentSchema>;
 
@@ -21,7 +20,7 @@ export const revisionSchema = z.object({
   id: z.string(),
   documentId: z.string(),
   state: z.string(),
-  sourceRevisionId: z.string().optional(),
+  sourceRevisionId: z.string().nullable(),
   revision: z.number().int(),
   /* payload 结构随 kind 变化(配方/结构/矿脉各不相同),由编辑器按 kind 解释。 */
   payload: z.unknown(),
@@ -107,7 +106,7 @@ export const questRevisionSchema = z.object({
 export const questBookSchema = z.object({
   id: z.string(),
   packId: z.string(),
-  activeRevisionId: z.string().optional(),
+  activeRevisionId: z.string().nullable(),
   revision: questRevisionSchema,
 });
 export type QuestBook = z.infer<typeof questBookSchema>;

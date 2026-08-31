@@ -29,15 +29,16 @@ type ValidationIssue struct {
 }
 
 // ContentDocument is the transport-neutral content header.
+// D-4: keys are always present; empty references are null, never omitted.
 type ContentDocument struct {
-	ID               string `json:"id"`
-	PackID           string `json:"packId"`
-	Kind             string `json:"kind"`
-	Slug             string `json:"slug"`
-	Title            string `json:"title"`
-	ActiveRevisionID string `json:"activeRevisionId,omitempty"`
-	CreatedAt        string `json:"createdAt,omitempty"`
-	UpdatedAt        string `json:"updatedAt,omitempty"`
+	ID               string  `json:"id"`
+	PackID           string  `json:"packId"`
+	Kind             string  `json:"kind"`
+	Slug             string  `json:"slug"`
+	Title            string  `json:"title"`
+	ActiveRevisionID *string `json:"activeRevisionId"`
+	CreatedAt        string  `json:"createdAt"`
+	UpdatedAt        string  `json:"updatedAt"`
 }
 
 // ContentRevision is an immutable JSON revision.
@@ -45,7 +46,7 @@ type ContentRevision struct {
 	ID               string          `json:"id"`
 	DocumentID       string          `json:"documentId"`
 	State            string          `json:"state"`
-	SourceRevisionID string          `json:"sourceRevisionId,omitempty"`
+	SourceRevisionID *string         `json:"sourceRevisionId"`
 	Revision         int             `json:"revision"`
 	Payload          json.RawMessage `json:"payload"`
 	CreatedAt        string          `json:"createdAt"`
@@ -290,11 +291,21 @@ func (a *API) ContentHistory(ctx context.Context, packID, documentID string) ([]
 }
 
 func validContentKind(k string) bool { return k == "recipe" || k == "structure" || k == "ore" }
+
+// nullIfEmpty converts the store's empty-string-as-absent convention to a nil
+// pointer so the wire emits null (D-4), never a missing key.
+func nullIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 func contentDocDTO(d store.ContentDocumentRecord) ContentDocument {
-	return ContentDocument{ID: d.ID, PackID: d.PackID, Kind: d.Kind, Slug: d.Slug, Title: d.Title, ActiveRevisionID: d.ActiveRevisionID, CreatedAt: iso(d.CreatedAt), UpdatedAt: iso(d.UpdatedAt)}
+	return ContentDocument{ID: d.ID, PackID: d.PackID, Kind: d.Kind, Slug: d.Slug, Title: d.Title, ActiveRevisionID: nullIfEmpty(d.ActiveRevisionID), CreatedAt: iso(d.CreatedAt), UpdatedAt: iso(d.UpdatedAt)}
 }
 func contentRevDTO(r store.ContentRevisionRecord) ContentRevision {
-	return ContentRevision{ID: r.ID, DocumentID: r.DocumentID, State: r.State, SourceRevisionID: r.SourceRevisionID, Revision: r.Revision, Payload: json.RawMessage(r.Payload), CreatedAt: iso(r.CreatedAt)}
+	return ContentRevision{ID: r.ID, DocumentID: r.DocumentID, State: r.State, SourceRevisionID: nullIfEmpty(r.SourceRevisionID), Revision: r.Revision, Payload: json.RawMessage(r.Payload), CreatedAt: iso(r.CreatedAt)}
 }
 
 var contentFields = map[string]map[string]bool{"recipe": {"schema_version": true, "type": true, "input": true, "output": true, "conditions": true, "metadata": true}, "structure": {"schema_version": true, "file": true, "size": true, "rotation": true, "anchor": true, "parameters": true, "preview": true, "metadata": true}, "ore": {"schema_version": true, "dimension": true, "block": true, "min_y": true, "max_y": true, "count": true, "frequency": true, "distribution": true, "biomes": true, "metadata": true}}
@@ -436,7 +447,7 @@ type QuestRevision struct {
 type QuestBook struct {
 	ID               string        `json:"id"`
 	PackID           string        `json:"packId"`
-	ActiveRevisionID string        `json:"activeRevisionId,omitempty"`
+	ActiveRevisionID *string       `json:"activeRevisionId"`
 	Revision         QuestRevision `json:"revision"`
 }
 type QuestReward struct {
@@ -596,7 +607,7 @@ func questDTO(b store.QuestBookRecord, v store.QuestRevisionRecord, c []store.Qu
 	for _, x := range e {
 		d.Edges = append(d.Edges, QuestEdge{ID: logicalQuestID(x.ID, v.ID, "e"), FromNodeID: logicalQuestID(x.FromNodeID, v.ID, "n"), ToNodeID: logicalQuestID(x.ToNodeID, v.ID, "n")})
 	}
-	return QuestBook{ID: b.ID, PackID: b.PackID, ActiveRevisionID: b.ActiveRevisionID, Revision: questRevDTO(v, d)}
+	return QuestBook{ID: b.ID, PackID: b.PackID, ActiveRevisionID: nullIfEmpty(b.ActiveRevisionID), Revision: questRevDTO(v, d)}
 }
 
 func logicalQuestID(physical, revisionID, kind string) string {

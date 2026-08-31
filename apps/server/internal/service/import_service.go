@@ -44,14 +44,17 @@ type ImportPreviewInput struct {
 	Content []byte
 }
 
+// ImportPreview is the two-phase import handshake DTO. D-4: keys are always
+// present; packName is "" when the source does not declare one yet (URL
+// sources resolve the name at task time).
 type ImportPreview struct {
-	ID         string `json:"id,omitempty"`
-	Token      string `json:"token,omitempty"`
-	InputHash  string `json:"inputHash,omitempty"`
-	Source     string `json:"source,omitempty"`
-	ExpiresAt  string `json:"expiresAt,omitempty"`
+	ID         string `json:"id"`
+	Token      string `json:"token"`
+	InputHash  string `json:"inputHash"`
+	Source     string `json:"source"`
+	ExpiresAt  string `json:"expiresAt"`
 	EntryCount int    `json:"entryCount"`
-	PackName   string `json:"packName,omitempty"`
+	PackName   string `json:"packName"`
 }
 
 type ImportConfirmInput struct {
