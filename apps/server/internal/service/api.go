@@ -132,10 +132,6 @@ type UpdatePackInput struct {
 	Description   *string `json:"description"`
 }
 
-// Task is the contract task DTO (docs/api/dto.md). The HTTP layer returns
-// task.TaskView, which has the identical JSON shape; ListTasks fills PackName
-// from the repository join.
-type Task = task.TaskView
 type Activity struct {
 	ID     string  `json:"id"`
 	Kind   string  `json:"kind"`
@@ -403,7 +399,7 @@ func (a *API) DeletePack(ctx context.Context, id, requestID string) error {
 	})
 }
 
-func (a *API) ListTasks(ctx context.Context, limit int) ([]Task, error) {
+func (a *API) ListTasks(ctx context.Context, limit int) ([]TaskView, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
@@ -417,7 +413,7 @@ func (a *API) ListTasks(ctx context.Context, limit int) ([]Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Task, 0, len(rows))
+	out := make([]TaskView, 0, len(rows))
 	for _, t := range rows {
 		var packID, packName *string
 		if t.PackID != "" {
@@ -442,7 +438,7 @@ func (a *API) ListTasks(ctx context.Context, limit int) ([]Task, error) {
 			v := time.UnixMilli(t.FinishedAt.Int64).UTC()
 			finished = &v
 		}
-		out = append(out, Task{ID: t.ID, Type: task.PublicKind(task.Kind(t.Kind)), Title: t.Title, PackID: packID, PackName: packName, Status: task.PublicStatus(task.Status(t.Status)), Progress: task.ProgressPercent(t.Progress), Error: msg, StartedAt: started, FinishedAt: finished})
+		out = append(out, TaskView{ID: t.ID, Type: publicKind(task.Kind(t.Kind)), Title: t.Title, PackID: packID, PackName: packName, Status: publicStatus(task.Status(t.Status)), Progress: progressPercent(t.Progress), Error: msg, StartedAt: started, FinishedAt: finished})
 	}
 	return out, nil
 }
