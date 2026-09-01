@@ -6,10 +6,10 @@
     "goal_source": "user"
   },
   "checkpoint": {
-    "id": "cp-2026-08-30-modchain-prism-pipeline",
-    "context_completeness": "partial",
-    "created_at": "2026-08-30T08:00:00Z",
-    "note": "模组页双平台真实链路已交付(76fb818/05aefa7 等 4 提交,未推送);Prism 便携安装与上手四步已实现并 e2e 验证但全部未提交;流水线终局重定义为'启动 Minecraft',自研启动内核处于评估待拍板;superpowers 方法论的安装被 Hermes 安全门禁拦截,等用户批准临时关扫描。"
+    "id": "cp-2026-09-01-dual-source-compat-knowledge",
+    "context_completeness": "full",
+    "created_at": "2026-09-01T12:00:00Z",
+    "note": "契约四层验收体系落地后完成后端架构改造 B1/B2/B3/B4/B6/B7(B5 暂缓)、交互三项(版本倒序/兼容优先/CF key 配置)、双平台模组身份合并+版本镜像、兼容知识库(自动修复+推荐位)。全部四层验收绿。新登记需求:客户端采集上报(不实现,仅记录)。"
   },
   "repository": {
     "path": "D:\\workIn\\mPackStation",
@@ -17,11 +17,156 @@
     "initial_commit": "0c6edbe",
     "remote": "https://github.com/Suluo0/mPackStation.git",
     "structure": "monorepo:apps/web(React19+TS+Vite7+antd6+zod4)、apps/server(Go+SQLite)、docs/、data/(运行期,gitignore)、.tools/(便携 Go 1.27.0 + 便携 Prism 11.0.3,gitignore)、.shots/(验收截图)",
-    "branch": "fix/responsive-lowres",
-    "head": "a02e95940d94861eecad9a14a9cff681490172e7",
-    "working_tree_clean": false
+    "branch": "DEV_2609-VK1",
+    "head": "3df1ce45ff705d9f6dd19fca0cd758735a1d85ba",
+    "working_tree_clean": true
   },
   "tasks": [
+    {
+      "id": "task-verify-contract-4layer",
+      "kind": "task",
+      "title": "四层契约验收体系(可重放)",
+      "status": "verified",
+      "summary": "层1 静态门禁(go build/vet/gofmt基线制/go test + tsc)、层2 curl 契约矩阵(41→48→50→53 项)、层3 E2E 22×2(直连+vite 代理)、层4 每项改造专属机械证据(grep 计数/路由表 diff)。入口 scripts/verify-contract.bat,双击可重放。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "scripts/verify-contract.sh",
+        "scripts/verify-contract.bat",
+        "scripts/contract/curl-matrix.sh",
+        "scripts/contract/e2e-harness.ts"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "verify-contract.sh 多轮全绿: go test 9 包 + curl 53/53 + E2E 22/22×2",
+          "source": "session 2026-09-01",
+          "locator": "commit 0bdc621"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "task-b-series-refactor",
+      "kind": "task",
+      "title": "后端架构改造 B1-B7(行为保持,B5 暂缓)",
+      "status": "verified",
+      "summary": "B1 消灭 source any 装配;B3 四个错误翻译官归一为单一 writeError(幂等冲突 422 对齐契约);B2 httpapi god-file 1395→385 行拆 8 个域文件(73 条路由 diff 一致);B6 DTO 空值恒发 null;B7 pN 文件改域名;B4 TaskView 移出 task 包。B5(拆 service.API + Prism 移 platform)用户拍板暂缓。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "drafted",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/httpapi/",
+        "apps/server/internal/service/",
+        "apps/server/internal/task/http_adapter.go"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "每项改造后四层验收全绿;路由表前后 diff 一致;grep 结构证据达标",
+          "source": "session 2026-09-01",
+          "locator": "commits 9b55619/b2d6fda/1bdb7fa/c7e3b88/e61c114/464d61d"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "task-ux-trio-20260901",
+      "kind": "task",
+      "title": "交互三项:版本日期倒序 + 兼容优先 + CF key 配置全链路",
+      "status": "verified",
+      "summary": "provider.Version 加 datePublished 统一新→旧排序;版本下拉稳定排序兼容当前包的提前、默认选中最新兼容版;CF key 新增 PUT/DELETE 接口(保存前真实调用验证,无效 400/平台不通 502),secrets 表持久化,任何接口不回传,即存即效,env 优先级更高;启动探测双平台可达性修掉'未探测'假象。搜索交互用户拍板不动。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/service/system_config.go",
+        "apps/server/internal/provider/http_adapter.go",
+        "apps/web/src/hooks/useModSearch.ts",
+        "apps/web/src/pages/PackPages.tsx"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "实测: JEI 双平台版本第一条为当日最新;无效 key→400、真 key 保存/清除/恢复全通;curl 矩阵扩到 48 项全绿",
+          "source": "session 2026-09-01",
+          "locator": "commits 06e1846/e554985/ae9fa11"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "task-dual-source-merge",
+      "kind": "task",
+      "title": "双平台模组身份合并 + 添加时版本镜像钉死",
+      "status": "verified",
+      "summary": "搜索按身份表+名称规范化(保守,宁漏不错,slug 否决)跨平台合并成一张卡,双平台标签,下载量合并排序;pack_mods 一行加 mirror_source/mirror_project_id/mirror_version_id(迁移 0005),添加即钉死双平台版本、永不追新,查不到照常添加标'仅单平台';mod_identity 表本机学习配对永久复用;内置只读知识库 go:embed 随分发(JEI/AE2 实测核实种子),用户库永不进包(package.ps1 机械断言);主版本换版时镜像重钉。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/store/migrations/0005_mod_identity.sql",
+        "apps/server/internal/service/mods.go",
+        "apps/server/internal/service/mod_identity_baseline.go",
+        "apps/server/internal/service/mod_identity_baseline.json",
+        "scripts/package.ps1"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "实测: 搜 JEI 合并一张卡双标签;添加 MR JEI 19.51.0.417 自动钉 CF fileId 8769490(jei-1.21.1-neoforge-19.51.0.417.jar,同版本号同 loader);mod_identity 落表;curl 50/50",
+          "source": "session 2026-09-01",
+          "locator": "commit 149120f"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "task-compat-knowledge",
+      "kind": "task",
+      "title": "兼容知识库:已知问题自动修复 + 兼容模组推荐位",
+      "status": "verified",
+      "summary": "内置只读 compat_knowledge_baseline.json(只放人工核实条目,source 必填);添加模组时自动扫描已知冲突,有 install_mod 解法自动加装补丁(origin=compat-fix,'兼容补丁'标签可移除,活动日志注明,深度封顶);修不掉的进冲突列表 kind=known_issue;GET mod-recommendations 按包 MC/loader 过滤推荐(已装自动隐藏),前端一键添加;种子 Polymorph/Sinytra 双平台实测核实;docs/compat-knowledge.md 为维护者整理指南。knownIssues 空数组等用户整理数据。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/service/compat_knowledge.go",
+        "apps/server/internal/service/compat_knowledge_baseline.json",
+        "apps/server/internal/store/migrations/0006_pack_mod_origin.sql",
+        "docs/compat-knowledge.md"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "实测: neoforge 包推荐返回 Polymorph+Sinytra,fabric 矩阵包正确滤掉 Sinytra;5 个知识库单测绿;curl 53/53 + E2E 22/22×2",
+          "source": "session 2026-09-01",
+          "locator": "commit 3df1ce4"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
     {
       "id": "task-690ee8ef",
       "kind": "task",
@@ -327,6 +472,24 @@
   ],
   "issues": [
     {
+      "id": "issue-migration-crlf-checksum",
+      "kind": "issue",
+      "title": "迁移文件 CRLF 被 sha256 校验判篡改导致启动失败",
+      "status": "resolved",
+      "summary": "git autocrlf 把 SQL 检出成 CRLF,迁移执行器字节级 sha256 与库内记录不符,报 migration 0001 checksum mismatch 拒启。",
+      "resolution": "4 个迁移文件统一回 LF + 新建 .gitattributes 钉死 '*.sql text eol=lf'(commit 5aacce2)。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "修复后后端健康 ready;verify 四层全绿",
+          "source": "session 2026-09-01",
+          "locator": "commit 5aacce2"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
       "id": "issue-ac56a422",
       "kind": "issue",
       "title": "假包 tech 路由导致模组搜索 404",
@@ -380,6 +543,22 @@
     }
   ],
   "ideas": [
+    {
+      "id": "idea-client-telemetry-upload",
+      "kind": "idea",
+      "title": "客户端采集上报:兼容问题/配对知识从客户端回流服务端",
+      "status": "captured",
+      "summary": "用户 2026-09-01 提出:当前只记录了哪些规则是兼容性问题、哪些是双平台同模组(内置知识库+身份表),但缺少从客户端采集并上传到服务端的能力——分发出去的包在用户机器上跑出的兼容问题/配对确认,应能回流积累。用户明确:先不实现,仅登记。未来设计候选:上报内容边界(崩溃日志/冲突命中/配对确认)、隐私与脱敏、接收端鉴权与防垃圾、与内置知识库的合并流程(人工核实后才进基线)。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'我们没有从客户端采集并上传到服务端的这个能力,这也是很重要的。先不做实现了,先知道有这么个事儿'",
+          "source": "user 2026-09-01"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
     {
       "id": "idea-ddc96879",
       "kind": "idea",
@@ -468,6 +647,38 @@
     }
   ],
   "decisions": [
+    {
+      "id": "decision-dual-source-naming",
+      "kind": "decision",
+      "title": "双平台配对名称优先 + 添加即钉版 + 一行镜像字段 + 身份表双库分离",
+      "status": "active",
+      "summary": "配对用名称规范化完全相同(忽略大小写/空格/括号),slug 否决(AE2 两边 slug 不同);宁漏并不错并。版本在用户添加模组时立即双平台钉死,永不追新——'再追新版,打包打最新版,之前的调试就没意义了,发出来的包大概率连启动都过不了'(用户原话)。存储一行+镜像字段,不用两行(已装列表/依赖/冲突/计数都假设一模组一行)。身份表分发用独立内置只读知识库(go:embed),绝不与用户整合包信息同库。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'不能slug优先…名称优先吧 先这么用 出问题再说';'版本镜像在添加时立即查';'不能把整合包信息打进去 理论上不能是同一个库'",
+          "source": "user 2026-09-01"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "decision-compat-knowledge-autofix",
+      "kind": "decision",
+      "title": "兼容知识:自动修复=自动但可见;知识起步只放人工核实",
+      "status": "active",
+      "summary": "命中已知冲突自动加装兼容性模组(用户:'兼容模组不提供内容只提供兼容,一般不会导致更严重的兼容问题'),靠透明保掌控(标签+日志+可移除),不做默默修改;知识库起步只放人工核实条目+常见兼容性模组推荐,本机自动学习暂不做。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'我们会整理出对应的兼容信息…理论上用户不会失去对包内容的掌控';'起步的话,就只放人工核实过的'",
+          "source": "user 2026-09-01"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
     {
       "id": "decision-9a0c8004",
       "kind": "decision",
@@ -653,13 +864,13 @@
     }
   ],
   "next_session": {
-    "recommended_item": "task-1bd4148d",
+    "recommended_item": "idea-ddc96879",
     "read_first": [
       "docs/project-state/HANDOFF.md",
-      "docs/project-state/history/2026-08-30-session-summary.md",
-      "apps/server/internal/service/api.go(prism 段落)",
-      "scripts/prism-install.bat"
+      "docs/project-state/history/2026-09-01-session-summary.md",
+      "docs/compat-knowledge.md",
+      "docs/api/contract.md"
     ],
-    "first_action": "先把未提交的 12 个文件按已提议的两个 commit 落地(scripts 安装器 / onboarding 四步+tool_install),再处理 superpowers 安装批准;启动内核 Phase 0 等用户拍板后方可开工。"
+    "first_action": "待拍板项: 启动内核 Phase 0 spike(走 superpowers brainstorming 立项)、B5 拆 service.API、模板预制开局、mrpack-install 服务端冒烟。兼容知识库 knownIssues 等用户整理数据填入。客户端采集上报(idea-client-telemetry-upload)仅登记不实现。"
   }
 }

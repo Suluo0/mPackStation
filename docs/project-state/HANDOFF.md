@@ -6,7 +6,7 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 
 ## 当前状态
 
-分支 `fix/responsive-lowres`,远端 `origin = github.com/Suluo0/mPackStation`。**HEAD = `c52b82c`,工作区干净,本地与远端同步**(本轮 8 个提交已全部推送:模组链路 4 个 + Prism/onboarding 2 个 + 存档 1 个 + docs/api 草稿 1 个)。
+分支 `DEV_2609-VK1`,远端 `origin = github.com/Suluo0/mPackStation`。**HEAD = `3df1ce4`,工作区干净**(本轮 12 个提交在本地:验收体系+B 系改造+交互三项+双源合并+兼容知识库,未推送)。验收入口:`scripts\verify-contract.bat` 双击四层全绿(curl 53 项 + E2E 22×2)。
 
 
 - 前端 dev:`http://127.0.0.1:5273/`;后端 dev:`http://127.0.0.1:18871/api/health`
@@ -14,6 +14,46 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 - 写操作需 header `X-MPack-Token`;CURSEFORGE_API_KEY 已配置,Modrinth 免 key
 
 ## 项目功能进展
+
+### 2026-09-01 · 四层契约验收体系 + 后端架构改造 B1-B7(B5 暂缓)
+
+- 状态:已完成(B5 用户拍板暂缓)
+- 进展:`scripts/verify-contract.bat` 可重放四层验收(静态门禁/curl 矩阵/E2E 22×2/每项专属机械证据);B1 消灭 source any、B3 错误翻译官归一(幂等冲突 422)、B2 httpapi 1395→385 行拆 8 域文件(73 路由 diff 一致)、B6 空值恒发 null、B7 pN 改域名、B4 TaskView 移出 task 包。
+- 关联任务:`task-verify-contract-4layer`、`task-b-series-refactor`
+- 验证:每项改造后四层全绿才提交;基线 41 项矩阵起步。
+- 验收:用户全程看脚本输出验收,逐项提交。
+- 相关产物:`scripts/verify-contract.sh`、`scripts/contract/`、`apps/server/internal/httpapi/routes_*.go`、`apps/server/internal/service/task_api.go`
+
+### 2026-09-01 · 交互三项:版本倒序 + 兼容优先 + CF key 配置
+
+- 状态:已完成
+- 进展:平台版本统一按日期新→旧;版本下拉兼容当前包的提前、默认选中最新兼容版;设置页 CF key 全链路(保存前真实验证/无效 400/即存即效/任何接口不回传/env 优先);启动探测双平台可达性修掉"未探测"假象。搜索交互用户拍板不动。
+- 关联任务:`task-ux-trio-20260901`
+- 验证:实测无效 key 400、真 key 保存/清除/恢复全通;矩阵扩到 48 项。
+- 相关产物:`apps/server/internal/service/system_config.go`、`apps/web/src/hooks/useModSearch.ts`、`docs/api/contract.md`
+
+### 2026-09-01 · 双平台模组身份合并 + 版本镜像钉死
+
+- 状态:已完成
+- 进展:同名模组双平台合并一张卡(身份表优先、名称规范化兜底、slug 否决);合并卡打双平台标签、下载量合并;pack_mods 一行+镜像字段(迁移 0005),添加时另一平台版本立即钉死永不追新;查不到照常添加标"仅单平台";内置只读身份知识库随 exe 分发,用户库永不进包(package.ps1 断言);主版本换版镜像重钉。
+- 关联任务:`task-dual-source-merge`;关联决策:`decision-dual-source-naming`
+- 验证:实测 JEI 合并卡;添加 MR JEI 自动钉 CF fileId(jei-1.21.1-neoforge-19.51.0.417.jar 同版本号);矩阵 50/50。
+- 验收:用户批准方案("可以 就这么干")后实现,实测通过。
+- 相关产物:`apps/server/internal/service/mods.go`、`mod_identity_baseline.{go,json}`、`apps/server/internal/store/migrations/0005_mod_identity.sql`
+
+### 2026-09-01 · 兼容知识库:自动修复 + 推荐位
+
+- 状态:已完成(knownIssues 等用户整理数据)
+- 进展:内置只读兼容知识库(人工核实条目,source 必填);添加模组自动扫描已知冲突,有解法自动加装兼容补丁(可见/可移除/日志注明);修不掉的进冲突列表 `known_issue`;推荐位按包 MC/loader 过滤一键添加;种子 Polymorph/Sinytra 双平台实测核实;`docs/compat-knowledge.md` 为维护者整理指南。
+- 关联任务:`task-compat-knowledge`;关联决策:`decision-compat-knowledge-autofix`
+- 验证:neoforge 包推荐返回 2 条、fabric 包正确滤掉 Sinytra;5 个单测;矩阵 53/53。
+- 相关产物:`apps/server/internal/service/compat_knowledge.{go,json}`、`docs/compat-knowledge.md`
+
+### 2026-09-01 · 新登记需求:客户端采集上报(仅记录,不实现)
+
+- 状态:已登记(用户明确先不实现)
+- 进展:`idea-client-telemetry-upload` —— 分发出去的包在客户端跑出的兼容问题/配对确认,未来应能采集回流服务端,喂给知识库。设计候选方向已记在 idea 里。
+
 
 ### 2026-08-30 · 看板视觉问题收尾
 
@@ -118,8 +158,11 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 
 ## 下一步
 
-1. **superpowers v6.3.0 已装好**;启动内核 Phase 0 待拍板:拍板后按 superpowers brainstorming 流程立项,先出设计文档,一行代码不先写。
-2. 模板预制开局(`idea-2bc71628`)与 mrpack-install 服务端冒烟(`idea-28f0096b`)待讨论拍板。
+1. **启动内核 Phase 0 待拍板**:拍板后按 superpowers brainstorming 流程立项,先出设计文档,一行代码不先写。
+2. **B5 拆 service.API + Prism 移 platform**:B 系唯一暂缓项,随时可开(验收体系在位,改造成本可控)。
+3. 模板预制开局(`idea-2bc71628`)与 mrpack-install 服务端冒烟(`idea-28f0096b`)待讨论拍板。
+4. 兼容知识库 `knownIssues` 等用户整理真实兼容数据后按 `docs/compat-knowledge.md` 格式填入。
+5. 客户端采集上报(`idea-client-telemetry-upload`)仅登记,用户未拍板前不动。
 
 ## 阻塞与已知问题
 
@@ -127,10 +170,13 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 - **P7 三缺口未复核**:取消语义/重启恢复测试/HTTP 契约测试(08f916a 之后)。
 - **视觉验收**:第三轮已由用户确认完成；后续若提出新的视觉问题，另立新任务，不回写本任务历史状态。
 - vite 993 kB chunk 警告为既有现象,未处理。
+- **curl 矩阵网络项偶发假失败**:CF key/双平台合并等需真实网络的断言在平台超时时会红,重跑即绿;纯本地断言(53 项里绝大多数)是确定性的。
 
 ## 关键决策
 
 - **流水线终局通向启动 Minecraft**(`decision-9a0c8004`)
+- **双平台配对名称优先、添加即钉版、一行镜像字段、身份表双库分离**(`decision-dual-source-naming`,用户 2026-09-01 拍板)
+- **兼容知识自动修复=自动但可见;知识起步只人工核实**(`decision-compat-knowledge-autofix`)
 - **模组搜索:单框模糊名称、双平台并发、不加锁、错误隔离**(`decision-da2110dc`,用户钦定)
 - **否决嵌入 Prism 代码**;CLI 调用不传染 GPL,保留兜底(`decision-f3ee0d92`)
 - **引入 superpowers 方法论**(proposed,`decision-7859b14d`)
@@ -155,12 +201,14 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 ## 首先读取
 
 - `docs/project-state/state.json` —— 机器可读状态(任务/问题/想法/决策全量)
-- `docs/project-state/history/2026-08-30-session-summary.md` —— 本会话详录
-- `docs/design/dashboard-page-prompt.md` —— 看板规格 + 6.1 视觉规范
-- `apps/server/internal/service/api.go` —— Prism 工具链段落(workbenchRoot/prismAccountReady/tool_install handler)
+- `docs/project-state/history/2026-09-01-session-summary.md` —— 本会话详录
+- `docs/compat-knowledge.md` —— 兼容知识库整理指南(knownIssues 待用户数据)
+- `docs/api/contract.md` —— API 契约(含 mod-recommendations / CF key / 合并语义)
+- `scripts/contract/README.md` —— 四层验收体系用法
 
 ## 验证状态
 
-- 已运行并通过(2026-08-30,绑定工作树):后端 `go build/vet/test ./internal/...` 全绿、`gofmt -l` 零不合规;前端 `tsc -b`、`vite build` 通过
-- e2e 实测:模组双平台搜索/版本/添加;Prism 删装重装三轮;tool_install 任务日志闭环;Prism 登录唤起
-- 用户验收:模组页功能用户实测中(未发现新问题);视觉两轮 rejected 第三轮进行中;上手四步未演示给用户
+- 已运行并通过(2026-09-01,HEAD 3df1ce4):`scripts/verify-contract.sh` 四层全绿——go build/vet/test 9 包 + gofmt 基线制;curl 矩阵 53/53;E2E 22/22×2(直连 18899 + vite 代理 5274);前端 tsc 零错误
+- 实测:JEI 双平台合并卡;添加自动钉镜像版本(CF fileId 8769490 = 同版本号 jei-1.21.1-neoforge-19.51.0.417.jar);推荐接口按 loader 正确过滤;CF key 无效 400/真 key 保存清除恢复
+- 注意:含真实网络的断言在平台抖动时偶发假失败,重跑即绿
+- 用户验收:本阶段五项功能均经用户拍板/批准后实现,实测证据逐条展示
