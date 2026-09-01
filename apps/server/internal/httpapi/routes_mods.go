@@ -99,6 +99,14 @@ func registerModRoutes(mux *http.ServeMux, app *service.API) {
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
 	})
+	mux.HandleFunc("GET /api/packs/{packId}/mod-recommendations", func(w http.ResponseWriter, r *http.Request) {
+		v, err := app.ListCompatRecommendations(r.Context(), r.PathValue("packId"))
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
+	})
 	mux.HandleFunc("POST /api/packs/{packId}/resolve", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.ResolvePack(r.Context(), r.PathValue("packId"), RequestID(r.Context()))
 		if err != nil {

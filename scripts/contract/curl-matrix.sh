@@ -122,6 +122,12 @@ ck "source不在枚举→400" "$(curl -s -X POST $B/api/packs/import/inspect -H 
 # --- mod-versions 必填 ---
 ck "mod-versions缺参→400" "$(curl -s -o /dev/null -w '%{http_code}' "$B/api/packs/$PID/mod-versions")" "400"
 
+# --- 兼容知识库推荐(beta 包是 1.20.1 fabric: Polymorph 普遍适用必出现, Sinytra 限 forge/neoforge 必缺席) ---
+curl -s "$B/api/packs/$PID/mod-recommendations" -o $TMP/c-recs.json
+ck "推荐含Polymorph" "$(python -c "import json; d=json.load(open(r'$TMP/c-recs.json',encoding='utf-8')); print([i['name'] for i in d['items']])" | grep -c Polymorph)" "1"
+ck "推荐不含Sinytra(loader不符)" "$(python -c "import json; d=json.load(open(r'$TMP/c-recs.json',encoding='utf-8')); print([i['name'] for i in d['items']])" | grep -c Sinytra)" "0"
+ck "推荐项走modrinth" "$(python -c "import json; d=json.load(open(r'$TMP/c-recs.json',encoding='utf-8')); print([i['provider'] for i in d['items'] if i['name']=='Polymorph'][0])")" "modrinth"
+
 # --- 发布异步出参 ---
 ck "publish async缺包→404 pack_not_found" "$(curl -s -X POST $B/api/packs/nope/publish/modrinth/async -H "X-MPack-Token: $T" -H 'content-type: application/json' -d '{"packVersionId":"v","artifactId":"a","projectId":"p"}')" '"code":"pack_not_found"'
 

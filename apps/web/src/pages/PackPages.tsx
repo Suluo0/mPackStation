@@ -112,12 +112,22 @@ export function PackModsPage() {
       })}
       {s.searched && !s.results.length && !s.error && <div className="empty-inline">没有搜索结果。</div>}
     </WorkbenchCard>
+    {s.recommendations.length > 0 && <WorkbenchCard className="catalog-card">
+      <WorkbenchSectionHeader title="推荐兼容模组(人工核实)"/>
+      {s.recommendations.map(r => <div className="mod-row" key={r.projectId}>
+        <span className="mod-symbol"><CodeOutlined/></span>
+        <div className="mod-row-main"><strong>{r.name}</strong><small>{r.reason}</small></div>
+        {platformTag(r.provider)}
+        <Button size="small" loading={s.recBusy === r.projectId} onClick={() => s.addRecommendation(r)}>添加</Button>
+      </div>)}
+    </WorkbenchCard>}
     <WorkbenchCard className="catalog-card">
       <WorkbenchSectionHeader title={`已安装(${s.installed.length})`}/>
       {s.installed.map(m => <div className="mod-row" key={m.id}>
         <span className="mod-symbol"><CodeOutlined/></span>
         <div className="mod-row-main"><strong>{m.displayName}</strong><span>{m.source} · {m.versionId || '—'}</span><small>{m.fileName}</small></div>
         {[m.source, ...(m.mirrorSource ? [m.mirrorSource] : [])].filter(pl => pl === 'modrinth' || pl === 'curseforge').map(platformTag)}
+        {m.origin === 'compat-fix' && <Tag color="blue">兼容补丁</Tag>}
         {!m.mirrorSource && (m.source === 'modrinth' || m.source === 'curseforge') && <Tag>仅单平台</Tag>}
         <Tag color={m.status === 'disabled' ? 'gold' : 'green'}>{m.status}</Tag>
         <Button size="small" danger={m.status !== 'disabled'} onClick={() => s.toggleInstalled(m)}>{m.status === 'disabled' ? '启用' : '移除'}</Button>

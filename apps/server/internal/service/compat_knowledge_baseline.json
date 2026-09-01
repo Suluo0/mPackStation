@@ -1,0 +1,21 @@
+{
+  "knownIssues": [],
+  "recommendations": [
+    {
+      "mr": "tagwiZkJ",
+      "cf": "388800",
+      "name": "Polymorph",
+      "reason": "合成配方冲突的通用解法: 多个模组注册了相同原料的配方时, 由它在合成界面让你选输出。",
+      "mcVersions": [],
+      "loaders": []
+    },
+    {
+      "mr": "u58R1TMW",
+      "cf": "890127",
+      "name": "Sinytra Connector",
+      "reason": "在 Forge/NeoForge 包上运行 Fabric 模组的兼容桥。",
+      "mcVersions": [],
+      "loaders": ["forge", "neoforge"]
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 import {useEffect, useRef, useState} from 'react';
 import {App} from 'antd';
 import {
-  addMod, listMods, listModVersions, removeMod, searchAllMods, updateMod,
-  type Mod, type ModVersion, type SearchAllItem,
+  addMod, listMods, listModRecommendations, listModVersions, removeMod, searchAllMods, updateMod,
+  type CompatRecommendation, type Mod, type ModVersion, type SearchAllItem,
 } from '../api/mods';
 import type {Pack} from '../api/packs';
 
@@ -19,9 +19,12 @@ export function useModSearch(packId: string | undefined, pack: Pack | null) {
   const [versions, setVersions] = useState<Record<string, ModVersion[]>>({});
   const [choice, setChoice] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
+  const [recommendations, setRecommendations] = useState<CompatRecommendation[]>([]);
+  const [recBusy, setRecBusy] = useState('');
 
   const refresh = () => {
     if (packId) void listMods(packId).then(setInstalled).catch(e => setError(e instanceof Error ? e.message : String(e)));
+    if (packId) void listModRecommendations(packId).then(setRecommendations).catch(() => setRecommendations([]));
   };
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
@@ -66,6 +69,22 @@ export function useModSearch(packId: string | undefined, pack: Pack | null) {
       .catch(e => message.error(e instanceof Error ? e.message : String(e)));
   };
 
+  /* 推荐位一键添加: 自动挑最新兼容版, 走和搜索卡相同的添加链路
+     (后端会自动钉镜像 + 查兼容知识库)。 */
+  const addRecommendation = (r: CompatRecommendation) => {
+    if (!packId) return;
+    setRecBusy(r.projectId);
+    listModVersions(packId, r.provider, r.projectId)
+      .then(vs => {
+        const v = vs.find(compatible) ?? vs[0];
+        if (!v) throw new Error('该平台暂无适配当前包的版本');
+        return addMod(packId, {provider: r.provider, projectId: r.projectId, versionId: v.id, required: true});
+      })
+      .then(() => { message.success(`${r.name} 已添加`); refresh(); })
+      .catch(e => message.error(e instanceof Error ? e.message : String(e)))
+      .finally(() => setRecBusy(''));
+  };
+
   const toggleInstalled = (m: Mod) => {
     if (!packId) return;
     const op = m.status === 'disabled'
@@ -77,7 +96,7 @@ export function useModSearch(packId: string | undefined, pack: Pack | null) {
 
   return {
     installed, query, setQuery, results, searchErrors, searching, searched,
-    versions, choice, setChoice, error,
-    compatible, keyOf, runSearch, loadVersions, add, toggleInstalled,
+    versions, choice, setChoice, error, recommendations, recBusy,
+    compatible, keyOf, runSearch, loadVersions, add, addRecommendation, toggleInstalled,
   };
 }

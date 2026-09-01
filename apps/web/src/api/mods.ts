@@ -23,6 +23,8 @@ export const modSchema = z.object({
   /* 镜像源: 另一平台钉死的对应项目; null = 仅单平台。 */
   mirrorSource: z.string().nullable(),
   mirrorProjectId: z.string().nullable(),
+  /* origin: manual=手动添加; compat-fix=兼容知识库自动加装的补丁。 */
+  origin: z.string(),
   addedAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -124,6 +126,17 @@ export const searchAllMods = (packId: string, query: ModSearchQuery) =>
   get(`/api/packs/${encodeURIComponent(packId)}/mod-search?${qsOf(query)}`, modSearchAllSchema);
 export const listModVersions = (packId: string, provider: string, projectId: string) =>
   get(`/api/packs/${encodeURIComponent(packId)}/mod-versions?provider=${encodeURIComponent(provider)}&projectId=${encodeURIComponent(projectId)}`, page(modVersionSchema)).then(v => v.items);
+
+/* 兼容知识库推荐: 适用于当前包的常见兼容性模组(人工核实条目)。 */
+export const compatRecommendationSchema = z.object({
+  name: z.string(),
+  reason: z.string(),
+  provider: z.string(),
+  projectId: z.string(),
+});
+export type CompatRecommendation = z.infer<typeof compatRecommendationSchema>;
+export const listModRecommendations = (packId: string) =>
+  get(`/api/packs/${encodeURIComponent(packId)}/mod-recommendations`, page(compatRecommendationSchema)).then(v => v.items);
 
 export const addMod = (packId: string, body: unknown) =>
   post(`/api/packs/${encodeURIComponent(packId)}/mods`, body, modSchema);

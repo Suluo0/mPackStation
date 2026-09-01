@@ -65,8 +65,10 @@ type Mod struct {
 	// sides and never auto-updated.
 	MirrorSource    *string `json:"mirrorSource"`
 	MirrorProjectID *string `json:"mirrorProjectId"`
-	AddedAt         string  `json:"addedAt"`
-	UpdatedAt       string  `json:"updatedAt"`
+	// Origin: manual = 手动添加; compat-fix = 兼容知识库自动加装的补丁。
+	Origin    string `json:"origin"`
+	AddedAt   string `json:"addedAt"`
+	UpdatedAt string `json:"updatedAt"`
 }
 type Lock struct {
 	ID             string `json:"id"`
@@ -376,7 +378,11 @@ func modDTO(m store.PackModRecord) Mod {
 		}
 		return &s
 	}
-	return Mod{ID: m.ID, PackID: m.PackID, Source: m.Source, ProjectID: strPtr(m.ProjectID), VersionID: strPtr(m.VersionID), DisplayName: m.DisplayName, FileName: m.FileName, SHA1: strPtr(m.SHA1), Status: m.Status, Required: m.Required, MirrorSource: strPtr(m.MirrorSource), MirrorProjectID: strPtr(m.MirrorProjectID), AddedAt: iso(m.AddedAt), UpdatedAt: iso(m.UpdatedAt)}
+	origin := m.Origin
+	if origin == "" {
+		origin = "manual"
+	}
+	return Mod{ID: m.ID, PackID: m.PackID, Source: m.Source, ProjectID: strPtr(m.ProjectID), VersionID: strPtr(m.VersionID), DisplayName: m.DisplayName, FileName: m.FileName, SHA1: strPtr(m.SHA1), Status: m.Status, Required: m.Required, MirrorSource: strPtr(m.MirrorSource), MirrorProjectID: strPtr(m.MirrorProjectID), Origin: origin, AddedAt: iso(m.AddedAt), UpdatedAt: iso(m.UpdatedAt)}
 }
 
 // otherProviderOf names the opposite catalog platform, or "" for local mods.
@@ -484,6 +490,12 @@ func pickMirrorVersion(vs []provider.Version, mcVersion, loader, wantVersionNumb
 }
 
 func (a *API) AddPackMod(ctx context.Context, packID string, in AddModInput, requestID string) (Mod, error) {
+	return a.addPackMod(ctx, packID, in, requestID, "manual", 0)
+}
+
+// addPackMod is the add flow with origin tagging and auto-fix recursion depth.
+// origin "manual" = 用户手动添加; "compat-fix" = 兼容知识库自动加装的补丁。
+func (a *API) addPackMod(ctx context.Context, packID string, in AddModInput, requestID, origin string, depth int) (Mod, error) {
 	if err := a.ready(); err != nil {
 		return Mod{}, err
 	}
@@ -517,9 +529,13 @@ func (a *API) AddPackMod(ctx context.Context, packID string, in AddModInput, req
 	}
 	now := time.Now().UnixMilli()
 	id := newID("mod")
-	m := store.PackModRecord{ID: id, PackID: packID, Source: string(ad.Name()), ProjectID: in.ProjectID, VersionID: in.VersionID, DisplayName: meta.Project.Name, FileName: dl.FileName, SHA1: strings.ToLower(dl.SHA1), Status: "installed", Required: in.Required, AddedAt: now, UpdatedAt: now}
+	m := store.PackModRecord{ID: id, PackID: packID, Source: string(ad.Name()), ProjectID: in.ProjectID, VersionID: in.VersionID, DisplayName: meta.Project.Name, FileName: dl.FileName, SHA1: strings.ToLower(dl.SHA1), Status: "installed", Required: in.Required, AddedAt: now, UpdatedAt: now, Origin: origin}
 	// 添加时立即钉死另一平台的对应版本(查不到不阻塞: 照常添加, 仅单平台)。
 	a.resolveMirror(ctx, &m, packRec, meta.Version.VersionNumber)
+	activityText := "Added " + m.DisplayName
+	if origin == "compat-fix" {
+		activityText = "Auto-added compat fix " + m.DisplayName + "(兼容知识库命中, 自动加装)"
+	}
 	err = a.repo.WithTx(ctx, func(tx *store.Repository) error {
 		if err := tx.UpsertJarIndex(ctx, store.JarIndexRecord{SHA1: m.SHA1, SHA256: dl.SHA256, FilePath: "jar://" + m.SHA1, SizeBytes: dl.Size, ModIDs: []string{id}, ParsedAt: now}); err != nil {
 			return err
@@ -527,7 +543,7 @@ func (a *API) AddPackMod(ctx context.Context, packID string, in AddModInput, req
 		if err := tx.AddPackMod(ctx, m); err != nil {
 			return err
 		}
-		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: packID, Kind: "mod", Action: "add-mod", Text: "Added " + m.DisplayName, At: now}, map[string]any{"mod_id": id}, requestID); err != nil {
+		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: packID, Kind: "mod", Action: "add-mod", Text: activityText, At: now}, map[string]any{"mod_id": id}, requestID); err != nil {
 			return err
 		}
 		return tx.AddOutbox(ctx, newID("outbox"), packID, "pack_mod", id, "mod.added", map[string]any{"mod_id": id}, now)
@@ -535,7 +551,53 @@ func (a *API) AddPackMod(ctx context.Context, packID string, in AddModInput, req
 	if err != nil {
 		return Mod{}, err
 	}
+	// 兼容知识库: 新模组入场后检查已知冲突, 有官方解法且解法模组不在包里就
+	// 自动加装(只加兼容补丁不带内容; 深度限制防链式失控)。失败不影响本次添加。
+	if depth < 2 {
+		a.autoFixCompat(ctx, packRec, requestID, depth)
+	}
 	return modDTO(m), nil
+}
+
+// autoFixCompat scans the pack against the embedded compat knowledge and
+// installs fix mods for known issues. Best-effort: any failure is silent —
+// unresolved known issues still surface as conflicts on the next resolve.
+func (a *API) autoFixCompat(ctx context.Context, pack store.PackRecord, requestID string, depth int) {
+	mods, err := a.repo.ListPackMods(ctx, pack.ID)
+	if err != nil {
+		return
+	}
+	for _, hit := range scanCompatKnowledge(pack.MCVersion, pack.Loader, mods, baselineCompatKnowledge()) {
+		fix := hit.Issue.Fix
+		if fix == nil || fix.Type != "install_mod" || fixAlreadyPresent(mods, fix) {
+			continue
+		}
+		// 修复模组优先走 Modrinth(更快), 未配置再用 CurseForge
+		providerName, projectID := "", ""
+		if fix.Mod.MR != "" {
+			if _, err := a.p5Adapter("modrinth"); err == nil {
+				providerName, projectID = "modrinth", fix.Mod.MR
+			}
+		}
+		if providerName == "" && fix.Mod.CF != "" {
+			if _, err := a.p5Adapter("curseforge"); err == nil {
+				providerName, projectID = "curseforge", fix.Mod.CF
+			}
+		}
+		if providerName == "" {
+			continue
+		}
+		ad, _ := a.p5Adapter(providerName)
+		vs, err := ad.Versions(ctx, projectID)
+		if err != nil {
+			continue
+		}
+		versionID := pickMirrorVersion(vs, pack.MCVersion, pack.Loader, "")
+		if versionID == "" {
+			continue // 没有兼容当前包的版本, 留给冲突列表提示
+		}
+		_, _ = a.addPackMod(ctx, pack.ID, AddModInput{Provider: providerName, ProjectID: projectID, VersionID: versionID, Required: false}, requestID, "compat-fix", depth+1)
+	}
 }
 
 // AddLocalPackMod registers a pre-indexed local JAR by content hash. The
@@ -711,6 +773,28 @@ func (a *API) ResolvePack(ctx context.Context, packID, requestID string) (Lock, 
 				confs = append(confs, c)
 				snap.Conflicts = append(snap.Conflicts, conflictDTO(c))
 			}
+		}
+	}
+	// 兼容知识库: 已知问题未被自动修复的(无解法或解法装不上)进冲突列表。
+	if packRec, e := a.repo.GetPack(ctx, packID); e == nil {
+		for _, hit := range scanCompatKnowledge(packRec.MCVersion, packRec.Loader, mods, baselineCompatKnowledge()) {
+			if hit.Issue.Fix != nil && fixAlreadyPresent(mods, hit.Issue.Fix) {
+				continue // 补丁已在包里, 视为已处理
+			}
+			sev := "warning"
+			if hit.Issue.Severity == "fatal" {
+				sev = "error"
+			}
+			summary := hit.Issue.Summary
+			detail := map[string]any{"reason": hit.Issue.Source, "modA": hit.ModA.DisplayName, "modB": hit.ModB.DisplayName}
+			if hit.Issue.Fix != nil {
+				summary += "(解法: " + hit.Issue.Fix.Note + ")"
+				detail["fixNote"] = hit.Issue.Fix.Note
+			}
+			now := time.Now().UnixMilli()
+			c := store.ConflictRecord{ID: newID("conflict"), PackID: packID, Fingerprint: hit.ModA.ID + ":" + hit.ModB.ID + ":known_issue", Kind: "known_issue", Severity: sev, Summary: summary, Detail: detail, CreatedAt: now, UpdatedAt: now}
+			confs = append(confs, c)
+			snap.Conflicts = append(snap.Conflicts, conflictDTO(c))
 		}
 	}
 	raw, _ := json.Marshal(snap)

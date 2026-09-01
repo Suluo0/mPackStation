@@ -679,6 +679,16 @@ MC 版本候选，创建包下拉用。
 **(b) 校验** — 缺参 400 `invalid_argument`；出参 `{items: ModVersion[]}`，不分页
 **(c) 异常处理** — 400 / 404 `pack_not_found` / 502（可重试）/ 503
 
+#### `GET /api/packs/{packId}/mod-recommendations`
+
+兼容知识库推荐：适用于当前包（按 MC 版本/loader 过滤、已在包内的不再出现）的常见兼容性模组，全部来自人工核实的内置知识库。
+
+**(a) 请求参数** — `packId`
+**(b) 校验** — 出参 `{items: [{name, reason, provider, projectId}], next_cursor, total}`；`provider`/`projectId` 指向可直接走添加链路的平台（Modrinth 优先，仅 CF 适配器可用时用 CF）
+**(c) 异常处理** — 404 `pack_not_found` / 503 `not_ready`
+
+**兼容知识库行为总则**：添加模组后服务端自动扫描已知问题——有 `install_mod` 解法且解法模组不在包内时**自动加装**（`Mod.origin = "compat-fix"`，活动日志注明，可移除）；无解法或解法装不上的已知问题在下次 `POST /resolve` 时以 `kind = "known_issue"` 进冲突列表（fatal→severity error，其余 warning），解法写进 summary/detail。格式与入库纪律见 `docs/compat-knowledge.md`。
+
 ---
 
 ### 3.4 依赖与冲突
