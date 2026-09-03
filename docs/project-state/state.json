@@ -18,7 +18,7 @@
     "remote": "https://github.com/Suluo0/mPackStation.git",
     "structure": "monorepo:apps/web(React19+TS+Vite7+antd6+zod4)、apps/server(Go+SQLite)、launcherCore(Rust+mc-launcher-core)、docs/、data/(运行期,gitignore)",
     "branch": "DEV_2609-VK2",
-    "head": "65a2560",
+    "head": "b78cd27",
     "working_tree_clean": false
   },
   "tasks": [
@@ -583,15 +583,26 @@
     {
       "id": "task-launcher-m5",
       "title": "mPackLauncher M5: Go后端集成+终局闭环",
-      "status": "planned",
-      "verification": "not_started",
+      "status": "in_progress",
+      "verification": "partial",
       "acceptance": "not_started",
-      "summary": "Go后端调用launcherCore binary: 安装版本→启动游戏的完整闭环。包括任务系统集成、进度事件解析、日志查看、前端展示。",
+      "summary": "M5后端完成: migration 0007 + launcher task kind + binary exec封装(JSON Lines解析) + install/launch handler + API端点(POST /api/launcher/install, /launch)。go build+test全通过。待: 前端集成+端到端验证+binary部署到.tools/launcher/。",
       "depends_on": [
         "task-launcher-m4"
       ],
-      "notes": [],
-      "evidence": []
+      "notes": [
+        "前端集成待做",
+        "端到端验证需将launcherCore release binary放到.tools/launcher/mpack-launcher.exe"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go build ./... 通过; go test ./... 全通过; 7 files changed, 370 insertions",
+          "source": "session 2026-09-04",
+          "locator": "commit b78cd27"
+        }
+      ]
     }
   ],
   "issues": [
