@@ -6,14 +6,37 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 
 ## 当前状态
 
-分支 `DEV_2609-VK1`,远端 `origin = github.com/Suluo0/mPackStation`。**HEAD = `3df1ce4`,工作区干净**(本轮 12 个提交在本地:验收体系+B 系改造+交互三项+双源合并+兼容知识库,未推送)。验收入口:`scripts\verify-contract.bat` 双击四层全绿(curl 53 项 + E2E 22×2)。
+分支 `DEV_2609-VK2`,远端 `origin = github.com/Suluo0/mPackStation`。**HEAD = `a363d8a`**。启动器内核 M0-M4 全部完成验证,M5 后端集成完成并推送,前端集成待设计图确认后实现。
 
-
+- 一键启停:`scripts/dev.ps1`(启动前后端)、`scripts/dev-stop.ps1`(停止)
 - 前端 dev:`http://127.0.0.1:5273/`;后端 dev:`http://127.0.0.1:18871/api/health`
-- 便携工具:`.tools/go`(1.27.0)、`.tools/prism`(11.0.3,调试启动器)、`.tools/prism-data`(便携数据目录)
-- 写操作需 header `X-MPack-Token`;CURSEFORGE_API_KEY 已配置,Modrinth 免 key
+- 启动器内核:`launcherCore/`(Rust),release binary 4.77MB
+- Go 1.27.0 已安装(C:\Program Files\Go\bin)
+- 写操作需 header `X-MPack-Token`
 
 ## 项目功能进展
+
+### 2026-09-04 · mPackLauncher M5 后端集成(Go 后端调用 Rust 内核)
+
+- 状态:后端完成,前端待设计图确认
+- 进展:migration 0007 添加 launcher_install/launcher_launch task kind;service/launcher/runner.go 封装 binary exec + JSON Lines 解析;install/launch handler + 心跳保活;POST /api/launcher/install、/api/launcher/launch 端点。go build+test 全通过。前端集成被用户打断回滚(要求先出设计图再改代码)。
+- 关联任务:`task-launcher-m5`
+- 验证:go build ./... 通过;go test ./... 全通过;7 files changed, 370 insertions
+- 提交:`b78cd27`(M5代码)、`2412a1a`(state)、`a363d8a`(checkpoint)
+
+### 2026-09-04 · mPackLauncher M3+M4(Java下载+OAuth+错误处理+体积优化)
+
+- 状态:已完成验证
+- 进展:M3 Java自动下载(Mojang/BMCLAPI runtime清单+2并发+指数退避)、微软OAuth device flow(XBL→XSTS→Minecraft,client_id借Prism公开ID)、keyring凭证存储、离线账号UUID v3。M4 natives解压、19种错误类型+exit_code+suggestion、release 4.77MB。91测试全通过。
+- 关联任务:`task-launcher-m3`、`task-launcher-m4`
+- 验证:Java 17.0.15下载成功可运行;微软登录验证成功(用户名Suluo0);release binary 4.77MB<10MB目标
+
+### 2026-09-03 · mPackLauncher M0-M2(骨架+下载层+加载器)
+
+- 状态:已完成验证
+- 进展:M0 CLI/error/protocol/platform/lock骨架;M1 自研下载层(BMCLAPI镜像+断点续传+SHA1校验+双Semaphore并发)+Vanilla安装+Java检测+启动;M2 四种加载器安装(Fabric/Quilt/Forge/NeoForge)。端到端验证:1.20.1 Vanilla+Fabric安装+离线启动成功。
+- 关联任务:`task-launcher-m1`、`task-launcher-m2`
+- 验证:74测试全通过;Fabric 1.20.1安装+离线启动成功(PID=13036)
 
 ### 2026-09-01 · 四层契约验收体系 + 后端架构改造 B1-B7(B5 暂缓)
 
