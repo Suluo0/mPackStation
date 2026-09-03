@@ -6,20 +6,20 @@
     "goal_source": "user"
   },
   "checkpoint": {
-    "id": "cp-2026-09-01-dual-source-compat-knowledge",
+    "id": "cp-2026-09-03-launcher-m1-complete",
     "context_completeness": "full",
-    "created_at": "2026-09-01T12:00:00Z",
-    "note": "契约四层验收体系落地后完成后端架构改造 B1/B2/B3/B4/B6/B7(B5 暂缓)、交互三项(版本倒序/兼容优先/CF key 配置)、双平台模组身份合并+版本镜像、兼容知识库(自动修复+推荐位)。全部四层验收绿。新登记需求:客户端采集上报(不实现,仅记录)。"
+    "created_at": "2026-09-03T12:15:00Z",
+    "note": "mPackLauncher M1完成:Rust内核+自研下载层(BMCLAPI镜像+断点续传+重试+系统代理检测)+Vanilla安装+Java检测+离线启动,端到端验证通过。分支DEV_2609-VK2。"
   },
   "repository": {
     "path": "D:\\workIn\\mPackStation",
     "is_git": true,
     "initial_commit": "0c6edbe",
     "remote": "https://github.com/Suluo0/mPackStation.git",
-    "structure": "monorepo:apps/web(React19+TS+Vite7+antd6+zod4)、apps/server(Go+SQLite)、docs/、data/(运行期,gitignore)、.tools/(便携 Go 1.27.0 + 便携 Prism 11.0.3,gitignore)、.shots/(验收截图)",
-    "branch": "DEV_2609-VK1",
-    "head": "3df1ce45ff705d9f6dd19fca0cd758735a1d85ba",
-    "working_tree_clean": true
+    "structure": "monorepo:apps/web(React19+TS+Vite7+antd6+zod4)、apps/server(Go+SQLite)、apps/launcher(Rust+mc-launcher-core)、docs/、data/(运行期,gitignore)、.tools/(便携 Go 1.27.0 + 便携 Prism 11.0.3,gitignore)、.shots/(验收截图)",
+    "branch": "DEV_2609-VK2",
+    "head": "8e4bb4416853c1436f2edc03b329ec349df9a2bb",
+    "working_tree_clean": false
   },
   "tasks": [
     {
@@ -468,6 +468,37 @@
         "apps/web/src/features/dashboard/dashboard.css",
         "apps/web/src/ui/workbench/workbench.css"
       ]
+    },
+    {
+      "id": "task-launcher-m1",
+      "kind": "task",
+      "title": "mPackLauncher M1: 下载层+Vanilla安装+Java检测+启动",
+      "status": "verified",
+      "summary": "Rust启动器内核M1完成:自研下载层(mirror URL重写/BMCLAPI镜像/断点续传/原子rename/5次重试/系统代理自动检测/双Semaphore并发)、从VersionJson提取文件列表+asset index解析、Java运行时检测(JAVA_HOME/PATH/常见路径)、MC版本到Java版本映射(1.16.5→8/1.17~1.20.4→17/1.20.5+→21)、启动命令构建(封装mc-launcher-core+Xmx注入)、进程管理(detach模式)、完整安装编排(锁+磁盘预检+phase事件输出)。端到端验证:1.20.1 Vanilla安装(700MB+3598资源文件)+离线启动成功。69个单元测试全通过。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/launcher/src/download/",
+        "apps/launcher/src/java/",
+        "apps/launcher/src/launch/",
+        "apps/launcher/src/install.rs",
+        "apps/launcher/src/main.rs",
+        "docs/architecture/launcher-core-*.md"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "端到端验证: install 1.20.1 --mirror bmclapi 成功(700MB+3598资源文件); launch --version 1.20.1 --username TestPlayer --xmx 2G 成功detach启动PID=17996; cargo test 69项全通过",
+          "source": "session 2026-09-03",
+          "locator": "commit 8e4bb44"
+        }
+      ],
+      "updated_at": "2026-09-03T12:15:00Z"
     }
   ],
   "issues": [
@@ -864,13 +895,12 @@
     }
   ],
   "next_session": {
-    "recommended_item": "idea-ddc96879",
+    "recommended_item": "task-launcher-m2",
     "read_first": [
       "docs/project-state/HANDOFF.md",
-      "docs/project-state/history/2026-09-01-session-summary.md",
-      "docs/compat-knowledge.md",
-      "docs/api/contract.md"
+      "docs/architecture/launcher-core-plan.md",
+      "apps/launcher/src/loader/"
     ],
-    "first_action": "待拍板项: 启动内核 Phase 0 spike(走 superpowers brainstorming 立项)、B5 拆 service.API、模板预制开局、mrpack-install 服务端冒烟。兼容知识库 knownIssues 等用户整理数据填入。客户端采集上报(idea-client-telemetry-upload)仅登记不实现。"
+    "first_action": "M2: 加载器安装(Fabric/Forge/NeoForge/Quilt)。Fabric/Quilt可用mc-launcher-core原生API,Forge/NeoForge需下载installer.jar并用java执行。完成后M3: Java自动下载+微软OAuth+镜像竞速完善。"
   }
 }
