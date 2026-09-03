@@ -35,6 +35,9 @@ futures-util = "0.3"
 # Minecraft 启动器核心库
 mc-launcher-core = "0.1.2"
 
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
 [profile.release]
 opt-level = "z"
 lto = true

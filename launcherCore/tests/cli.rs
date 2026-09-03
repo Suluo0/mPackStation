@@ -126,7 +126,7 @@ fn test_java_command_list() {
         Command::Java { action } => {
             assert!(matches!(
                 action,
-                mpack_launcher::cli::JavaCommand::List
+                mpack_launcher::cli::JavaCommand::List { deep: false }
             ));
         }
         _ => panic!("expected java command"),

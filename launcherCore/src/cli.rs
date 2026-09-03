@@ -141,7 +141,11 @@ pub enum AuthCommand {
 #[derive(Subcommand, Debug)]
 pub enum JavaCommand {
     /// 列出检测到的 Java 运行时
-    List,
+    List {
+        /// 深度扫描（全盘3层目录，较慢但更全面）
+        #[arg(long)]
+        deep: bool,
+    },
 
     /// 下载指定版本的 Java
     Install {

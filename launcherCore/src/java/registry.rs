@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use super::detect::{scan_system_java, JavaRuntime};
+use super::detect::{deep_scan_java, scan_system_java, JavaRuntime};
 use crate::error::LauncherError;
 use crate::Result;
 
@@ -24,6 +24,13 @@ impl JavaRegistry {
     pub fn detect() -> Self {
         Self {
             runtimes: scan_system_java(),
+        }
+    }
+
+    /// 深度扫描系统并创建注册表（全盘3层目录扫描，较慢但更全面）
+    pub fn detect_deep() -> Self {
+        Self {
+            runtimes: deep_scan_java(),
         }
     }
 

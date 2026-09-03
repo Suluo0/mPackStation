@@ -66,8 +66,12 @@ async fn main() -> Result<(), LauncherError> {
             }
         }
         Command::Java { action } => match action {
-            mpack_launcher::cli::JavaCommand::List => {
-                let registry = JavaRegistry::detect();
+            mpack_launcher::cli::JavaCommand::List { deep } => {
+                let registry = if deep {
+                    JavaRegistry::detect_deep()
+                } else {
+                    JavaRegistry::detect()
+                };
                 let runtimes: Vec<_> = registry
                     .list()
                     .iter()
