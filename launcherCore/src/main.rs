@@ -2,7 +2,8 @@ use clap::Parser;
 use mpack_launcher::cli::{Cli, Command};
 use mpack_launcher::download::Mirror;
 use mpack_launcher::error::LauncherError;
-use mpack_launcher::java::JavaRegistry;
+use mpack_launcher::auth::{OfflineAccount, StoredAccount, save_account};
+use mpack_launcher::java::{JavaRegistry, download_java};
 use mpack_launcher::protocol::Protocol;
 use serde_json::json;
 
@@ -87,16 +88,92 @@ async fn main() -> Result<(), LauncherError> {
                 Protocol::success(json!({ "runtimes": runtimes }));
                 Ok(())
             }
-            mpack_launcher::cli::JavaCommand::Install { version } => {
-                Err(LauncherError::Internal(format!(
-                    "Java 自动下载将在 M3 里程碑实现（请求版本: {}）",
-                    version
-                )))
+            mpack_launcher::cli::JavaCommand::Install { version, mirror } => {
+                let mirror = Mirror::from_str(&mirror);
+                Protocol::phase("downloading", &format!("正在下载 Java {}", version));
+                let runtime_dir = std::env::current_exe()
+                        .ok()
+                        .and_then(|p| p.parent().map(|p| p.join("runtime")))
+                        .unwrap_or_else(|| std::path::PathBuf::from("runtime"));
+                let java_path = download_java(version, mirror, &runtime_dir).await?;
+                Protocol::success(json!({
+                    "version": version,
+                    "path": java_path,
+                    "runtime_dir": runtime_dir,
+                }));
+                Ok(())
             }
         },
-        Command::Auth { .. } => Err(LauncherError::Internal(
-            "auth 命令将在 M3 里程碑实现".to_string(),
-        )),
+        Command::Auth { action } => match action {
+            mpack_launcher::cli::AuthCommand::Login { provider, username } => {
+                match provider.as_str() {
+                    "offline" => {
+                        let username = username.ok_or_else(|| LauncherError::InvalidArgument(
+                            "offline 登录需要 --username 参数".into(),
+                        ))?;
+                        let account = OfflineAccount::new(&username);
+                        let stored = StoredAccount::offline(&account.username, &account.uuid);
+                        save_account(&stored)?;
+                        Protocol::success(json!({
+                            "provider": "offline",
+                            "username": account.username,
+                            "uuid": account.uuid,
+                        }));
+                        Ok(())
+                    }
+                    "microsoft" => {
+                        // 1. 请求 device code
+                        Protocol::phase("authenticating", "正在获取设备登录码...");
+                        let device_code = mpack_launcher::auth::request_device_code().await?;
+                        Protocol::phase("await_user", &format!(
+                            "请打开 {} 并输入代码: {}",
+                            device_code.verification_uri, device_code.user_code
+                        ));
+                        // 输出 device code 信息供调用方读取
+                        Protocol::success(json!({
+                            "step": "device_code",
+                            "user_code": device_code.user_code,
+                            "verification_uri": device_code.verification_uri,
+                            "message": format!("请打开 {} 输入代码 {}", device_code.verification_uri, device_code.user_code),
+                        }));
+                        // 2. 轮询 token（阻塞等待用户登录）
+                        let ms_account = mpack_launcher::auth::poll_token(&device_code).await?;
+                        let stored = StoredAccount::microsoft(
+                            &ms_account.username,
+                            &ms_account.uuid,
+                            &ms_account.minecraft_access_token,
+                            &ms_account.microsoft_refresh_token,
+                        );
+                        save_account(&stored)?;
+                        Protocol::phase("authenticated", &format!("登录成功: {}", ms_account.username));
+                        Protocol::success(json!({
+                            "provider": "microsoft",
+                            "username": ms_account.username,
+                            "uuid": ms_account.uuid,
+                        }));
+                        Ok(())
+                    }
+                    other => Err(LauncherError::InvalidArgument(format!(
+                        "不支持的登录方式: {}（支持 offline/microsoft）", other
+                    ))),
+                }
+            }
+            mpack_launcher::cli::AuthCommand::Status => {
+                // keyring 不支持枚举，返回提示
+                Protocol::success(json!({
+                    "message": "使用 auth login 登录，auth logout --username <name> 登出",
+                    "note": "keyring 不支持枚举所有账号，请指定用户名查询",
+                }));
+                Ok(())
+            }
+            mpack_launcher::cli::AuthCommand::Logout => {
+                // 简化：不指定用户名时无法删除（keyring 不支持枚举）
+                Protocol::success(json!({
+                    "message": "请使用 keyring 管理器手动删除，或指定用户名调用 auth logout --username",
+                }));
+                Ok(())
+            }
+        },
     };
 
     if let Err(e) = result {

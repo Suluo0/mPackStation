@@ -10,4 +10,5 @@ pub mod install;
 pub mod registry;
 
 pub use detect::JavaRuntime;
+pub use install::download_java;
 pub use registry::{mc_version_to_java, JavaRegistry};

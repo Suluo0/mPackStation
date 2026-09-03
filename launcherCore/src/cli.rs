@@ -152,5 +152,8 @@ pub enum JavaCommand {
         /// Java 大版本（8/17/21）
         #[arg(long)]
         version: u32,
+        /// 镜像源（auto/mojang/bmclapi）
+        #[arg(long, default_value = "auto")]
+        mirror: String,
     },
 }

@@ -35,6 +35,12 @@ futures-util = "0.3"
 # Minecraft 启动器核心库
 mc-launcher-core = "0.1.2"
 
+# 凭证存储
+keyring = "3"
+
+# UUID
+uuid = { version = "1", features = ["v3", "v4"] }
+
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
 

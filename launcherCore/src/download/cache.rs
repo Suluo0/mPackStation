@@ -44,8 +44,9 @@ pub async fn download_file(item: &DownloadItem, mirror: Mirror) -> Result<()> {
 
     for attempt in 0..max_retries {
         if attempt > 0 {
-            tracing::debug!("重试下载 ({}/{}): {}", attempt + 1, max_retries, item.label);
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            let backoff = 2u64.pow(attempt as u32); // 1, 2, 4, 8, 16 秒
+            tracing::debug!("重试下载 ({}/{}，等待{}s): {}", attempt + 1, max_retries, backoff, item.label);
+            tokio::time::sleep(Duration::from_secs(backoff)).await;
         }
 
         let result = if urls.len() == 1 {
