@@ -52,7 +52,7 @@ pub fn build_command(
 ) -> Result<LaunchCommand> {
     let launcher = Launcher::new(minecraft_dir);
 
-    let mut options = LaunchOptions {
+    let options = LaunchOptions {
         account: Account::offline(&params.username),
         java_executable: Some(params.java_executable.clone()),
         game_directory: params.game_directory.clone(),

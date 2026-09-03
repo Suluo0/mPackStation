@@ -33,8 +33,8 @@ impl ConcurrentDownloader {
     /// 创建新的并发下载器
     pub fn new(mirror: Mirror) -> Self {
         Self {
-            assets_sem: Arc::new(Semaphore::new(32)),
-            libraries_sem: Arc::new(Semaphore::new(16)),
+            assets_sem: Arc::new(Semaphore::new(8)),
+            libraries_sem: Arc::new(Semaphore::new(4)),
             mirror,
         }
     }
@@ -91,7 +91,7 @@ impl ConcurrentDownloader {
 
     /// 获取当前并发配置
     pub fn concurrency_info(&self) -> (usize, usize) {
-        (32, 16) // assets, libraries
+        (8, 4) // assets, libraries
     }
 }
 
@@ -103,7 +103,7 @@ mod tests {
     fn test_concurrency_info() {
         let downloader = ConcurrentDownloader::new(Mirror::Auto);
         let (assets, libs) = downloader.concurrency_info();
-        assert_eq!(assets, 32);
-        assert_eq!(libs, 16);
+        assert_eq!(assets, 8);
+        assert_eq!(libs, 4);
     }
 }

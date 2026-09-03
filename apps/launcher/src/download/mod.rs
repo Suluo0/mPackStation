@@ -14,10 +14,10 @@ pub mod mirror;
 pub use mirror::Mirror;
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use mc_launcher_core::core::rules::{evaluate_rules, FeatureSet};
-use mc_launcher_core::core::version::{Library, VersionJson};
+use mc_launcher_core::core::version::VersionJson;
 use mc_launcher_core::platform::Platform;
 use serde::Deserialize;
 
@@ -54,7 +54,7 @@ impl Downloader {
         let features = FeatureSet::default();
 
         // 1. 生成 client.jar + libraries 下载计划
-        let mut items = plan_libraries_and_client(version, minecraft_dir, platform, &features);
+        let items = plan_libraries_and_client(version, minecraft_dir, platform, &features);
 
         // 2. 下载 client.jar + libraries
         if !items.is_empty() {

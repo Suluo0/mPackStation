@@ -60,8 +60,8 @@ pub fn rewrite_to_bmclapi(url: &str) -> String {
 /// 根据镜像模式获取下载 URL 列表
 ///
 /// - Mojang: 返回 [original]
-/// - Bmclapi: 返回 [bmclapi]
-/// - Auto: 返回 [original, bmclapi]（用于竞速）
+/// - Bmclapi: 返回 [bmclapi]（仅使用 BMCLAPI）
+/// - Auto: 返回 [bmclapi, original]（BMCLAPI 优先，竞速）
 pub fn get_download_urls(url: &str, mirror: Mirror) -> Vec<String> {
     let bmclapi_url = rewrite_to_bmclapi(url);
     let is_mojang_url = url.contains("mojang.com")
@@ -71,7 +71,7 @@ pub fn get_download_urls(url: &str, mirror: Mirror) -> Vec<String> {
     match mirror {
         Mirror::Mojang => vec![url.to_string()],
         Mirror::Bmclapi => {
-            if is_mojang_url {
+            if is_mojang_url && bmclapi_url != url {
                 vec![bmclapi_url]
             } else {
                 vec![url.to_string()]
@@ -79,7 +79,7 @@ pub fn get_download_urls(url: &str, mirror: Mirror) -> Vec<String> {
         }
         Mirror::Auto => {
             if is_mojang_url && bmclapi_url != url {
-                vec![url.to_string(), bmclapi_url]
+                vec![bmclapi_url, url.to_string()]
             } else {
                 vec![url.to_string()]
             }
@@ -151,8 +151,8 @@ mod tests {
     fn test_get_urls_auto() {
         let urls = get_download_urls("https://piston-data.mojang.com/x", Mirror::Auto);
         assert_eq!(urls.len(), 2);
-        assert!(urls[0].contains("mojang.com"));
-        assert!(urls[1].contains("bmclapi2"));
+        assert!(urls[0].contains("bmclapi2"));
+        assert!(urls[1].contains("mojang.com"));
     }
 
     #[test]

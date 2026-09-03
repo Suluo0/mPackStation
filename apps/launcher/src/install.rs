@@ -2,14 +2,15 @@
 
 use std::path::{Path, PathBuf};
 
-use mc_launcher_core::install::client::{fetch_vanilla_version, load_version_json, write_version_json};
+use mc_launcher_core::core::version::VersionJson;
+use mc_launcher_core::install::client::{load_version_json, write_version_json};
 
 use crate::download::{Downloader, Mirror};
 use crate::error::LauncherError;
 use crate::java::{mc_version_to_java, JavaRegistry};
 use crate::launch::{build_command, spawn_detached, LaunchParams};
 use crate::lock::DirectoryLock;
-use crate::platform::{ensure_disk_space, validate_safe_path};
+use crate::platform::ensure_disk_space;
 use crate::protocol::{self, Protocol};
 use crate::Result;
 
@@ -31,18 +32,21 @@ pub async fn install_vanilla(
     let _lock = DirectoryLock::acquire(minecraft_dir)?;
 
     // 2. 磁盘空间预检（预估 500MB，实际可能更多）
-    ensure_disk_space(minecraft_dir, 500 * 1024 * 1024)?;
+    ensure_disk_space(minecraft_dir, 500)?;
 
-    // 3. 解析版本元数据
+    // 3. 解析版本元数据（从 BMCLAPI 获取，避免直连 Mojang）
     Protocol::phase(protocol::phase::RESOLVING_VERSION, "正在解析版本元数据");
-    let version = fetch_vanilla_version(version_id).map_err(|e| {
-        LauncherError::VersionNotFound(format!("{}: {}", version_id, e))
-    })?;
+    let version = fetch_version_metadata(version_id, mirror).await?;
 
     // 4. 写入版本 JSON
-    write_version_json(minecraft_dir, &version).map_err(|e| {
-        LauncherError::Internal(format!("写入版本 JSON 失败: {}", e))
-    })?;
+    let minecraft_dir_owned = minecraft_dir.to_path_buf();
+    let version_clone = version.clone();
+    tokio::task::spawn_blocking(move || {
+        write_version_json(&minecraft_dir_owned, &version_clone)
+    })
+    .await
+    .map_err(|e| LauncherError::Internal(format!("写入版本 JSON 任务失败: {}", e)))?
+    .map_err(|e| LauncherError::Internal(format!("写入版本 JSON 失败: {}", e)))?;
 
     // 5. 下载所有文件
     Protocol::phase(protocol::phase::DOWNLOADING_LIBRARIES, "正在下载游戏文件");
@@ -163,6 +167,65 @@ pub fn list_installed_versions(minecraft_dir: &Path) -> Result<Vec<String>> {
 
     versions.sort();
     Ok(versions)
+}
+
+/// 从镜像源获取版本元数据
+///
+/// 流程：
+/// 1. 下载版本清单（BMCLAPI 或 Mojang）
+/// 2. 找到对应版本的 URL
+/// 3. 下载版本 JSON（BMCLAPI 时重写域名）
+async fn fetch_version_metadata(version_id: &str, mirror: Mirror) -> Result<VersionJson> {
+    let manifest_url = match mirror {
+        Mirror::Mojang => "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+        _ => "https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json",
+    };
+
+    let client = crate::download::cache::build_client()?;
+
+    // 1. 下载版本清单
+    let manifest: serde_json::Value = client
+        .get(manifest_url)
+        .send()
+        .await
+        .map_err(|e| LauncherError::VersionNotFound(format!("清单下载失败: {}", e)))?
+        .json()
+        .await
+        .map_err(|e| LauncherError::VersionNotFound(format!("清单解析失败: {}", e)))?;
+
+    // 2. 找到对应版本的 URL
+    let version_url = manifest["versions"]
+        .as_array()
+        .and_then(|versions| {
+            versions.iter().find(|v| v["id"].as_str() == Some(version_id))
+        })
+        .and_then(|v| v["url"].as_str())
+        .ok_or_else(|| LauncherError::VersionNotFound(version_id.to_string()))?
+        .to_string();
+
+    // 3. BMCLAPI 时重写域名
+    let download_url = if mirror != Mirror::Mojang {
+        version_url
+            .replace("https://piston-meta.mojang.com", "https://bmclapi2.bangbang93.com")
+    } else {
+        version_url
+    };
+
+    // 4. 下载版本 JSON
+    let version: VersionJson = client
+        .get(&download_url)
+        .send()
+        .await
+        .map_err(|e| {
+            LauncherError::VersionNotFound(format!("{}: 网络错误 {}", version_id, e))
+        })?
+        .json()
+        .await
+        .map_err(|e| {
+            LauncherError::VersionNotFound(format!("{}: 解析失败 {}", version_id, e))
+        })?;
+
+    Ok(version)
 }
 
 #[cfg(test)]

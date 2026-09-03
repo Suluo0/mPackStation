@@ -9,7 +9,7 @@ description = "mPackLauncher - Minecraft launcher core for mPackStation"
 clap = { version = "4", features = ["derive", "env"] }
 
 # HTTP
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
 
 # 序列化
 serde = { version = "1", features = ["derive"] }

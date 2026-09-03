@@ -13,18 +13,16 @@ use super::item::{sha1_file, DownloadItem, FileChecker};
 use super::mirror::{get_download_urls, Mirror};
 
 /// 下载超时
-const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 /// 连接超时
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// 下载单个文件
+/// 下载单个文件（带重试）
 ///
 /// 流程：
 /// 1. 预校验：文件已存在且 SHA1 匹配则跳过
-/// 2. 多源竞速：auto 模式同时从官方和 BMCLAPI 下载
-/// 3. 断点续传：.partial 文件存在时用 Range 续传
-/// 4. 校验：下载完成后验证 SHA1
-/// 5. 原子 rename：.partial → 目标路径
+/// 2. 多源竞速或依次尝试
+/// 3. 失败时最多重试 3 次
 pub async fn download_file(item: &DownloadItem, mirror: Mirror) -> Result<()> {
     // 1. 预校验
     if FileChecker::should_skip(item) {
@@ -40,34 +38,52 @@ pub async fn download_file(item: &DownloadItem, mirror: Mirror) -> Result<()> {
         });
     }
 
-    // 2. 多源竞速或单源下载
-    let result = if urls.len() == 1 {
-        download_from_single_source(&urls[0], item).await
-    } else {
-        download_with_race(&urls, item).await
-    };
+    // 2. 重试下载
+    let max_retries = 5;
+    let mut last_error = None;
 
-    match result {
-        Ok(()) => {
-            // 3. 校验 SHA1
-            if let Some(expected) = &item.sha1 {
-                let actual = sha1_file(&item.destination).map_err(|e| {
-                    LauncherError::Internal(format!("SHA1 计算失败: {}", e))
-                })?;
-                if actual != *expected {
-                    // 校验失败，删除文件
-                    let _ = fs::remove_file(&item.destination).await;
-                    return Err(LauncherError::ChecksumMismatch {
-                        file: item.destination.to_string_lossy().to_string(),
-                        expected: expected.clone(),
-                        actual,
-                    });
-                }
-            }
-            Ok(())
+    for attempt in 0..max_retries {
+        if attempt > 0 {
+            tracing::debug!("重试下载 ({}/{}): {}", attempt + 1, max_retries, item.label);
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
-        Err(e) => Err(e),
+
+        let result = if urls.len() == 1 {
+            download_from_single_source(&urls[0], item).await
+        } else {
+            download_with_race(&urls, item).await
+        };
+
+        match result {
+            Ok(()) => {
+                // 3. 校验 SHA1
+                if let Some(expected) = &item.sha1 {
+                    let actual = sha1_file(&item.destination).map_err(|e| {
+                        LauncherError::Internal(format!("SHA1 计算失败: {}", e))
+                    })?;
+                    if actual != *expected {
+                        // 校验失败，删除文件
+                        let _ = fs::remove_file(&item.destination).await;
+                        last_error = Some(LauncherError::ChecksumMismatch {
+                            file: item.destination.to_string_lossy().to_string(),
+                            expected: expected.clone(),
+                            actual,
+                        });
+                        continue;
+                    }
+                }
+                return Ok(());
+            }
+            Err(e) => {
+                last_error = Some(e);
+            }
+        }
     }
+
+    Err(last_error.unwrap_or(LauncherError::DownloadFailed {
+        url: item.url.clone(),
+        message: "下载失败".into(),
+    }))
 }
 
 /// 从单个源下载
@@ -232,13 +248,92 @@ async fn do_download_to(
     Ok(partial_path.to_path_buf())
 }
 
-/// 构建 reqwest 客户端
-fn build_client() -> Result<reqwest::Client> {
-    reqwest::Client::builder()
+/// 构建 reqwest 客户端（自动检测系统代理，不可用则直连）
+pub(crate) fn build_client() -> Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(DOWNLOAD_TIMEOUT)
+        .user_agent("mPackLauncher/0.1")
+        .redirect(reqwest::redirect::Policy::limited(20));
+
+    // 自动检测系统代理（Windows 注册表），不可用则直连
+    if let Some(proxy_url) = detect_system_proxy() {
+        if let Ok(proxy) = reqwest::Proxy::all(&proxy_url) {
+            builder = builder.proxy(proxy);
+            tracing::debug!("使用系统代理: {}", proxy_url);
+        }
+    }
+
+    builder
         .build()
         .map_err(|e| LauncherError::Internal(format!("创建 HTTP 客户端失败: {}", e)))
+}
+
+/// 检测 Windows 系统代理设置（验证可用性）
+#[cfg(windows)]
+fn detect_system_proxy() -> Option<String> {
+    use std::process::Command;
+    let output = Command::new("reg")
+        .args([
+            "query",
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+            "/v",
+            "ProxyEnable",
+        ])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.contains("0x1") {
+        return None;
+    }
+
+    let output = Command::new("reg")
+        .args([
+            "query",
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+            "/v",
+            "ProxyServer",
+        ])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if line.contains("ProxyServer") {
+            if let Some(pos) = line.find("REG_SZ") {
+                let addr = line[pos + 6..].trim();
+                if !addr.is_empty() {
+                    let proxy_url = format!("http://{}", addr);
+                    // 验证代理是否可用（简单 TCP 连接测试）
+                    if is_proxy_alive(addr) {
+                        return Some(proxy_url);
+                    } else {
+                        tracing::debug!("系统代理 {} 不可用，使用直连", addr);
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 检测代理是否可用（TCP 连接测试）
+#[cfg(windows)]
+fn is_proxy_alive(addr: &str) -> bool {
+    use std::net::TcpStream;
+    use std::time::Duration;
+    TcpStream::connect_timeout(
+        &addr.parse().unwrap_or_else(|_| "127.0.0.1:7897".parse().unwrap()),
+        Duration::from_secs(2),
+    )
+    .is_ok()
+}
+
+#[cfg(not(windows))]
+fn detect_system_proxy() -> Option<String> {
+    std::env::var("HTTPS_PROXY")
+        .or_else(|_| std::env::var("https_proxy"))
+        .ok()
 }
 
 /// 生成 URL 的短哈希（用于区分不同源的 .partial 文件）

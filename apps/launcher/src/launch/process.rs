@@ -1,7 +1,9 @@
 //! 游戏进程管理：spawn + detach + 等待 + 终止
 
-use std::path::Path;
 use std::process::{Child, Command, Stdio};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 use mc_launcher_core::command::builder::LaunchCommand;
 
@@ -93,7 +95,6 @@ pub fn spawn_detached(command: &LaunchCommand, version_id: impl Into<String>) ->
     // Windows: 创建新进程组，实现 detach
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
         const DETACHED_PROCESS: u32 = 0x00000008;
         cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
@@ -115,7 +116,6 @@ pub fn spawn_detached(command: &LaunchCommand, version_id: impl Into<String>) ->
 pub fn is_process_running(pid: u32) -> bool {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
         let output = Command::new("tasklist")
             .args(["/FI", &format!("PID eq {}", pid), "/NH"])
             .output();
