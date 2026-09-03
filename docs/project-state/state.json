@@ -18,7 +18,7 @@
     "remote": "https://github.com/Suluo0/mPackStation.git",
     "structure": "monorepo:apps/web(React19+TS+Vite7+antd6+zod4)、apps/server(Go+SQLite)、launcherCore(Rust+mc-launcher-core)、docs/、data/(运行期,gitignore)",
     "branch": "DEV_2609-VK2",
-    "head": "8c75c6d",
+    "head": "060706a",
     "working_tree_clean": false
   },
   "tasks": [
@@ -529,10 +529,10 @@
     {
       "id": "task-launcher-m3",
       "title": "mPackLauncher M3: Java自动下载+微软OAuth+keyring凭证",
-      "status": "planned",
-      "verification": "not_started",
-      "acceptance": "not_started",
-      "summary": "Java运行时自动下载(Mojang/BMCLAPI runtime清单) + 微软OAuth device code登录 + keyring凭证存储 + Java选择策略(Auto/VersionFolder/Forced)",
+      "status": "verified",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "summary": "M3完成: Java自动下载(Mojang/BMCLAPI runtime清单+2并发+指数退避+跳过重复LICENSE) + 微软OAuth device flow(XBL→XSTS→Minecraft) + keyring凭证存储 + 离线账号(标准UUID v3)。验证: Java17下载成功可运行, 离线登录成功, 91测试全通过。",
       "depends_on": [
         "task-launcher-m2"
       ],
@@ -547,6 +547,27 @@
         "7. Java选择策略参考PCL2: Auto(自动选择+自动下载), VersionFolder(版本文件夹内), Forced(强制指定)",
         "8. Java版本需求用范围而非单一版本, Forge/Fabric/NeoForge有额外上下限约束"
       ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "Java 17.0.15下载成功(193文件)并可运行; 离线登录UUID v3成功; cargo test 91项全通过",
+          "source": "session 2026-09-03",
+          "locator": "commit 060706a"
+        }
+      ]
+    },
+    {
+      "id": "task-launcher-m4",
+      "title": "mPackLauncher M4: 错误处理完善+性能优化+跨平台验证",
+      "status": "planned",
+      "verification": "not_started",
+      "acceptance": "not_started",
+      "summary": "错误信息用户友好化+崩溃恢复+内存优化+binary体积优化+Linux/macOS交叉编译验证+natives解压确认",
+      "depends_on": [
+        "task-launcher-m3"
+      ],
+      "notes": [],
       "evidence": []
     }
   ],
@@ -944,12 +965,12 @@
     }
   ],
   "next_session": {
-    "recommended_item": "task-launcher-m3",
+    "recommended_item": "task-launcher-m4",
     "read_first": [
       "docs/project-state/HANDOFF.md",
       "launcherCore/src/loader/",
       "launcherCore/src/main.rs"
     ],
-    "first_action": "M3: Java自动下载(Adoptium API)+微软OAuth device code登录+keyring凭证存储。然后M4错误处理+性能优化+跨平台,M5 Go后端集成+终局闭环。"
+    "first_action": "M4: 错误处理完善+性能优化+跨平台验证。然后M5 Go后端集成+终局闭环。"
   }
 }
