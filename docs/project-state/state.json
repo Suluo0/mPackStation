@@ -6,10 +6,10 @@
     "goal_source": "user"
   },
   "checkpoint": {
-    "id": "cp-2026-09-03-launcher-m2-complete",
+    "id": "cp-2026-09-04-m5-backend-done-frontend-rolled-back",
     "context_completeness": "full",
-    "created_at": "2026-09-03T13:00:00Z",
-    "note": "mPackLauncher M2完成: 四种加载器安装(Fabric/Quilt/Forge/NeoForge)。目录从apps/launcher迁移到launcherCore。74测试全通过。Fabric/Quilt用meta API+profile,Forge/NeoForge用installer.jar+Java执行。"
+    "created_at": "2026-09-03T17:45:11Z",
+    "note": "M5后端集成完成并推送(migration0007+launcher task kind+binary exec封装+API端点)。前端集成尝试被用户打断并回滚(用户要求先用设计图而非直接改代码)。dev环境已停止。Go 1.27.0已安装。"
   },
   "repository": {
     "path": "D:\\workIn\\mPackStation",
@@ -18,7 +18,7 @@
     "remote": "https://github.com/Suluo0/mPackStation.git",
     "structure": "monorepo:apps/web(React19+TS+Vite7+antd6+zod4)、apps/server(Go+SQLite)、launcherCore(Rust+mc-launcher-core)、docs/、data/(运行期,gitignore)",
     "branch": "DEV_2609-VK2",
-    "head": "b78cd27",
+    "head": "2412a1a",
     "working_tree_clean": false
   },
   "tasks": [
@@ -586,13 +586,15 @@
       "status": "in_progress",
       "verification": "partial",
       "acceptance": "not_started",
-      "summary": "M5后端完成: migration 0007 + launcher task kind + binary exec封装(JSON Lines解析) + install/launch handler + API端点(POST /api/launcher/install, /launch)。go build+test全通过。待: 前端集成+端到端验证+binary部署到.tools/launcher/。",
+      "summary": "M5后端完成: migration 0007 + launcher task kind + binary exec封装(JSON Lines解析) + install/launch handler + API端点。go build+test全通过。前端集成被用户打断回滚(用户要求先出设计图)。待: 前端设计图确认→前端实现→端到端验证→binary部署。",
       "depends_on": [
         "task-launcher-m4"
       ],
       "notes": [
-        "前端集成待做",
-        "端到端验证需将launcherCore release binary放到.tools/launcher/mpack-launcher.exe"
+        "前端集成被用户打断: 用户要求先用图片生成工具基于当前页面截图做设计图,而非直接改代码",
+        "前端代码已回滚干净(apps/web/src/无改动)",
+        "端到端验证需将launcherCore release binary放到.tools/launcher/mpack-launcher.exe",
+        "Go 1.27.0已通过winget安装(C:\\Program Files\\Go\\bin)"
       ],
       "evidence": [
         {
@@ -1002,9 +1004,10 @@
     "recommended_item": "task-launcher-m5",
     "read_first": [
       "docs/project-state/HANDOFF.md",
-      "launcherCore/src/loader/",
-      "launcherCore/src/main.rs"
+      "docs/design/dashboard-page-prompt.md",
+      "apps/web/src/app/AppShell.tsx",
+      "apps/web/src/main.tsx"
     ],
-    "first_action": "M5: Go后端集成launcherCore binary，实现安装→启动终局闭环。"
+    "first_action": "M5前端: 先用图片生成工具基于当前看板截图设计启动器页面设计图,用户确认后再实现代码。"
   }
 }
