@@ -6,19 +6,19 @@
     "goal_source": "user"
   },
   "checkpoint": {
-    "id": "cp-2026-09-03-launcher-m1-complete",
+    "id": "cp-2026-09-03-launcher-m2-complete",
     "context_completeness": "full",
-    "created_at": "2026-09-03T12:15:00Z",
-    "note": "mPackLauncher M1完成:Rust内核+自研下载层(BMCLAPI镜像+断点续传+重试+系统代理检测)+Vanilla安装+Java检测+离线启动,端到端验证通过。分支DEV_2609-VK2。"
+    "created_at": "2026-09-03T13:00:00Z",
+    "note": "mPackLauncher M2完成: 四种加载器安装(Fabric/Quilt/Forge/NeoForge)。目录从apps/launcher迁移到launcherCore。74测试全通过。Fabric/Quilt用meta API+profile,Forge/NeoForge用installer.jar+Java执行。"
   },
   "repository": {
     "path": "D:\\workIn\\mPackStation",
     "is_git": true,
     "initial_commit": "0c6edbe",
     "remote": "https://github.com/Suluo0/mPackStation.git",
-    "structure": "monorepo:apps/web(React19+TS+Vite7+antd6+zod4)、apps/server(Go+SQLite)、apps/launcher(Rust+mc-launcher-core)、docs/、data/(运行期,gitignore)、.tools/(便携 Go 1.27.0 + 便携 Prism 11.0.3,gitignore)、.shots/(验收截图)",
+    "structure": "monorepo:apps/web(React19+TS+Vite7+antd6+zod4)、apps/server(Go+SQLite)、launcherCore(Rust+mc-launcher-core)、docs/、data/(运行期,gitignore)",
     "branch": "DEV_2609-VK2",
-    "head": "8e4bb4416853c1436f2edc03b329ec349df9a2bb",
+    "head": "3db4645",
     "working_tree_clean": false
   },
   "tasks": [
@@ -499,6 +499,32 @@
         }
       ],
       "updated_at": "2026-09-03T12:15:00Z"
+    },
+    {
+      "id": "task-launcher-m2",
+      "kind": "task",
+      "title": "mPackLauncher M2: 加载器安装(Fabric/Quilt/Forge/NeoForge)",
+      "status": "implemented",
+      "summary": "实现四种加载器安装:Fabric/Quilt从meta API获取profile JSON写入后用自研下载层下载;Forge/NeoForge下载installer.jar用Java执行后补全下载。统一LoaderInstaller接口,支持指定版本或自动选最新稳定版。74个单元测试全通过,cargo check零警告。端到端验证待做(Fabric安装+启动)。",
+      "verification": "partial",
+      "acceptance": "pending",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "launcherCore/src/loader/"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "cargo check零警告; cargo test 74项全通过(含M2新增5个loader测试)",
+          "source": "session 2026-09-03",
+          "locator": "commit 3db4645"
+        }
+      ],
+      "updated_at": "2026-09-03T13:00:00Z"
     }
   ],
   "issues": [
@@ -895,12 +921,12 @@
     }
   ],
   "next_session": {
-    "recommended_item": "task-launcher-m2",
+    "recommended_item": "task-launcher-m2-e2e",
     "read_first": [
       "docs/project-state/HANDOFF.md",
-      "docs/architecture/launcher-core-plan.md",
-      "apps/launcher/src/loader/"
+      "launcherCore/src/loader/",
+      "launcherCore/src/main.rs"
     ],
-    "first_action": "M2: 加载器安装(Fabric/Forge/NeoForge/Quilt)。Fabric/Quilt可用mc-launcher-core原生API,Forge/NeoForge需下载installer.jar并用java执行。完成后M3: Java自动下载+微软OAuth+镜像竞速完善。"
+    "first_action": "M2端到端验证: 用CLI集成--loader选项安装Fabric 1.20.1并启动。然后M3: Java自动下载(Adoptium API)+微软OAuth device code登录+keyring凭证存储。"
   }
 }
