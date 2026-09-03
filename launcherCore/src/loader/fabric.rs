@@ -21,9 +21,10 @@ pub async fn install_fabric(
     let loader_ver = match loader_version {
         Some(v) => v.to_string(),
         None => {
-            let versions = fabric::list_loader_versions().map_err(|e| {
-                LauncherError::LoaderInstallFailed(format!("fabric: 获取 loader 版本列表失败: {e}"))
-            })?;
+            let versions = tokio::task::spawn_blocking(|| fabric::list_loader_versions())
+                .await
+                .map_err(|e| LauncherError::LoaderInstallFailed(format!("fabric: 获取版本列表join失败: {e}")))?
+                .map_err(|e| LauncherError::LoaderInstallFailed(format!("fabric: 获取 loader 版本列表失败: {e}")))?;
             let latest = fabric::latest_stable_loader(&versions).map_err(|e| {
                 LauncherError::LoaderInstallFailed(format!("fabric: 获取最新稳定版失败: {e}"))
             })?;
@@ -31,10 +32,13 @@ pub async fn install_fabric(
         }
     };
 
-    // 2. 获取 profile JSON
-    let profile = fabric::fetch_profile(mc_version, &loader_ver).map_err(|e| {
-        LauncherError::LoaderInstallFailed(format!("fabric: 获取 profile 失败: {e}"))
-    })?;
+    // 2. 获取 profile JSON（同步HTTP，需spawn_blocking）
+    let mc = mc_version.to_string();
+    let lv = loader_ver.clone();
+    let profile = tokio::task::spawn_blocking(move || fabric::fetch_profile(&mc, &lv))
+        .await
+        .map_err(|e| LauncherError::LoaderInstallFailed(format!("fabric: 获取profile join失败: {e}")))?
+        .map_err(|e| LauncherError::LoaderInstallFailed(format!("fabric: 获取 profile 失败: {e}")))?;
 
     let version_id = profile.id.clone().unwrap_or_else(|| {
         format!("fabric-loader-{loader_ver}-{mc_version}")
@@ -57,7 +61,6 @@ mod tests {
 
     #[test]
     fn test_fabric_version_id_format() {
-        // Fabric profile 的 id 格式通常是 "fabric-loader-<ver>-<mc>"
         let id = "fabric-loader-0.15.11-1.20.1";
         assert!(id.contains("fabric-loader"));
         assert!(id.contains("1.20.1"));

@@ -93,7 +93,9 @@ pub fn launch_game(
             path
         }
         None => {
-            let required_java = mc_version_to_java(version_id)?;
+            // 优先用 inherits_from（加载器版本继承自 Vanilla），否则用 version_id
+            let mc_ver = version.inherits_from.as_deref().unwrap_or(version_id);
+            let required_java = mc_version_to_java(mc_ver)?;
             let registry = JavaRegistry::detect();
             match registry.find(required_java) {
                 Some(rt) => rt.executable.clone(),

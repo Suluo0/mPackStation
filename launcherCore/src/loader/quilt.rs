@@ -21,9 +21,10 @@ pub async fn install_quilt(
     let loader_ver = match loader_version {
         Some(v) => v.to_string(),
         None => {
-            let versions = quilt::list_loader_versions().map_err(|e| {
-                LauncherError::LoaderInstallFailed(format!("quilt: 获取 loader 版本列表失败: {e}"))
-            })?;
+            let versions = tokio::task::spawn_blocking(|| quilt::list_loader_versions())
+                .await
+                .map_err(|e| LauncherError::LoaderInstallFailed(format!("quilt: 获取版本列表join失败: {e}")))?
+                .map_err(|e| LauncherError::LoaderInstallFailed(format!("quilt: 获取 loader 版本列表失败: {e}")))?;
             let latest = quilt::latest_loader(&versions).map_err(|e| {
                 LauncherError::LoaderInstallFailed(format!("quilt: 获取最新版失败: {e}"))
             })?;
@@ -31,10 +32,13 @@ pub async fn install_quilt(
         }
     };
 
-    // 2. 获取 profile JSON
-    let profile = quilt::fetch_profile(mc_version, &loader_ver).map_err(|e| {
-        LauncherError::LoaderInstallFailed(format!("quilt: 获取 profile 失败: {e}"))
-    })?;
+    // 2. 获取 profile JSON（同步HTTP，需spawn_blocking）
+    let mc = mc_version.to_string();
+    let lv = loader_ver.clone();
+    let profile = tokio::task::spawn_blocking(move || quilt::fetch_profile(&mc, &lv))
+        .await
+        .map_err(|e| LauncherError::LoaderInstallFailed(format!("quilt: 获取profile join失败: {e}")))?
+        .map_err(|e| LauncherError::LoaderInstallFailed(format!("quilt: 获取 profile 失败: {e}")))?;
 
     let version_id = profile.id.clone().unwrap_or_else(|| {
         format!("quilt-loader-{loader_ver}-{mc_version}")

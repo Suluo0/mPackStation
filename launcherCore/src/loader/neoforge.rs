@@ -24,10 +24,12 @@ pub async fn install_neoforge(
     let neoforge_ver = match loader_version {
         Some(v) => v.to_string(),
         None => {
-            let versions = neoforge::list_neoforge_versions().map_err(|e| {
-                LauncherError::LoaderInstallFailed(format!("neoforge: 获取版本列表失败: {e}"))
-            })?;
-            let latest = neoforge::latest_for_minecraft(&versions, mc_version).map_err(|e| {
+            let versions = tokio::task::spawn_blocking(|| neoforge::list_neoforge_versions())
+                .await
+                .map_err(|e| LauncherError::LoaderInstallFailed(format!("neoforge: 获取版本列表join失败: {e}")))?
+                .map_err(|e| LauncherError::LoaderInstallFailed(format!("neoforge: 获取版本列表失败: {e}")))?;
+            let mc = mc_version.to_string();
+            let latest = neoforge::latest_for_minecraft(&versions, &mc).map_err(|e| {
                 LauncherError::LoaderInstallFailed(format!("neoforge: 获取最新版失败: {e}"))
             })?;
             latest.to_string()
@@ -59,16 +61,17 @@ pub async fn install_neoforge(
         .map(|j| j.executable.clone())
         .ok_or(LauncherError::JavaNotFound { required: required_java })?;
 
-    // 4. 执行 installer
+    // 4. 执行 installer（同步阻塞，需spawn_blocking）
     let invocation = InstallerInvocation {
         loader: LoaderKind::NeoForge,
         java_executable: java_path,
         installer_path: installer_path.clone(),
         minecraft_dir: minecraft_dir.to_path_buf(),
     };
-    run_loader_installer(&invocation).map_err(|e| {
-        LauncherError::LoaderInstallFailed(format!("neoforge: 执行 installer 失败: {e}"))
-    })?;
+    tokio::task::spawn_blocking(move || run_loader_installer(&invocation))
+        .await
+        .map_err(|e| LauncherError::LoaderInstallFailed(format!("neoforge: installer join失败: {e}")))?
+        .map_err(|e| LauncherError::LoaderInstallFailed(format!("neoforge: 执行 installer 失败: {e}")))?;
 
     // 5. 获取安装后的版本 ID
     let version_id = neoforge::neoforge_installed_version_id(mc_version, &neoforge_ver);
