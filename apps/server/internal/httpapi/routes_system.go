@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"mpackstation/internal/service"
 	"net/http"
 	"time"
@@ -87,6 +88,32 @@ func registerSystemRoutes(mux *http.ServeMux, app *service.API, version string) 
 			return
 		}
 		WriteJSON(w, http.StatusAccepted, map[string]any{"launched": true})
+	})
+	mux.HandleFunc("POST /api/launcher/install", func(w http.ResponseWriter, r *http.Request) {
+		var p service.LauncherInstallPayload
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			writeError(w, r, &service.DomainError{Status: 400, Code: "bad_request", Message: err.Error()})
+			return
+		}
+		t, _, err := app.SubmitLauncherInstall(r.Context(), p)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusAccepted, map[string]any{"taskId": t.ID})
+	})
+	mux.HandleFunc("POST /api/launcher/launch", func(w http.ResponseWriter, r *http.Request) {
+		var p service.LauncherLaunchPayload
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			writeError(w, r, &service.DomainError{Status: 400, Code: "bad_request", Message: err.Error()})
+			return
+		}
+		t, _, err := app.SubmitLauncherLaunch(r.Context(), p)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusAccepted, map[string]any{"taskId": t.ID})
 	})
 	mux.HandleFunc("GET /api/meta/mc-versions", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.MCVersions(r.Context())

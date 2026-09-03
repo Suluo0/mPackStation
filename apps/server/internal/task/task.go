@@ -32,6 +32,10 @@ const (
 	// first-class task so success is judged from the task log, not hope.
 	KindToolInstall Kind = "tool_install"
 	KindCacheGC     Kind = "cache_gc"
+	// KindLauncherInstall installs a Minecraft version via mPackLauncher.
+	KindLauncherInstall Kind = "launcher_install"
+	// KindLauncherLaunch launches Minecraft via mPackLauncher.
+	KindLauncherLaunch Kind = "launcher_launch"
 )
 
 // Status is the durable lifecycle state of a task.

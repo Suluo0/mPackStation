@@ -36,7 +36,7 @@ type migration struct {
 }
 
 // CurrentSchemaVersion is the highest migration shipped by this binary.
-const CurrentSchemaVersion = 6
+const CurrentSchemaVersion = 7
 
 // V7AcceptanceEvidence is a documentation anchor used by the human-readable
 // schema acceptance examples.

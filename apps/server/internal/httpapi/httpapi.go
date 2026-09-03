@@ -88,6 +88,8 @@ func NewRouterWithProviders(db *sql.DB, version, token string, reg *provider.Reg
 	if q != nil {
 		app.SetTaskQueue(q)
 		_ = q.RegisterHandler(task.KindToolInstall, task.HandlerFunc(app.HandleToolInstallTask))
+		_ = q.RegisterHandler(task.KindLauncherInstall, task.HandlerFunc(app.HandleLauncherInstallTask))
+		_ = q.RegisterHandler(task.KindLauncherLaunch, task.HandlerFunc(app.HandleLauncherLaunchTask))
 	}
 	p7 := service.NewP7Service(db)
 	p7.SetProviderRegistry(reg)
