@@ -525,6 +525,29 @@
         }
       ],
       "updated_at": "2026-09-03T13:00:00Z"
+    },
+    {
+      "id": "task-launcher-m3",
+      "title": "mPackLauncher M3: Java自动下载+微软OAuth+keyring凭证",
+      "status": "planned",
+      "verification": "not_started",
+      "acceptance": "not_started",
+      "summary": "Java运行时自动下载(Mojang/BMCLAPI runtime清单) + 微软OAuth device code登录 + keyring凭证存储 + Java选择策略(Auto/VersionFolder/Forced)",
+      "depends_on": [
+        "task-launcher-m2"
+      ],
+      "notes": [
+        "Java检测方案已调研确认：",
+        "1. 快速路径(启动时自动执行): 注册表(HKLM/HKCU JavaSoft JDK) + JAVA_HOME + PATH + 启动器runtime目录",
+        "2. 深度扫描(用户主动触发/首次启动): 全盘3层目录扫描 + 跳过规则 + 关键词前缀匹配 + bin/java.exe验证",
+        "3. 跳过目录: Windows, ProgramData, node_modules, .git, Common Files, .Bin, System Volume Information等",
+        "4. 匹配规则: 前缀匹配 ^(jdk|jre|java|temurin|zulu|corretto|adoptium|semeru|liberica|openjdk|graalvm), 避免javascript/javax误匹配",
+        "5. 基准测试: C+D盘扫描0.19秒, 1441目录, 找到6个真实Java(无遗漏)",
+        "6. Java下载与Java检测是独立模块: 下载就是传版本参数从Mojang/BMCLAPI拉runtime, 下载到runtime/{component}/, 注册到JavaRegistry",
+        "7. Java选择策略参考PCL2: Auto(自动选择+自动下载), VersionFolder(版本文件夹内), Forced(强制指定)",
+        "8. Java版本需求用范围而非单一版本, Forge/Fabric/NeoForge有额外上下限约束"
+      ],
+      "evidence": []
     }
   ],
   "issues": [
