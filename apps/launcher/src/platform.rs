@@ -156,15 +156,53 @@ pub fn ensure_disk_space(path: &std::path::Path, needed_mb: u64) -> Result<()> {
     Ok(())
 }
 
-/// 路径安全检查：防止目录穿越
-pub fn validate_safe_path(base: &std::path::Path, target: &std::path::Path) -> Result<PathBuf> {
-    let canonical_base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
-    let canonical_target = target.canonicalize().unwrap_or_else(|_| target.to_path_buf());
+/// 去除 Windows 扩展路径前缀 \\?\
+fn strip_verbatim_prefix(path: &std::path::Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        path.to_path_buf()
+    }
+}
 
-    if !canonical_target.starts_with(&canonical_base) {
+/// 路径安全检查：防止目录穿越
+///
+/// 规则：target 解析后的最终路径必须在 base 目录内。
+/// 使用 components() 逐项检查，不依赖 canonicalize（目标文件可能尚不存在）。
+pub fn validate_safe_path(base: &std::path::Path, target: &std::path::Path) -> Result<PathBuf> {
+    // base 必须存在且可 canonicalize
+    let canonical_base = base.canonicalize().map_err(|_| {
+        LauncherError::UnsafePath(format!("base 路径不存在: {}", base.display()))
+    })?;
+    let base_normalized = strip_verbatim_prefix(&canonical_base);
+
+    // 如果 target 是绝对路径，直接使用；否则拼接到 base 下
+    let candidate = if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        base_normalized.join(target)
+    };
+
+    // 用 components 规范化（处理 .. 和 .）
+    let mut normalized: Vec<std::path::Component> = Vec::new();
+    for component in candidate.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => normalized.push(other),
+        }
+    }
+    let normalized_path: PathBuf = normalized.iter().collect();
+
+    // 最终路径必须在 base 内
+    if !normalized_path.starts_with(&base_normalized) {
         return Err(LauncherError::UnsafePath(
-            canonical_target.to_string_lossy().to_string(),
+            normalized_path.to_string_lossy().to_string(),
         ));
     }
-    Ok(canonical_target)
+
+    Ok(normalized_path)
 }

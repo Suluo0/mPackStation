@@ -10,27 +10,27 @@ use crate::error::LauncherError;
 pub struct Protocol;
 
 impl Protocol {
-    /// 输出阶段变化事件
+    /// 输出阶段变化事件到 stdout
     pub fn phase(phase: &str, message: &str) {
         let event = json!({
             "type": "phase",
             "phase": phase,
             "message": message,
         });
-        Self::emit(&event);
+        Self::emit_to(&event, &mut io::stdout().lock());
     }
 
-    /// 输出成功结果
+    /// 输出成功结果到 stdout
     pub fn success(data: Value) {
         let event = json!({
             "type": "result",
             "success": true,
             "data": data,
         });
-        Self::emit(&event);
+        Self::emit_to(&event, &mut io::stdout().lock());
     }
 
-    /// 输出失败结果
+    /// 输出失败结果到 stdout
     pub fn failure(error: &LauncherError) {
         let mut event = json!({
             "type": "result",
@@ -41,14 +41,44 @@ impl Protocol {
         if let Some(s) = error.suggestion() {
             event["suggestion"] = json!(s);
         }
-        Self::emit(&event);
+        Self::emit_to(&event, &mut io::stdout().lock());
     }
 
-    fn emit(event: &Value) {
-        let stdout = io::stdout();
-        let mut lock = stdout.lock();
-        // stdout 写入失败意味着进程已无法继续输出，直接忽略
-        let _ = writeln!(lock, "{}", serde_json::to_string(event).unwrap_or_default());
+    /// 写入事件到指定 writer（用于测试捕获）
+    pub fn emit_to<W: Write>(event: &Value, writer: &mut W) {
+        let _ = writeln!(writer, "{}", serde_json::to_string(event).unwrap_or_default());
+    }
+
+    /// 构建 phase 事件（不输出，用于测试）
+    pub fn build_phase(phase: &str, message: &str) -> Value {
+        json!({
+            "type": "phase",
+            "phase": phase,
+            "message": message,
+        })
+    }
+
+    /// 构建 success 事件（不输出，用于测试）
+    pub fn build_success(data: Value) -> Value {
+        json!({
+            "type": "result",
+            "success": true,
+            "data": data,
+        })
+    }
+
+    /// 构建 failure 事件（不输出，用于测试）
+    pub fn build_failure(error: &LauncherError) -> Value {
+        let mut event = json!({
+            "type": "result",
+            "success": false,
+            "error": error.error_type(),
+            "message": error.to_string(),
+        });
+        if let Some(s) = error.suggestion() {
+            event["suggestion"] = json!(s);
+        }
+        event
     }
 }
 

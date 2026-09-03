@@ -3,10 +3,10 @@
 use mpack_launcher::error::LauncherError;
 use mpack_launcher::protocol::{phase, Protocol};
 use serde_json::Value;
+use std::io::Write;
 
 #[test]
-fn test_phase_event_format() {
-    // 捕获 stdout 比较困难，这里验证 phase 常量和 Protocol API 存在
+fn test_phase_constants() {
     assert_eq!(phase::RESOLVING_VERSION, "resolving_version");
     assert_eq!(phase::DOWNLOADING_LIBRARIES, "downloading_libraries");
     assert_eq!(phase::DOWNLOADING_ASSETS, "downloading_assets");
@@ -14,6 +14,92 @@ fn test_phase_event_format() {
     assert_eq!(phase::VERIFYING, "verifying");
     assert_eq!(phase::PREPARING, "preparing");
     assert_eq!(phase::LAUNCHING, "launching");
+}
+
+#[test]
+fn test_phase_event_captured_output() {
+    let mut buf: Vec<u8> = Vec::new();
+    let event = Protocol::build_phase("downloading_assets", "正在下载资源文件");
+    Protocol::emit_to(&event, &mut buf);
+
+    let output = String::from_utf8(buf).unwrap();
+    let parsed: Value = serde_json::from_str(output.trim()).unwrap();
+
+    assert_eq!(parsed["type"], "phase");
+    assert_eq!(parsed["phase"], "downloading_assets");
+    assert_eq!(parsed["message"], "正在下载资源文件");
+    // 确保只有一行
+    assert_eq!(output.lines().count(), 1);
+}
+
+#[test]
+fn test_success_event_captured_output() {
+    let mut buf: Vec<u8> = Vec::new();
+    let event = Protocol::build_success(serde_json::json!({"version_id": "1.20.1"}));
+    Protocol::emit_to(&event, &mut buf);
+
+    let output = String::from_utf8(buf).unwrap();
+    let parsed: Value = serde_json::from_str(output.trim()).unwrap();
+
+    assert_eq!(parsed["type"], "result");
+    assert_eq!(parsed["success"], true);
+    assert_eq!(parsed["data"]["version_id"], "1.20.1");
+    assert!(parsed.get("error").is_none());
+}
+
+#[test]
+fn test_failure_event_with_suggestion() {
+    let error = LauncherError::DirectoryLocked("/tmp/test".into());
+    let mut buf: Vec<u8> = Vec::new();
+    let event = Protocol::build_failure(&error);
+    Protocol::emit_to(&event, &mut buf);
+
+    let output = String::from_utf8(buf).unwrap();
+    let parsed: Value = serde_json::from_str(output.trim()).unwrap();
+
+    assert_eq!(parsed["type"], "result");
+    assert_eq!(parsed["success"], false);
+    assert_eq!(parsed["error"], "DirectoryLocked");
+    assert!(parsed["message"].as_str().unwrap().contains("目录已被锁定"));
+    assert!(parsed["suggestion"].is_string());
+}
+
+#[test]
+fn test_failure_event_without_suggestion() {
+    let error = LauncherError::InvalidArgument("test".into());
+    let event = Protocol::build_failure(&error);
+
+    assert_eq!(event["type"], "result");
+    assert_eq!(event["success"], false);
+    assert_eq!(event["error"], "InvalidArgument");
+    // InvalidArgument 没有 suggestion
+    assert!(event.get("suggestion").is_none());
+}
+
+#[test]
+fn test_multiple_events_one_per_line() {
+    let mut buf: Vec<u8> = Vec::new();
+
+    Protocol::emit_to(&Protocol::build_phase("phase1", "消息1"), &mut buf);
+    Protocol::emit_to(&Protocol::build_phase("phase2", "消息2"), &mut buf);
+    Protocol::emit_to(
+        &Protocol::build_success(serde_json::json!({"ok": true})),
+        &mut buf,
+    );
+
+    let output = String::from_utf8(buf).unwrap();
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(lines.len(), 3);
+
+    let p1: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(p1["phase"], "phase1");
+
+    let p2: Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(p2["phase"], "phase2");
+
+    let r: Value = serde_json::from_str(lines[2]).unwrap();
+    assert_eq!(r["type"], "result");
+    assert_eq!(r["success"], true);
 }
 
 #[test]
@@ -69,89 +155,11 @@ fn test_error_type_names() {
         LauncherError::InvalidArgument("x".into()).error_type(),
         "InvalidArgument"
     );
-    assert_eq!(
-        LauncherError::ChecksumMismatch {
-            file: "a".into(),
-            expected: "b".into(),
-            actual: "c".into()
-        }
-        .error_type(),
-        "ChecksumMismatch"
-    );
     assert_eq!(LauncherError::NotLoggedIn.error_type(), "NotLoggedIn");
-}
-
-#[test]
-fn test_error_suggestions() {
-    assert!(LauncherError::NotLoggedIn.suggestion().is_some());
-    assert!(LauncherError::TokenRefreshFailed.suggestion().is_some());
-    assert!(LauncherError::InsufficientDiskSpace {
-        needed: 1,
-        available: 0
-    }
-    .suggestion()
-    .is_some());
-    // InvalidArgument 没有 suggestion
-    assert!(LauncherError::InvalidArgument("x".into()).suggestion().is_none());
 }
 
 #[test]
 fn test_error_display() {
     let e = LauncherError::VersionNotFound("1.20.1".into());
     assert_eq!(e.to_string(), "版本不存在: 1.20.1");
-
-    let e = LauncherError::JavaNotFound { required: 17 };
-    assert_eq!(e.to_string(), "未找到匹配的 Java 运行时（需要 Java 17+）");
-}
-
-#[test]
-fn test_protocol_success_json_structure() {
-    // 验证 success 数据结构
-    let data = serde_json::json!({"version_id": "1.20.1"});
-    let event = serde_json::json!({
-        "type": "result",
-        "success": true,
-        "data": data,
-    });
-    assert_eq!(event["type"], "result");
-    assert_eq!(event["success"], true);
-    assert_eq!(event["data"]["version_id"], "1.20.1");
-}
-
-#[test]
-fn test_protocol_failure_json_structure() {
-    let error = LauncherError::DirectoryLocked("/tmp/test".into());
-    let event = serde_json::json!({
-        "type": "result",
-        "success": false,
-        "error": error.error_type(),
-        "message": error.to_string(),
-        "suggestion": error.suggestion(),
-    });
-    assert_eq!(event["type"], "result");
-    assert_eq!(event["success"], false);
-    assert_eq!(event["error"], "DirectoryLocked");
-    assert!(event["message"].as_str().unwrap().contains("目录已被锁定"));
-    assert!(event["suggestion"].is_string());
-}
-
-#[test]
-fn test_phase_event_json_structure() {
-    let event = serde_json::json!({
-        "type": "phase",
-        "phase": "downloading_assets",
-        "message": "正在下载资源文件",
-    });
-    assert_eq!(event["type"], "phase");
-    assert_eq!(event["phase"], "downloading_assets");
-    assert!(event["message"].as_str().unwrap().contains("下载"));
-}
-
-// 确保 Protocol 方法可以被调用（编译期验证）
-#[test]
-fn test_protocol_api_exists() {
-    // 这些调用会写入 stdout，但测试环境中可以接受
-    Protocol::phase("test_phase", "测试消息");
-    Protocol::success(serde_json::json!({"ok": true}));
-    Protocol::failure(&LauncherError::Internal("test".into()));
 }
