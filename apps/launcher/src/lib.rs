@@ -15,3 +15,5 @@ pub mod launch;
 pub mod java;
 pub mod auth;
 pub mod loader;
+
+pub use error::{LauncherError, Result};

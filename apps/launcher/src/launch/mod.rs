@@ -1,7 +1,7 @@
-//! 启动能力模块
-//!
-//! 负责：启动命令构建、进程管理（spawn/detach/wait/kill）
-//! M1 里程碑实现
+//! 启动模块：命令构建 + 进程管理
 
 pub mod command;
 pub mod process;
+
+pub use command::{build_command, LaunchParams};
+pub use process::{spawn_detached, GameProcess};

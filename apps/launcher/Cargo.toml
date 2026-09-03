@@ -9,7 +9,7 @@ description = "mPackLauncher - Minecraft launcher core for mPackStation"
 clap = { version = "4", features = ["derive", "env"] }
 
 # HTTP
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 
 # 序列化
 serde = { version = "1", features = ["derive"] }
@@ -30,6 +30,7 @@ fs2 = "0.4"
 
 # 异步运行时
 tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
 
 # Minecraft 启动器核心库
 mc-launcher-core = "0.1.2"
