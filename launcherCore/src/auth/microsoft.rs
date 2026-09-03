@@ -14,8 +14,8 @@ use serde::Deserialize;
 use crate::error::LauncherError;
 use crate::Result;
 
-/// Minecraft 官方启动器的 Azure client_id（公开，第三方启动器通用）
-const CLIENT_ID: &str = "00000000402b5328";
+/// Azure 应用 client_id（开发测试用 Prism Launcher 的公开 ID，正式发布需自己注册并过审）
+const CLIENT_ID: &str = "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb";
 const SCOPE: &str = "XboxLive.signin offline_access";
 
 /// Device code 响应
@@ -30,6 +30,7 @@ pub struct DeviceCodeResponse {
 
 /// Token 响应
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct TokenResponse {
     access_token: String,
     #[serde(default)]
@@ -40,6 +41,7 @@ struct TokenResponse {
 
 /// Xbox Live 认证响应
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct XblAuthResponse {
     #[serde(rename = "Token")]
     token: String,
@@ -48,17 +50,20 @@ struct XblAuthResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct XblDisplayClaims {
     xui: Vec<XblXui>,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct XblXui {
     uhs: String,
 }
 
 /// XSTS 认证响应
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct XstsAuthResponse {
     #[serde(rename = "Token")]
     token: String,
@@ -68,6 +73,7 @@ struct XstsAuthResponse {
 
 /// Minecraft 登录响应
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct MinecraftLoginResponse {
     access_token: String,
     #[serde(default)]

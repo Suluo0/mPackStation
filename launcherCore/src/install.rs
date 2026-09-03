@@ -53,6 +53,22 @@ pub async fn install_vanilla(
     let downloader = Downloader::new(mirror);
     downloader.download_version(&version, minecraft_dir).await?;
 
+    // 5.5 解压 natives（原生库 .dll/.so/.dylib）
+    Protocol::phase(protocol::phase::VERIFYING, "正在解压原生库");
+    let version_for_natives = version.clone();
+    let mc_dir = minecraft_dir.to_path_buf();
+    let vid = version_id.to_string();
+    tokio::task::spawn_blocking(move || {
+        mc_launcher_core::install::natives::extract_natives(
+            &version_for_natives.libraries,
+            &mc_dir,
+            &vid,
+        )
+    })
+    .await
+    .map_err(|e| LauncherError::Internal(format!("解压 natives 任务失败: {}", e)))?
+    .map_err(|e| LauncherError::Internal(format!("解压 natives 失败: {}", e)))?;
+
     // 6. 校验完成
     Protocol::phase(protocol::phase::VERIFYING, "安装完成");
     Protocol::success(serde_json::json!({
