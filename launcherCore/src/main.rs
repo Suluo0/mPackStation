@@ -7,7 +7,7 @@ use mpack_launcher::protocol::Protocol;
 use serde_json::json;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), LauncherError> {
     let cli = Cli::parse();
 
     // 初始化日志（stderr，与 stdout 协议分离）
@@ -19,7 +19,7 @@ async fn main() {
         ))
         .init();
 
-    let result = match cli.command {
+    let result: Result<(), LauncherError> = match cli.command {
         Command::Version => {
             Protocol::success(json!({
                 "name": "mpack-launcher",
@@ -28,26 +28,12 @@ async fn main() {
             Ok(())
         }
         Command::Install(args) => {
-            let mirror = Mirror::from_str(&args.mirror);
-            if args.loader != "vanilla" {
-                Err(LauncherError::Internal(format!(
-                    "加载器 {} 将在 M2 里程碑实现",
-                    args.loader
-                )))
-            } else {
-                match mpack_launcher::install::install_vanilla(
-                    &args.dir,
-                    &args.mc,
-                    mirror,
-                )
-                .await
-                {
-                    Ok(version_id) => {
-                        Protocol::success(json!({ "version_id": version_id }));
-                        Ok(())
-                    }
-                    Err(e) => Err(e),
+            match run_install(&args).await {
+                Ok(version_id) => {
+                    Protocol::success(json!({ "version_id": version_id }));
+                    Ok(())
                 }
+                Err(e) => Err(e),
             }
         }
         Command::Launch(args) => {
@@ -115,6 +101,33 @@ async fn main() {
         tracing::error!("{}", e);
         std::process::exit(exit_code);
     }
+    Ok(())
+}
+
+/// 执行安装（Vanilla 或加载器）
+async fn run_install(args: &mpack_launcher::cli::InstallArgs) -> Result<String, LauncherError> {
+    use mpack_launcher::loader::{LoaderInstaller, LoaderType};
+    let mirror = Mirror::from_str(&args.mirror);
+    if args.loader == "vanilla" {
+        return mpack_launcher::install::install_vanilla(&args.dir, &args.mc, mirror).await;
+    }
+    let loader_type = match args.loader.as_str() {
+        "fabric" => LoaderType::Fabric,
+        "quilt" => LoaderType::Quilt,
+        "forge" => LoaderType::Forge,
+        "neoforge" => LoaderType::NeoForge,
+        other => return Err(LauncherError::Internal(format!("不支持的加载器: {}", other))),
+    };
+    let java_registry = JavaRegistry::detect();
+    let installer = LoaderInstaller::new(&args.dir, mirror);
+    let loader_ver = if args.loader_version == "latest" {
+        None
+    } else {
+        Some(args.loader_version.as_str())
+    };
+    installer
+        .install(&args.mc, loader_type, loader_ver, &java_registry)
+        .await
 }
 
 /// 解析内存字符串为 MB（如 "2G" → 2048, "512M" → 512）
