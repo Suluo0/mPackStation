@@ -343,7 +343,7 @@ func (r *Repository) TodayResolvedCount(ctx context.Context, startMs int64) (int
 }
 
 func (r *Repository) ListTasks(ctx context.Context, limit int) ([]TaskRecord, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT t.id,COALESCE(t.pack_id,''),t.kind,t.title,t.status,t.progress,t.error_code,t.error_message,t.created_at,t.started_at,t.finished_at,COALESCE(p.name,'') FROM tasks t LEFT JOIN packs p ON p.id=t.pack_id WHERE t.kind IN ('index','build','import','resolve') ORDER BY t.created_at DESC,t.id DESC LIMIT ?`, limit)
+	rows, err := r.db.QueryContext(ctx, `SELECT t.id,COALESCE(t.pack_id,''),t.kind,t.title,t.status,t.progress,t.error_code,t.error_message,t.created_at,t.started_at,t.finished_at,COALESCE(p.name,'') FROM tasks t LEFT JOIN packs p ON p.id=t.pack_id WHERE t.kind IN ('index','build','import','resolve','catalog_init','tool_install','launcher_install','launcher_launch','parse_mod_content') ORDER BY t.created_at DESC,t.id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}

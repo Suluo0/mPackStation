@@ -585,12 +585,17 @@ func canonicalExportDir(raw string) (string, error) {
 }
 
 func verifyExportDir(dir string) error {
-	info, err := os.Stat(dir)
-	if err != nil || !info.IsDir() {
+	// Reject only when the export path itself is a symlink. Parent-prefix
+	// symlinks are normal on macOS (/var -> /private/var, TempDir, etc.) and
+	// must not fail an otherwise marker-verified directory.
+	fi, err := os.Lstat(dir)
+	if err != nil {
 		return ErrExportDirNotAllowed
 	}
-	resolved, err := filepath.EvalSymlinks(dir)
-	if err != nil || filepath.Clean(resolved) != filepath.Clean(dir) {
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return ErrExportDirNotAllowed
+	}
+	if !fi.IsDir() {
 		return ErrExportDirNotAllowed
 	}
 	if info, err := os.Stat(filepath.Join(dir, ".mpackstation-export")); err != nil || !info.Mode().IsRegular() {
