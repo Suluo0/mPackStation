@@ -410,12 +410,42 @@ func (h *HTTPAdapter) Download(ctx context.Context, q DownloadRequest) (Download
 	if e != nil {
 		return DownloadResult{}, e
 	}
-	for _, f := range m.Version.Files {
-		if f.Primary || len(m.Version.Files) == 1 {
-			return DownloadResult{ProjectID: q.ProjectID, VersionID: m.Version.ID, FileName: f.Name, DownloadURL: f.DownloadURL, SHA1: f.SHA1, SHA256: f.SHA256, Size: f.Size}, nil
+	var chosen *File
+	for i := range m.Version.Files {
+		if m.Version.Files[i].Primary || len(m.Version.Files) == 1 {
+			chosen = &m.Version.Files[i]
+			break
 		}
 	}
-	return DownloadResult{}, ErrNotFound
+	if chosen == nil {
+		return DownloadResult{}, ErrNotFound
+	}
+	req, e := http.NewRequestWithContext(ctx, http.MethodGet, chosen.DownloadURL, nil)
+	if e != nil {
+		return DownloadResult{}, ErrUnavailable
+	}
+	resp, e := h.client.Do(req)
+	if e != nil {
+		return DownloadResult{}, ErrUnavailable
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return DownloadResult{}, fmt.Errorf("provider download returned HTTP %d", resp.StatusCode)
+	}
+	const maxBytes = 200 * 1024 * 1024
+	content, e := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if e != nil {
+		return DownloadResult{}, ErrUnavailable
+	}
+	if len(content) > maxBytes {
+		return DownloadResult{}, fmt.Errorf("provider download exceeds %d MB limit", maxBytes/(1024*1024))
+	}
+	return DownloadResult{
+		ProjectID: q.ProjectID, VersionID: m.Version.ID,
+		FileName: chosen.Name, DownloadURL: chosen.DownloadURL,
+		SHA1: chosen.SHA1, SHA256: chosen.SHA256, Size: chosen.Size,
+		Content: content,
+	}, nil
 }
 func (h *HTTPAdapter) Publish(context.Context, PublishRequest) (PublishResult, error) {
 	return PublishResult{}, ErrUnavailable

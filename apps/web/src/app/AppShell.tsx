@@ -3,11 +3,12 @@ import {NavLink, Outlet, useLocation, useNavigate} from 'react-router-dom';
 import {
   AppstoreOutlined, BookOutlined, CodeSandboxOutlined, DatabaseOutlined, DoubleLeftOutlined,
   EditOutlined, FileTextOutlined, FolderOpenOutlined, HomeOutlined, CheckCircleOutlined, RocketOutlined,
-  WarningOutlined, SettingOutlined, SearchOutlined, ApartmentOutlined,
+  WarningOutlined, SettingOutlined, SearchOutlined, ApartmentOutlined, PlayCircleOutlined,
 } from '@ant-design/icons';
 import './shell.css';
 import {fetchOnboarding, type Onboarding} from '../api/onboarding';
 import {listPacks} from '../api/packs';
+import {fetchDashboard, type DashboardPack} from '../api/dashboard';
 import {OnboardingChecklist} from '../features/dashboard/OnboardingChecklist';
 
 /* 应用外壳：左侧导航 + 顶栏 + 内容区，所有页面共享。 */
@@ -24,6 +25,7 @@ const packNav = [
   {suffix: '/content', label: '内容编辑', icon: <EditOutlined/>},
   {suffix: '/quests', label: '任务书', icon: <BookOutlined/>},
   {suffix: '/publish', label: '打包与发布', icon: <RocketOutlined/>},
+  {suffix: '/launcher', label: '启动器', icon: <PlayCircleOutlined/>},
 ];
 
 export function AppShell() {
@@ -43,6 +45,15 @@ export function AppShell() {
     void listPacks().then(ps => setFirstPackId(ps[0]?.id ?? '')).catch(() => setFirstPackId(''));
   }, [packId]);
   const activePackId = packId ?? firstPackId ?? '';
+  /* 底边栏状态数据：跟随当前激活包，来自 /api/dashboard 聚合读模型。 */
+  const [dashPacks, setDashPacks] = useState<DashboardPack[]>([]);
+  useEffect(() => {
+    void fetchDashboard().then(d => setDashPacks(d.packs)).catch(() => setDashPacks([]));
+  }, [location.pathname]);
+  const activePack = dashPacks.find(p => p.id === activePackId) ?? null;
+  const modTotal = activePack?.modCount.total ?? 0;
+  const modInstalled = activePack?.modCount.installed ?? 0;
+  const alertCount = (activePack?.alerts.crashes ?? 0) + (activePack?.alerts.updatable ?? 0);
   return (
     <div className={collapsed ? 'app-shell app-shell-collapsed' : 'app-shell'}>
       <aside className="app-sider">
@@ -91,13 +102,13 @@ export function AppShell() {
         </main>
       </div>
       <OnboardingChecklist onboarding={onboarding} onSettings={() => navigate('/settings')} onRefresh={refreshOnboarding} />
-      {inPack && <footer className="app-statusbar">
-        <div className="app-status-item"><span className="app-status-icon"><DatabaseOutlined /></span><div><strong>0 个模组</strong><small>模组库总数</small></div></div>
-        <div className="app-status-item"><span className="app-status-check"><CheckCircleOutlined /></span><div><strong>0 已安装</strong><small>已选择模组</small></div></div>
+      <footer className="app-statusbar">
+        <div className="app-status-item"><span className="app-status-icon"><DatabaseOutlined /></span><div><strong>{modTotal} 个模组</strong><small>模组库总数</small></div></div>
+        <div className="app-status-item"><span className="app-status-check"><CheckCircleOutlined /></span><div><strong>{modInstalled} 已安装</strong><small>已选择模组</small></div></div>
         <div className="app-status-item app-status-index"><span className="app-status-icon"><AppstoreOutlined /></span><div className="app-status-index-body"><div className="app-status-index-head"><strong>索引进度</strong><b>待开始</b></div><div className="app-status-progress"><i /></div><small>创建整合包后自动扫描</small></div></div>
-        <div className="app-status-item app-status-alert"><span className="app-status-warn"><WarningOutlined /></span><div><strong>0 个告警</strong><small>健康状态良好</small></div></div>
+        <div className="app-status-item app-status-alert"><span className="app-status-warn"><WarningOutlined /></span><div><strong>{alertCount > 0 ? `${alertCount} 个告警` : '0 个告警'}</strong><small>{alertCount > 0 ? '存在待处理告警' : '健康状态良好'}</small></div></div>
         <div className="app-status-actions"><button><FileTextOutlined /> 查看日志</button><button><FolderOpenOutlined /> 输出目录</button></div>
-      </footer>}
+      </footer>
     </div>
   );
 }

@@ -90,6 +90,8 @@ func NewRouterWithProviders(db *sql.DB, version, token string, reg *provider.Reg
 		_ = q.RegisterHandler(task.KindToolInstall, task.HandlerFunc(app.HandleToolInstallTask))
 		_ = q.RegisterHandler(task.KindLauncherInstall, task.HandlerFunc(app.HandleLauncherInstallTask))
 		_ = q.RegisterHandler(task.KindLauncherLaunch, task.HandlerFunc(app.HandleLauncherLaunchTask))
+		_ = q.RegisterHandler(task.KindParseModContent, task.HandlerFunc(app.HandleParseModContentTask))
+		_ = q.RegisterHandler(task.KindCatalogInit, task.HandlerFunc(app.HandleCatalogInitTask))
 	}
 	p7 := service.NewP7Service(db)
 	p7.SetProviderRegistry(reg)
@@ -104,6 +106,8 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	registerPackRoutes(mux, app)
 	registerModRoutes(mux, app)
 	registerContentRoutes(mux, app)
+	registerModContentRoutes(mux, app)
+	registerCatalogRoutes(mux, app)
 	registerPublishRoutes(mux, app, taskAPI, p7, version)
 	registerImportRoutes(mux, importer)
 	return requestIDMiddleware(accessLogMiddleware(recoverMiddleware(maxBodyMiddleware(securityMiddleware(token, fallbackEnvelopeMiddleware(mux))))))
@@ -254,6 +258,15 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		apiError(w, r, http.StatusConflict, "conflict", "resource conflict")
 	case errors.Is(err, service.ErrInvalidArgument):
 		apiError(w, r, http.StatusBadRequest, "invalid_argument", "request argument is invalid")
+	// mod content extraction
+	case errors.Is(err, service.ErrModContentNotParsed):
+		apiError(w, r, http.StatusNotFound, "content_not_parsed", "mod content has not been parsed yet")
+	case errors.Is(err, service.ErrModContentAlreadyCurrent):
+		apiError(w, r, http.StatusConflict, "parse_already_current", "content already parsed for this jar version")
+	case errors.Is(err, service.ErrJarBytesUnavailable):
+		apiError(w, r, http.StatusUnprocessableEntity, "jar_bytes_unavailable", "mod jar bytes are not available for parsing")
+	case errors.Is(err, service.ErrInvalidContentKind):
+		apiError(w, r, http.StatusBadRequest, "invalid_kind", "content kind is not valid")
 	case service.IsTaskUnavailable(err), errors.Is(err, service.ErrUnavailable):
 		apiError(w, r, http.StatusServiceUnavailable, "not_ready", "service is not ready")
 	default:

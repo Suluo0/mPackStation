@@ -36,6 +36,10 @@ const (
 	KindLauncherInstall Kind = "launcher_install"
 	// KindLauncherLaunch launches Minecraft via mPackLauncher.
 	KindLauncherLaunch Kind = "launcher_launch"
+	// KindParseModContent extracts data-driven game content from a mod jar.
+	KindParseModContent Kind = "parse_mod_content"
+	// KindCatalogInit imports the selected Minecraft version into the pack catalog.
+	KindCatalogInit Kind = "catalog_init"
 )
 
 // Status is the durable lifecycle state of a task.
@@ -1065,7 +1069,7 @@ func validateSubmit(request SubmitRequest) error {
 
 func validKind(kind Kind) bool {
 	switch kind {
-	case KindResolve, KindDownload, KindIndex, KindBuild, KindPublish, KindImport, KindCacheGC, KindToolInstall:
+	case KindResolve, KindDownload, KindIndex, KindBuild, KindPublish, KindImport, KindCacheGC, KindToolInstall, KindLauncherInstall, KindLauncherLaunch, KindParseModContent, KindCatalogInit:
 		return true
 	}
 	return false

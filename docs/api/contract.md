@@ -62,7 +62,7 @@
 ### `Mod`
 
 ```json
-{"id":"...","packId":"...","source":"modrinth","projectId":"...","versionId":"...","displayName":"JEI","fileName":"jei.jar","sha1":"...","status":"installed","required":true,"addedAt":"...","updatedAt":"..."}
+{"id":"...","canonicalModId":"jei","selectionId":"selection-...","packId":"...","source":"modrinth","projectId":"...","versionId":"...","displayName":"JEI","fileName":"jei.jar","sha1":"...","status":"installed","required":true,"origin":"manual","addedAt":"...","updatedAt":"..."}
 ```
 
 ### `Lock` / `Conflict`
@@ -607,9 +607,9 @@ MC 版本候选，创建包下拉用。
 
 #### `GET /api/packs/{packId}/mods`
 
-包内模组清单。
+包内普通模组清单。`canonicalModId` 来自已验证 JAR 的模组声明；尚未取得文件声明时为空字符串，平台项目号不会被当作模组 ID。
 
-**(a) 请求参数** — `packId`；query `limit`（默认 50，上限 200）、`cursor`
+**(a) 请求参数** — `packId`；内容选择器传 `includeBuiltin=true` 时返回包括内置 `canonicalModId=minecraft` 在内的完整内容来源列表。
 **(b) 校验** — 出参信封 `{items: Mod[], next_cursor, total}`，分页
 **(c) 异常处理** — 400 `invalid_argument` / 404 `pack_not_found` / 503 `not_ready`
 
@@ -1045,3 +1045,42 @@ MC 版本候选，创建包下拉用。
 历史缺口的详细状态不再维护在接口正文中，统一见 [`implementation-audit-2026-08-30.md`](./implementation-audit-2026-08-30.md) 及后续 `audit/` 文件。本节仅保留索引，避免契约与状态重复漂移。
 
 当前待决策项和执行顺序记录在项目计划/issue 中，不作为接口契约的一部分。
+
+## 6. 模组物品图标解析（2026-09-07）
+
+`POST /api/packs/{packId}/mods/{modId}/content/icons/resolve`，请求体 `{}`，要求现有 `X-MPack-Token`、Host/Origin 安全校验。
+
+响应 `200`：
+
+- `items: ModContentItem[]`：32×32 PNG 图标，kind=`item_icon`，payload 包含 mime/data/size/source。source 为 generated 或 elements。
+- `mcVersion: string`：当前包的 Minecraft 版本，原版 client JAR 严格按该版本取资源，不回退到其他版本。
+- `tagIcons: Record<string,string>`：`#namespace:tag` 到代表物品 ID 的展示映射，**不是标签全集，也不改变配方语义**。
+- `missing: string[]`：不能静态生成图标的模型对应 ID，可能包含辅助模型，不能当作缺失注册物品数。
+- `warnings: string[]`：原版资源获取失败时返回明确提示，保留可生成的模组图标。可重复调用重试。
+
+缺失/跨包模组返回 `404 mod_not_found`，未授权返回 `401`，非法游戏版本返回既有 invalid_argument 错误。
+
+只从已有解析结果分页读取模型、纹理和标签，重新渲染；不会重解析模组、重写配方、删除历史或改变解析任务状态。旧 item_icon 列表是旧解析时的快照；界面图标应使用此接口以避免旧渲染缓存。模组资源覆盖同名原版资源。
+
+首次缺少原版缓存时，从 Mojang HTTPS manifest 下载并验证元数据 SHA-1、client JAR 长度与 SHA-1；Provider 是唯一外部 HTTP 边界。下载阶段最多 40 秒；失败不留下可用的半文件。共享缓存为 `data/cache/minecraft-assets/{mcVersion}.jar`，经 temp/write/sync/rename 落盘，不捆绑到发布包，不增加数据库迁移。
+
+静态支持：父模型继承、纹理变量、逐面 UV/旋转、GUI 变换、elements/局部旋转/缩放、深度遮挡、generated 多层透明合成、常见纵向动画条首帧。自定义 loader、运行时染色、实体渲染以及 1.21.4+ 新 client-item 动态选择语义不保证覆盖。
+
+物品标签支持原版和当前模组声明的递归引用与 replace；仅 1.21.1 额外加入经 NeoForge 源码核实的 c:ingots/iron、c:dusts/redstone、c:gems/diamond 代表成员。未加载的其他模组/加载器标签不猜测。依据：[铁锭](https://raw.githubusercontent.com/neoforged/NeoForge/1.21.1/src/generated/resources/data/c/tags/item/ingots/iron.json)、[红石粉](https://raw.githubusercontent.com/neoforged/NeoForge/1.21.1/src/generated/resources/data/c/tags/item/dusts/redstone.json)、[钻石](https://raw.githubusercontent.com/neoforged/NeoForge/1.21.1/src/generated/resources/data/c/tags/item/gems/diamond.json)。
+
+真实响应 fixture：`apps/web/src/api/fixtures/mod-content-icons.json`。
+
+---
+
+## 7. 包内物品、方块、配方与标签目录（2026-09-07）
+
+创建整合包或修改 Minecraft／加载器版本后，服务自动提交 `catalog_init` 任务。任务先把 Minecraft 当作内置模组写入精确版本、文件、来源和解析批次，再由相同的包内解析来源生成目录。模组内容成功解析后也会提交目录重建。目录同时使用 source/built revision 与 pack config generation；过期目录读取返回 `409 catalog_stale`，构建失败不会发布为当前代次。
+
+- `GET /api/packs/{packId}/catalog/status`：返回 `sourceRevision`、`builtRevision`、`status`、`builtAt`、`lastError`、`warnings` 和 `stale`。
+- `POST /api/packs/{packId}/catalog/rebuild?locale=zh_cn`：提交持久化重建任务，返回 `202 {taskId,status}`；要求写令牌和 Host/Origin 校验。
+- `GET /api/packs/{packId}/catalog?locale=zh_cn`：返回物品、方块、两类标签、配方、可用语言和构建警告。
+- `GET /api/packs/{packId}/catalog/items/{itemId...}`：返回物品名称、来源、模型、图标状态及反向标签。
+- `GET /api/packs/{packId}/catalog/tags/{tagId...}?registry=item`：返回物品或方块标签的展开成员和诊断。
+- `GET /api/packs/{packId}/catalog/icon?itemId=minecraft:iron_ingot`：返回当前目录中生成的 PNG。
+
+配方引用中 `kind=item` 表示精确物品，`kind=item_tag` 表示可以使用标签展开后的任一候选物品。显示名不改变这一语义。目录的 zod fixture 为 `apps/web/src/api/fixtures/item-catalog.json`。

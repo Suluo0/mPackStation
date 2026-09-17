@@ -1,0 +1,14 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const {createRequire} = require('node:module');
+const vm = require('node:vm');
+const root = path.resolve(__dirname, '../..');
+const webRequire = createRequire(path.join(root, 'apps/web/package.json'));
+const ts = webRequire('typescript');
+const source = fs.readFileSync(path.join(root, 'apps/web/src/api/catalog.ts'), 'utf8');
+const compiled = ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.CommonJS}}).outputText;
+const exportsObject = {};
+vm.runInNewContext(compiled, {exports: exportsObject, require: name => name === './http' ? {} : webRequire(name)});
+const fixture = JSON.parse(fs.readFileSync(path.join(root, 'apps/web/src/api/fixtures/item-catalog.json'), 'utf8'));
+exportsObject.itemCatalogSchema.parse(fixture);
+process.stdout.write('itemCatalogSchema: fixture passed\n');

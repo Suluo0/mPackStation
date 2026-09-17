@@ -18,7 +18,7 @@ import {useModSearch} from '../hooks/useModSearch';
 import {useDependencies} from '../hooks/useDependencies';
 import {useContentEditor, useQuestBook} from '../hooks/useEditors';
 
-function PackContext({active = '概览', action}: {active?: string; action?: React.ReactNode}) {
+export function PackContext({active = '概览', action}: {active?: string; action?: React.ReactNode}) {
   const {id} = useParams();
   const navigate = useNavigate();
   const {pack} = usePack(id);

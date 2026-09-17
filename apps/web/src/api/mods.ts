@@ -11,6 +11,8 @@ const page = <T extends z.ZodTypeAny>(item: T) => z.object({
 
 export const modSchema = z.object({
   id: z.string(),
+  canonicalModId: z.string(),
+  selectionId: z.string(),
   packId: z.string(),
   source: z.string(),
   projectId: z.string().nullable(),
@@ -120,6 +122,8 @@ function qsOf(query: ModSearchQuery): string {
 
 export const listMods = (packId: string) =>
   get(`/api/packs/${encodeURIComponent(packId)}/mods`, page(modSchema)).then(v => v.items);
+export const listContentSources = (packId: string) =>
+  get(`/api/packs/${encodeURIComponent(packId)}/mods?includeBuiltin=true`, page(modSchema)).then(v => v.items);
 export const searchMods = (packId: string, query: ModSearchQuery) =>
   get(`/api/packs/${encodeURIComponent(packId)}/mod-search?${qsOf(query)}`, modSearchSchema);
 export const searchAllMods = (packId: string, query: ModSearchQuery) =>

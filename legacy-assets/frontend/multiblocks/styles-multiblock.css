@@ -1,0 +1,12 @@
+/* 多方块设计：主从布局（设计卡列表=中，结构详情=右） */
+.mods-multiblock { width:100%; }
+.mb-list-actions { display:flex; align-items:center; gap:12px; margin-top:4px; }
+.mb-design-list { display:flex; flex-direction:column; gap:12px; }
+.mb-design-card { cursor:pointer; border:1px solid transparent; transition:border-color .2s, box-shadow .2s; }
+.mb-design-card:hover { border-color:#b7c0cf; }
+.mb-design-selected { border-color:#376df5; box-shadow:0 0 0 2px rgba(55,109,245,.15); }
+.mb-design-title { margin-bottom:4px; }
+.mb-card-actions { margin-top:8px; display:flex; justify-content:flex-end; }
+.mb-detail-editor { display:flex; flex-direction:column; gap:12px; }
+.mb-detail-editor .page-heading { padding:0; border:0; }
+.mb-detail-editor .page-heading .ant-typography { margin:0; }

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -15,10 +16,11 @@ import (
 // (user-picked) platform pin; Mirror* are the pinned counterpart on the other
 // platform, resolved once at add time and never auto-updated.
 type PackModRecord struct {
-	ID, PackID, Source, ProjectID, VersionID, DisplayName, FileName, SHA1, Status string
-	MirrorSource, MirrorProjectID, MirrorVersionID                                 string
-	Required                                             bool
-	AddedAt, UpdatedAt                                   int64
+	ID, PackID, Source, ProjectID, VersionID, DisplayName, FileName, SHA1, Status, ModID string
+	MirrorSource, MirrorProjectID, MirrorVersionID                                       string
+	CurrentSelectionID                                                                   string
+	Required                                                                             bool
+	AddedAt, UpdatedAt                                                                   int64
 	// Origin: manual = 用户手动添加; compat-fix = 兼容知识库自动加装的补丁。
 	Origin string
 }
@@ -46,7 +48,7 @@ type LockRecord struct {
 }
 
 func (r *Repository) ListPackMods(ctx context.Context, packID string) ([]PackModRecord, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,''),origin FROM pack_mods WHERE pack_id=? AND status<>'removed' ORDER BY display_name COLLATE NOCASE,id`, packID)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,''),origin,COALESCE(mod_id,''),COALESCE(current_selection_id,'') FROM pack_mods WHERE pack_id=? AND status<>'removed' AND origin<>'builtin' ORDER BY display_name COLLATE NOCASE,id`, packID)
 	if err != nil {
 		return nil, fmt.Errorf("list pack mods: %w", err)
 	}
@@ -55,7 +57,7 @@ func (r *Repository) ListPackMods(ctx context.Context, packID string) ([]PackMod
 	for rows.Next() {
 		var m PackModRecord
 		var req int
-		if err := rows.Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt, &m.MirrorSource, &m.MirrorProjectID, &m.MirrorVersionID, &m.Origin); err != nil {
+		if err := rows.Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt, &m.MirrorSource, &m.MirrorProjectID, &m.MirrorVersionID, &m.Origin, &m.ModID, &m.CurrentSelectionID); err != nil {
 			return nil, err
 		}
 		m.Required = req != 0
@@ -64,7 +66,12 @@ func (r *Repository) ListPackMods(ctx context.Context, packID string) ([]PackMod
 	return out, rows.Err()
 }
 func (r *Repository) AddPackMod(ctx context.Context, m PackModRecord) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO pack_mods(id,pack_id,source,project_id,version_id,display_name,file_name,sha1,status,required,added_at,updated_at,mirror_source,mirror_project_id,mirror_version_id,origin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, m.ID, m.PackID, m.Source, nullString(m.ProjectID), nullString(m.VersionID), m.DisplayName, m.FileName, nullString(m.SHA1), m.Status, boolInt(m.Required), m.AddedAt, m.UpdatedAt, m.MirrorSource, nullString(m.MirrorProjectID), nullString(m.MirrorVersionID), m.Origin)
+	if m.ModID != "" {
+		if _, err := r.db.ExecContext(ctx, `INSERT OR IGNORE INTO mods(mod_id,display_name,kind) VALUES(?,?,?)`, m.ModID, m.DisplayName, "normal"); err != nil {
+			return fmt.Errorf("register mod identity: %w", err)
+		}
+	}
+	_, err := r.db.ExecContext(ctx, `INSERT INTO pack_mods(id,pack_id,source,project_id,version_id,display_name,file_name,sha1,status,required,added_at,updated_at,mirror_source,mirror_project_id,mirror_version_id,origin,mod_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, m.ID, m.PackID, m.Source, nullString(m.ProjectID), nullString(m.VersionID), m.DisplayName, m.FileName, nullString(m.SHA1), m.Status, boolInt(m.Required), m.AddedAt, m.UpdatedAt, m.MirrorSource, nullString(m.MirrorProjectID), nullString(m.MirrorVersionID), m.Origin, nullString(m.ModID))
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return fmt.Errorf("%w: mod already selected", ErrConflict)
@@ -73,6 +80,35 @@ func (r *Repository) AddPackMod(ctx context.Context, m PackModRecord) error {
 	}
 	return nil
 }
+
+// GetPackMod returns one pack_mod by id, or ErrNotFound.
+func (r *Repository) GetPackMod(ctx context.Context, id string) (PackModRecord, error) {
+	return r.getPackMod(ctx, "", id)
+}
+
+// GetPackModInPack makes the package boundary part of the SQL predicate.
+func (r *Repository) GetPackModInPack(ctx context.Context, packID, id string) (PackModRecord, error) {
+	return r.getPackMod(ctx, packID, id)
+}
+
+func (r *Repository) getPackMod(ctx context.Context, packID, id string) (PackModRecord, error) {
+	var m PackModRecord
+	var req int
+	query := `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,''),origin,COALESCE(mod_id,''),COALESCE(current_selection_id,'') FROM pack_mods WHERE id=?`
+	args := []any{id}
+	if packID != "" {
+		query = `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,''),origin,COALESCE(mod_id,''),COALESCE(current_selection_id,'') FROM pack_mods WHERE pack_id=? AND id=?`
+		args = []any{packID, id}
+	}
+	err := r.db.QueryRowContext(ctx, query, args...).
+		Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt, &m.MirrorSource, &m.MirrorProjectID, &m.MirrorVersionID, &m.Origin, &m.ModID, &m.CurrentSelectionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return m, ErrNotFound
+	}
+	m.Required = req != 0
+	return m, err
+}
+
 // ModIdentityRecord is one confirmed cross-platform pairing: the same mod as
 // Modrinth project + CurseForge project. The user db holds pairings confirmed
 // on this machine; a read-only baseline ships with the app (knowledge pack).

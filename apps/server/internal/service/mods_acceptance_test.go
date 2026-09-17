@@ -97,7 +97,7 @@ func TestP5AcceptanceModLifecycleAndCrossPackIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.VersionID == nil || *updated.VersionID != version || updated.SHA1 == nil || *updated.SHA1 != "2222222222222222222222222222222222222222" || updated.Status != "installed" {
+	if updated.VersionID == nil || *updated.VersionID != version || updated.SHA1 == nil || *updated.SHA1 != "2222222222222222222222222222222222222222" || updated.Status != "pending" {
 		t.Fatalf("version update = %#v", updated)
 	}
 

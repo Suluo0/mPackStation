@@ -8,7 +8,13 @@ import (
 
 func registerModRoutes(mux *http.ServeMux, app *service.API) {
 	mux.HandleFunc("GET /api/packs/{packId}/mods", func(w http.ResponseWriter, r *http.Request) {
-		v, err := app.ListPackMods(r.Context(), r.PathValue("packId"))
+		var v []service.Mod
+		var err error
+		if r.URL.Query().Get("includeBuiltin") == "true" {
+			v, err = app.ListPackContentSources(r.Context(), r.PathValue("packId"))
+		} else {
+			v, err = app.ListPackMods(r.Context(), r.PathValue("packId"))
+		}
 		if err != nil {
 			writeError(w, r, err)
 			return

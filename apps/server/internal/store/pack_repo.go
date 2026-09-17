@@ -16,6 +16,9 @@ var ErrNotFound = errors.New("resource not found")
 // ErrConflict indicates a state or uniqueness conflict.
 var ErrConflict = errors.New("resource conflict")
 
+// ErrInvalidArgument indicates malformed repository input.
+var ErrInvalidArgument = errors.New("invalid argument")
+
 // Repository is the only application-facing owner of business SQL.
 type Repository struct {
 	db dbExecutor
@@ -129,6 +132,43 @@ func (r *Repository) CreatePack(ctx context.Context, p PackRecord, version PackV
 		return fmt.Errorf("set current pack version: %w", err)
 	}
 	return nil
+}
+
+// EnsureMinecraftPackMod creates the required builtin instance for a pack.
+// It intentionally leaves the exact selection pending until verified Mojang
+// inputs are available; a missing download is never represented as a fake file.
+func (r *Repository) EnsureMinecraftPackMod(ctx context.Context, packID string, at int64) error {
+	var mcVersion string
+	if err := r.db.QueryRowContext(ctx, `SELECT mc_version FROM packs WHERE id=?`, packID).Scan(&mcVersion); err != nil {
+		return err
+	}
+	_, err := r.db.ExecContext(ctx, `INSERT INTO mods(mod_id,display_name,kind) VALUES('minecraft','Minecraft','builtin') ON CONFLICT(mod_id) DO UPDATE SET display_name='Minecraft',kind='builtin'`)
+	if err != nil {
+		return fmt.Errorf("ensure minecraft identity: %w", err)
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO pack_mods(id,pack_id,source,display_name,status,required,added_at,updated_at,origin,mod_id) VALUES(?,?,?,?,?,?,?,?,?,?)`, "minecraft-"+packID, packID, "local", "Minecraft", "pending", 1, at, at, "builtin", "minecraft")
+	if err != nil {
+		return fmt.Errorf("ensure minecraft instance for %s (%s): %w", packID, mcVersion, err)
+	}
+	if _, err = r.db.ExecContext(ctx, `UPDATE pack_mods SET display_name='Minecraft',origin='builtin',required=1,status=CASE WHEN status='removed' THEN 'pending' ELSE status END,updated_at=? WHERE pack_id=? AND mod_id='minecraft'`, at, packID); err != nil {
+		return fmt.Errorf("refresh minecraft instance: %w", err)
+	}
+	_, err = r.db.ExecContext(ctx, `UPDATE pack_mods SET status='pending',current_selection_id=NULL,sha1=NULL,file_name='' WHERE pack_id=? AND mod_id='minecraft' AND NOT EXISTS (SELECT 1 FROM pack_mod_selections s JOIN mod_versions v ON v.id=s.version_id WHERE s.pack_id=pack_mods.pack_id AND s.id=pack_mods.current_selection_id AND s.status='ready' AND v.status='ready' AND v.declared_version=?)`, packID, mcVersion)
+	return err
+}
+
+func (r *Repository) InvalidatePackGeneration(ctx context.Context, packID string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE packs SET config_revision=config_revision+1,current_generation_id=NULL WHERE id=?`, packID)
+	return err
+}
+
+func (r *Repository) GetPackConfigRevision(ctx context.Context, packID string) (int64, error) {
+	var revision int64
+	err := r.db.QueryRowContext(ctx, `SELECT config_revision FROM packs WHERE id=?`, packID).Scan(&revision)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return revision, err
 }
 
 func nullStringArg(v sql.NullString) any {

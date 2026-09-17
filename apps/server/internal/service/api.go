@@ -250,6 +250,9 @@ func (a *API) CreatePack(ctx context.Context, input CreatePackInput, requestID s
 		if err := tx.CreatePack(ctx, p, v); err != nil {
 			return err
 		}
+		if err := tx.EnsureMinecraftPackMod(ctx, id, now); err != nil {
+			return err
+		}
 		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: id, Kind: "pack", Action: "create", Text: fmt.Sprintf("创建了整合包「%s」", p.Name), At: now}, map[string]any{"name": p.Name}, requestID); err != nil {
 			return err
 		}
@@ -264,6 +267,11 @@ func (a *API) CreatePack(ctx context.Context, input CreatePackInput, requestID s
 		}
 		return Pack{}, err
 	}
+	if a.queue != nil {
+		if _, initErr := a.SubmitCatalogInit(ctx, id, "zh_cn"); initErr != nil {
+			_ = a.repo.SetCatalogBuildState(ctx, id, "failed", initErr.Error())
+		}
+	}
 	return a.pack(p, v.Version), nil
 }
 
@@ -275,6 +283,7 @@ func (a *API) UpdatePack(ctx context.Context, id string, input UpdatePackInput, 
 	if err != nil {
 		return Pack{}, err
 	}
+	previousMCVersion, previousLoader, previousLoaderVersion := p.MCVersion, p.Loader, p.LoaderVersion
 	if input.Name != nil {
 		p.Name = strings.TrimSpace(*input.Name)
 	}
@@ -299,6 +308,14 @@ func (a *API) UpdatePack(ctx context.Context, id string, input UpdatePackInput, 
 		if err := tx.UpdatePack(ctx, p); err != nil {
 			return err
 		}
+		if previousMCVersion != p.MCVersion || previousLoader != p.Loader || previousLoaderVersion != p.LoaderVersion {
+			if err := tx.InvalidatePackGeneration(ctx, id); err != nil {
+				return fmt.Errorf("invalidate pack generation: %w", err)
+			}
+			if err := tx.EnsureMinecraftPackMod(ctx, id, p.UpdatedAt); err != nil {
+				return err
+			}
+		}
 		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: id, Kind: "pack", Action: "edit", Text: fmt.Sprintf("编辑了整合包「%s」", p.Name), At: p.UpdatedAt}, nil, requestID); err != nil {
 			return err
 		}
@@ -312,6 +329,11 @@ func (a *API) UpdatePack(ctx context.Context, id string, input UpdatePackInput, 
 			return Pack{}, &DomainError{Status: 422, Code: "pack_name_duplicate", Message: "a pack with this name already exists", Wrapped: err}
 		}
 		return Pack{}, err
+	}
+	if a.queue != nil && (previousMCVersion != p.MCVersion || previousLoader != p.Loader || previousLoaderVersion != p.LoaderVersion) {
+		if _, initErr := a.SubmitCatalogInit(ctx, id, "zh_cn"); initErr != nil {
+			_ = a.repo.SetCatalogBuildState(ctx, id, "failed", initErr.Error())
+		}
 	}
 	return a.pack(p, "0.1.0"), nil
 }

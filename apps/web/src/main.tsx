@@ -5,7 +5,9 @@ import {createRoot} from 'react-dom/client';
 import {BrowserRouter, Navigate, Route, Routes} from 'react-router-dom';
 import {AppShell} from './app/AppShell';
 import {DashboardPage} from './pages/DashboardPage';
-import {ContentEditorPage, DependenciesPage, PackModsPage, PackWorkbenchPage, PacksPage, PublishPage, QuestEditorPage, SettingsPage} from './pages/PackPages';
+import {DependenciesPage, PackModsPage, PackWorkbenchPage, PacksPage, PublishPage, QuestEditorPage, SettingsPage} from './pages/PackPages';
+import {LauncherPage} from './pages/LauncherPage';
+import {ModContentPage} from './pages/ModContentPage';
 import {listPacks} from './api/packs';
 import './features/dashboard/dashboard.css';
 import './ui/workbench/workbench.css';
@@ -50,9 +52,10 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/packs/:id" element={<PackWorkbenchPage/>}/>
             <Route path="/packs/:id/mods" element={<PackModsPage/>}/>
             <Route path="/packs/:id/dependencies" element={<DependenciesPage/>}/>
-            <Route path="/packs/:id/content" element={<ContentEditorPage/>}/>
+            <Route path="/packs/:id/content" element={<ModContentPage/>}/>
             <Route path="/packs/:id/quests" element={<QuestEditorPage/>}/>
             <Route path="/packs/:id/publish" element={<PublishPage/>}/>
+            <Route path="/packs/:id/launcher" element={<LauncherPage/>}/>
             <Route path="/settings" element={<SettingsPage/>}/>
             <Route path="/mods" element={<DefaultPackRedirect suffix="/mods"/>}/>
             <Route path="/content" element={<DefaultPackRedirect suffix="/content"/>}/>

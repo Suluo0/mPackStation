@@ -1,8 +1,8 @@
 package service
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -50,16 +50,18 @@ type UpdateModInput struct {
 	Required  *bool   `json:"required"`
 }
 type Mod struct {
-	ID          string  `json:"id"`
-	PackID      string  `json:"packId"`
-	Source      string  `json:"source"`
-	ProjectID   *string `json:"projectId"`
-	VersionID   *string `json:"versionId"`
-	DisplayName string  `json:"displayName"`
-	FileName    string  `json:"fileName"`
-	SHA1        *string `json:"sha1"`
-	Status      string  `json:"status"`
-	Required    bool    `json:"required"`
+	ID                 string  `json:"id"`
+	CanonicalModID     string  `json:"canonicalModId"`
+	CurrentSelectionID string  `json:"selectionId"`
+	PackID         string  `json:"packId"`
+	Source         string  `json:"source"`
+	ProjectID      *string `json:"projectId"`
+	VersionID      *string `json:"versionId"`
+	DisplayName    string  `json:"displayName"`
+	FileName       string  `json:"fileName"`
+	SHA1           *string `json:"sha1"`
+	Status         string  `json:"status"`
+	Required       bool    `json:"required"`
 	// Mirror* name the pinned counterpart on the other platform (null when the
 	// mod is single-platform here). Versions are pinned at add time on both
 	// sides and never auto-updated.
@@ -371,6 +373,26 @@ func (a *API) ListPackMods(ctx context.Context, packID string) ([]Mod, error) {
 	}
 	return out, nil
 }
+
+// ListPackContentSources returns every mod-shaped content source in a pack,
+// including the required builtin Minecraft instance.
+func (a *API) ListPackContentSources(ctx context.Context, packID string) ([]Mod, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	if _, err := a.repo.GetPack(ctx, packID); err != nil {
+		return nil, err
+	}
+	rows, err := a.repo.ListPackMembers(ctx, packID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Mod, 0, len(rows))
+	for _, m := range rows {
+		out = append(out, modDTO(m))
+	}
+	return out, nil
+}
 func modDTO(m store.PackModRecord) Mod {
 	strPtr := func(s string) *string {
 		if s == "" {
@@ -382,7 +404,7 @@ func modDTO(m store.PackModRecord) Mod {
 	if origin == "" {
 		origin = "manual"
 	}
-	return Mod{ID: m.ID, PackID: m.PackID, Source: m.Source, ProjectID: strPtr(m.ProjectID), VersionID: strPtr(m.VersionID), DisplayName: m.DisplayName, FileName: m.FileName, SHA1: strPtr(m.SHA1), Status: m.Status, Required: m.Required, MirrorSource: strPtr(m.MirrorSource), MirrorProjectID: strPtr(m.MirrorProjectID), Origin: origin, AddedAt: iso(m.AddedAt), UpdatedAt: iso(m.UpdatedAt)}
+	return Mod{ID: m.ID, CanonicalModID: m.ModID, CurrentSelectionID: m.CurrentSelectionID, PackID: m.PackID, Source: m.Source, ProjectID: strPtr(m.ProjectID), VersionID: strPtr(m.VersionID), DisplayName: m.DisplayName, FileName: m.FileName, SHA1: strPtr(m.SHA1), Status: m.Status, Required: m.Required, MirrorSource: strPtr(m.MirrorSource), MirrorProjectID: strPtr(m.MirrorProjectID), Origin: origin, AddedAt: iso(m.AddedAt), UpdatedAt: iso(m.UpdatedAt)}
 }
 
 // otherProviderOf names the opposite catalog platform, or "" for local mods.
@@ -518,18 +540,31 @@ func (a *API) addPackMod(ctx context.Context, packID string, in AddModInput, req
 	if err != nil {
 		return Mod{}, mapProviderError(err)
 	}
-	if dl.SHA1 == "" && len(dl.Content) > 0 {
-		sum := sha1.Sum(dl.Content)
-		dl.SHA1 = hex.EncodeToString(sum[:])
-		s := sha256.Sum256(dl.Content)
-		dl.SHA256 = hex.EncodeToString(s[:])
+	var extracted *ExtractedContent
+	if len(dl.Content) > 0 {
+		actualSHA1, actualSHA256, verifyErr := validateMeasuredDownload(dl.SHA1, dl.SHA256, dl.Content)
+		if verifyErr != nil {
+			return Mod{}, ErrInvalidSHA1
+		}
+		dl.SHA1, dl.SHA256, dl.Size = actualSHA1, actualSHA256, int64(len(dl.Content))
+		extracted, err = ExtractModContent(bytes.NewReader(dl.Content))
+		if err != nil {
+			return Mod{}, ErrInvalidArgument
+		}
 	}
 	if !validHash(dl.SHA1, 40) {
 		return Mod{}, ErrInvalidSHA1
 	}
 	now := time.Now().UnixMilli()
 	id := newID("mod")
-	m := store.PackModRecord{ID: id, PackID: packID, Source: string(ad.Name()), ProjectID: in.ProjectID, VersionID: in.VersionID, DisplayName: meta.Project.Name, FileName: dl.FileName, SHA1: strings.ToLower(dl.SHA1), Status: "installed", Required: in.Required, AddedAt: now, UpdatedAt: now, Origin: origin}
+	canonicalModID := ""
+	if extracted != nil {
+		canonicalModID = normalizeDeclaredModID(extracted.ModID)
+		if canonicalModID == "" {
+			return Mod{}, ErrInvalidArgument
+		}
+	}
+	m := store.PackModRecord{ID: id, PackID: packID, ModID: canonicalModID, Source: string(ad.Name()), ProjectID: in.ProjectID, VersionID: in.VersionID, DisplayName: meta.Project.Name, FileName: dl.FileName, SHA1: strings.ToLower(dl.SHA1), Status: "installed", Required: in.Required, AddedAt: now, UpdatedAt: now, Origin: origin}
 	// 添加时立即钉死另一平台的对应版本(查不到不阻塞: 照常添加, 仅单平台)。
 	a.resolveMirror(ctx, &m, packRec, meta.Version.VersionNumber)
 	activityText := "Added " + m.DisplayName
@@ -541,6 +576,17 @@ func (a *API) addPackMod(ctx context.Context, packID string, in AddModInput, req
 			return err
 		}
 		if err := tx.AddPackMod(ctx, m); err != nil {
+			return err
+		}
+		if extracted != nil {
+			selection := verifiedPackSelection(m, extracted.Version, dl.SHA256, dl.DownloadURL, dl.Size, now)
+			selection.ProjectSlug = meta.Project.Slug
+			selection.ReleaseName = meta.Version.VersionNumber
+			if err := tx.EnsurePackSelection(ctx, selection); err != nil {
+				return err
+			}
+		}
+		if err := tx.InvalidatePackGeneration(ctx, packID); err != nil {
 			return err
 		}
 		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: packID, Kind: "mod", Action: "add-mod", Text: activityText, At: now}, map[string]any{"mod_id": id}, requestID); err != nil {
@@ -622,6 +668,9 @@ func (a *API) AddLocalPackMod(ctx context.Context, packID string, in LocalModInp
 		if err := tx.AddPackMod(ctx, m); err != nil {
 			return err
 		}
+		if err := tx.InvalidatePackGeneration(ctx, packID); err != nil {
+			return err
+		}
 		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: packID, Kind: "mod", Action: "add-mod", Text: "Added local " + m.DisplayName, At: now}, map[string]any{"mod_id": id}, requestID); err != nil {
 			return err
 		}
@@ -676,10 +725,27 @@ func (a *API) UpdatePackMod(ctx context.Context, packID, modID string, in Update
 			if e != nil {
 				return Mod{}, mapProviderError(e)
 			}
-			if !validHash(dl.SHA1, 40) {
-				return Mod{}, ErrInvalidSHA1
+			var selection *store.PackScopedSelection
+			if len(dl.Content) > 0 {
+				actualSHA1, actualSHA256, verifyErr := validateMeasuredDownload(dl.SHA1, dl.SHA256, dl.Content)
+				if verifyErr != nil {
+					return Mod{}, ErrInvalidSHA1
+				}
+				extracted, extractErr := ExtractModContent(bytes.NewReader(dl.Content))
+				if extractErr != nil || normalizeDeclaredModID(extracted.ModID) != found.ModID {
+					return Mod{}, ErrInvalidArgument
+				}
+				dl.SHA1, dl.SHA256, dl.Size = actualSHA1, actualSHA256, int64(len(dl.Content))
+				found.VersionID, found.SHA1, found.FileName, found.DisplayName, found.Status = *in.VersionID, actualSHA1, dl.FileName, meta.Project.Name, "installed"
+				prepared := verifiedPackSelection(found, extracted.Version, actualSHA256, dl.DownloadURL, dl.Size, time.Now().UnixMilli())
+				prepared.ProjectSlug, prepared.ReleaseName = meta.Project.Slug, meta.Version.VersionNumber
+				selection = &prepared
+			} else {
+				if !validHash(dl.SHA1, 40) {
+					return Mod{}, ErrInvalidSHA1
+				}
+				found.VersionID, found.SHA1, found.FileName, found.DisplayName, found.Status = *in.VersionID, strings.ToLower(dl.SHA1), dl.FileName, meta.Project.Name, "pending"
 			}
-			found.VersionID, found.SHA1, found.FileName, found.DisplayName, found.Status = *in.VersionID, strings.ToLower(dl.SHA1), dl.FileName, meta.Project.Name, "installed"
 			// 主版本换了, 镜像版本跟着重钉(镜像项目沿用已配对的, 不重新找)。
 			if packRec, e := a.repo.GetPack(ctx, packID); e == nil {
 				a.resolveMirror(ctx, &found, packRec, meta.Version.VersionNumber)
@@ -690,7 +756,16 @@ func (a *API) UpdatePackMod(ctx context.Context, packID, modID string, in Update
 				if err := tx.UpsertJarIndex(ctx, store.JarIndexRecord{SHA1: found.SHA1, SHA256: dl.SHA256, FilePath: "jar://" + found.SHA1, SizeBytes: dl.Size, ParsedAt: now}); err != nil {
 					return err
 				}
-				return tx.UpdatePackMod(ctx, found)
+				if err := tx.InvalidatePackGeneration(ctx, packID); err != nil {
+					return err
+				}
+				if err := tx.UpdatePackMod(ctx, found); err != nil {
+					return err
+				}
+				if selection != nil {
+					return tx.EnsurePackSelection(ctx, *selection)
+				}
+				return nil
 			}); err != nil {
 				return Mod{}, err
 			}
@@ -701,6 +776,9 @@ func (a *API) UpdatePackMod(ctx context.Context, packID, modID string, in Update
 	if in.Status != nil {
 		switch *in.Status {
 		case "pending", "installed", "disabled":
+			if *in.Status == "installed" && found.CurrentSelectionID == "" {
+				return Mod{}, ErrInvalidArgument
+			}
 			found.Status = *in.Status
 		default:
 			return Mod{}, ErrInvalidArgument
@@ -710,7 +788,12 @@ func (a *API) UpdatePackMod(ctx context.Context, packID, modID string, in Update
 		found.Required = *in.Required
 	}
 	found.UpdatedAt = time.Now().UnixMilli()
-	if err := a.repo.UpdatePackMod(ctx, found); err != nil {
+	if err := a.repo.WithTx(ctx, func(tx *store.Repository) error {
+		if err := tx.InvalidatePackGeneration(ctx, packID); err != nil {
+			return err
+		}
+		return tx.UpdatePackMod(ctx, found)
+	}); err != nil {
 		return Mod{}, err
 	}
 	return modDTO(found), nil
@@ -722,6 +805,9 @@ func (a *API) RemovePackMod(ctx context.Context, packID, modID, requestID string
 	at := time.Now().UnixMilli()
 	err := a.repo.WithTx(ctx, func(tx *store.Repository) error {
 		if err := tx.RemovePackMod(ctx, packID, modID, at); err != nil {
+			return err
+		}
+		if err := tx.InvalidatePackGeneration(ctx, packID); err != nil {
 			return err
 		}
 		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: packID, Kind: "mod", Action: "remove-mod", Text: "Removed mod", At: at}, map[string]any{"mod_id": modID}, requestID); err != nil {
@@ -740,7 +826,12 @@ func (a *API) ResolvePack(ctx context.Context, packID, requestID string) (Lock, 
 	if err != nil {
 		return Lock{}, err
 	}
+	members, err := a.repo.ListPackMembers(ctx, packID)
+	if err != nil {
+		return Lock{}, err
+	}
 	sort.Slice(mods, func(i, j int) bool { return mods[i].ID < mods[j].ID })
+	sort.Slice(members, func(i, j int) bool { return members[i].ID < members[j].ID })
 	lockID := newID("lock")
 	deps := []store.ModDependencyRecord{}
 	confs := []store.ConflictRecord{}
@@ -750,9 +841,11 @@ func (a *API) ResolvePack(ctx context.Context, packID, requestID string) (Lock, 
 		Mods         []Mod                       `json:"mods"`
 		Dependencies []store.ModDependencyRecord `json:"dependencies"`
 		Conflicts    []Conflict                  `json:"conflicts"`
-	}{Schema: 1, PackID: packID, Mods: []Mod{}, Dependencies: nil, Conflicts: nil}
-	for _, m := range mods {
+	}{Schema: 2, PackID: packID, Mods: []Mod{}, Dependencies: nil, Conflicts: nil}
+	for _, m := range members {
 		snap.Mods = append(snap.Mods, modDTO(m))
+	}
+	for _, m := range mods {
 		ad, e := a.p5Adapter(m.Source)
 		if e != nil {
 			confs = append(confs, conflict(m, "provider_unavailable", "Provider unavailable", e.Error()))

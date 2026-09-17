@@ -61,7 +61,15 @@ func TestHTTPAdapterTimeout(t *testing.T) {
 func TestHTTPAdapterMetadataAndDownloadJSON(t *testing.T) {
 	const sha1 = "1111111111111111111111111111111111111111"
 	var authCalls int
+	var fixtureURL string
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/alpha.jar" {
+			if r.Header.Get("Authorization") != "" {
+				t.Error("API credentials leaked to asset download")
+			}
+			_, _ = w.Write([]byte("fixture-jar!"))
+			return
+		}
 		if r.Header.Get("Authorization") != "secret" {
 			t.Errorf("authorization=%q, want secret", r.Header.Get("Authorization"))
 		} else {
@@ -72,12 +80,13 @@ func TestHTTPAdapterMetadataAndDownloadJSON(t *testing.T) {
 		case "/v2/project/p1":
 			_, _ = w.Write([]byte(`{"id":"p1","slug":"alpha","title":"Alpha Mod","description":"A test mod","icon_url":"https://cdn.example/icon.png","downloads":42}`))
 		case "/v2/project/p1/version":
-			_, _ = w.Write([]byte(fmt.Sprintf(`[{"id":"v1","name":"Alpha 1.0","version_number":"1.0","game_versions":["1.20.1"],"loaders":["fabric"],"files":[{"id":"f1","name":"alpha.jar","downloadUrl":"https://cdn.example/alpha.jar","sha1":"%s","sha256":"2222222222222222222222222222222222222222222222222222222222222222","size":12,"primary":true}],"dependencies":[{"project_id":"dep1","version_id":"dv1","dependency_type":"required","version_range":">=1.0"}]}]`, sha1)))
+			_, _ = w.Write([]byte(fmt.Sprintf(`[{"id":"v1","name":"Alpha 1.0","version_number":"1.0","game_versions":["1.20.1"],"loaders":["fabric"],"files":[{"id":"f1","name":"alpha.jar","downloadUrl":"%s/alpha.jar","sha1":"%s","sha256":"2222222222222222222222222222222222222222222222222222222222222222","size":12,"primary":true}],"dependencies":[{"project_id":"dep1","version_id":"dv1","dependency_type":"required","version_range":">=1.0"}]}]`, fixtureURL, sha1)))
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer s.Close()
+	fixtureURL = s.URL
 	a, err := NewHTTPAdapter(Modrinth, s.URL, "secret", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -107,6 +116,9 @@ func TestHTTPAdapterMetadataAndDownloadJSON(t *testing.T) {
 	}
 	if download.FileName != "alpha.jar" || download.SHA1 != sha1 || download.Size != 12 || download.DownloadURL == "" {
 		t.Fatalf("download=%#v", download)
+	}
+	if string(download.Content) != "fixture-jar!" {
+		t.Fatalf("download content=%q", download.Content)
 	}
 	if authCalls < 5 {
 		t.Fatalf("authenticated upstream calls=%d, want at least 5", authCalls)

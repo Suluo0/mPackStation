@@ -6,15 +6,56 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 
 ## 当前状态
 
-分支 `DEV_2609-VK2`,远端 `origin = github.com/Suluo0/mPackStation`。**HEAD = `a363d8a`**。启动器内核 M0-M4 全部完成验证,M5 后端集成完成并推送,前端集成待设计图确认后实现。
+分支 `DEV_2609-VK2`,远端 `origin = github.com/Suluo0/mPackStation`。**工作树有未提交改动(M6模组内容解析)**。启动器内核 M0-M4 全部完成验证,M5 后端集成完成+前端启动台页面已实现。M6 模组内容解析完成(lang/recipe/ammo/texture/item_icon + 等距投影渲染器)。
 
 - 一键启停:`scripts/dev.ps1`(启动前后端)、`scripts/dev-stop.ps1`(停止)
 - 前端 dev:`http://127.0.0.1:5273/`;后端 dev:`http://127.0.0.1:18871/api/health`
+- **服务必须前台 PowerShell 窗口运行**(后台运行经常挂掉,用户明确要求)
 - 启动器内核:`launcherCore/`(Rust),release binary 4.77MB
 - Go 1.27.0 已安装(C:\Program Files\Go\bin)
 - 写操作需 header `X-MPack-Token`
+- 数据库:`data/mpackstation.db`,schema version 14(migrations 0001-0014)
 
 ## 项目功能进展
+
+### 2026-09-07 · 包内物品/方块/配方/标签/多语言目录
+
+- 状态：已实现并在现有数据上验证，待用户验收，未提交。
+- 表：新增目录状态、物品、方块、物品-方块、多语言名称、物品/方块标签、标签原始定义、直接边、展开成员、配方、配方引用和 PNG 图标表。
+- 初始化：创建整合包或修改 MC 版本后自动提交 `catalog_init`；模组解析成功后自动提交重建。原版资源按版本 SHA-1 校验，中文通过 Mojang asset index 获取。
+- 语义：名称不参与等价判断；配方具体物品精确匹配，标签材料才展开候选；同一成员支持反查所有标签。
+- 实测：原版 1.21.1 为 1754 物品/1062 方块/1290 配方/331 标签；现有 KingingProject 合并 AE2 后为 2133/1164/1778/424。`c:dusts/ender_pearl` 展开为 `ae2:ender_dust`，中文名和样例图标读取成功。
+- 验证：全量 Go test/vet、前端生产构建、迁移/FK/级联/API 鉴权、原版全量覆盖、Mojang 中文资源和 zod fixture 均通过。
+- 决策：`docs/decisions/ADR-pack-content-catalog.md`；任务 `task-pack-content-catalog-20260907`。
+
+### 2026-09-07 · 方块图标修复 + 原版资源与标签图标
+
+- 状态：已验证，待用户验收，未提交。
+- 进展：修正投影方向/可见面/UV；支持模型继承、elements、逐面纹理、半砖/楼梯、透明图层。新增按 MC 版本共享原版资源缓存，界面使用新 resolve 接口避开旧图标快照。
+- 实测：MC 1.21.1 + AE2 生成 1766 张图标，其中 AE2 349 张；29 个 AE2 item 模型暂不支持（含辅助模型）。铁锭、红石粉、钻石及高级卡配方标签图标已在真实页面核对。
+- 验证：go test ./...、go vet ./...、npm run build 通过，含专项回归；完整旧四层网络矩阵未重跑。
+- 限制：自定义 loader/运行时染色/实体图标、跨模组资源叠加仍待补齐；通用标签代表成员仅核实 1.21.1 的铁锭/红石粉/钻石。
+- 记录：`history/2026-09-07-item-icons-fix.md`；任务 `task-item-icons-fix-20260907`。
+
+### 2026-09-07 · M6 模组内容解析: lang/recipe/ammo/texture/item_icon + 等距投影渲染器
+
+- 状态:已实现,待用户验收(部分缺陷已记录)
+- 进展:
+  - **五种内容类型**: lang(语言文件翻译)、recipe(配方)、ammo_definition(物质炮弹药定义,非配方)、texture(原始纹理PNG)、item_icon(物品栏图标)
+  - **migrations 0009-0012**: 扩展 mod_content.kind CHECK 约束
+  - **等距投影渲染器**(`item_icon_render.go`): rotation[30,225,0],三面亮度分级(top1.0/right0.82/front0.65),仿射纹理映射,输出32×32 PNG
+  - **JEI风格配方展示**: 3x3输入网格+箭头+输出物品,支持crafting_shaped/shapeless/transform
+  - **ammo_definition分类**: matter_cannon不是配方(weight是权重不是重量,fish是标签不是鱼),68条从recipe迁移
+  - **支持模型类型**: generated/handheld(2D layer0)、cube_all(3D等距)
+  - **启动台菜单和页面**: 左侧新增启动台菜单,右侧启动台页面
+- 关联任务:`task-mod-content-parse-m6`
+- 验证: AE2 19.2.17解析——2367条内容,488真正配方,68ammo,190item_icon(145generated+45cube_all),614texture,589item_model,18lang
+- 已知缺陷(见 state.json issues):
+  - `issue-item-icon-coverage-gap`: 329物品无icon(复杂模型:自定义elements/半砖/楼梯/线缆部件)
+  - `issue-content-page-layout`: 内容编辑页面排版问题
+  - `issue-service-stability`: 前后端服务经常挂掉
+  - `issue-dynamic-recipe-parse`: 动态代码配方无法解析(如AE2线缆伪装合成)
+  - `issue-bottombar-mock-data`: 底边栏使用mock数据
 
 ### 2026-09-04 · mPackLauncher M5 后端集成(Go 后端调用 Rust 内核)
 
