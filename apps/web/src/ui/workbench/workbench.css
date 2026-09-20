@@ -1,5 +1,10 @@
 /* Reusable Taster workbench primitives. Feature styles may add layout classes, but
-   surface, type, shape and action treatments stay here. */
+   surface, type, shape and action treatments stay here.
+
+   Card padding: .wb-card defaults to --wb-panel-padding (24px, design-system panel step).
+   Business cards that need a different inset must override with equal-or-higher
+   specificity (e.g. .wb-card.db-entry-card-compact). Do not nest another full
+   card-level pad inside a wb-card — that would double the visual inset. */
 :root {
   --wb-space-1: 4px;
   --wb-space-2: 8px;
@@ -19,7 +24,7 @@
   --wb-display-block-margin: var(--wb-space-4);
 }
 .wb-display { margin: var(--wb-display-block-margin) 0; color: var(--mc-text); font-size: var(--wb-display-size); font-weight: var(--wb-display-weight); line-height: var(--wb-display-line); letter-spacing: var(--wb-display-tracking); }
-.wb-card { background: var(--mc-fill); border: 1px solid var(--mc-line); border-radius: var(--mc-radius-lg); box-shadow: var(--mc-shadow); }
+.wb-card { background: var(--mc-fill); border: 1px solid var(--mc-line); border-radius: var(--mc-radius-lg); box-shadow: var(--mc-shadow); padding: var(--wb-panel-padding); }
 .wb-title { margin: 0; color: var(--mc-text); font-size: 16px; font-weight: 700; line-height: 1.35; letter-spacing: -.01em; }
 .wb-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mc-sp); margin-bottom: var(--mc-sp); }
 .wb-btn-primary.ant-btn-primary { background: var(--mc-primary); border-color: var(--mc-primary); color: #fffdf8; box-shadow: 0 4px 10px var(--mc-brand-shadow); font-weight: 700; }

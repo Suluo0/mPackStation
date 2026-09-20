@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "tsc --noEmit"
+    "test": "tsc --noEmit",
+    "test:layout": "node --experimental-strip-types scripts/test-adv-layout.ts",
+    "test:viewport": "node --experimental-strip-types scripts/test-viewport.ts",
+    "test:quest": "node --experimental-strip-types scripts/questGraph.check.ts && node --experimental-strip-types scripts/test-quest-deps.ts && node --experimental-strip-types scripts/test-quest-canvas-edges.ts",
+    "test:adv-e2e": "node --experimental-strip-types scripts/adv-tree-e2e.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.2",
@@ -20,6 +24,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "playwright-core": "^1.63.0",
     "typescript": "^5.9.0",
     "vite": "^7.1.0"
   }

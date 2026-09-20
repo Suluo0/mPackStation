@@ -1,16 +1,15 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {App, Tag} from 'antd';
-import {DownloadOutlined, PlayCircleOutlined} from '@ant-design/icons';
+import {DownloadOutlined, FolderOpenOutlined, PlayCircleOutlined} from '@ant-design/icons';
 import {useNavigate, useParams} from 'react-router-dom';
 import {WorkbenchButton, WorkbenchCard, WorkbenchSectionHeader} from '../ui/workbench/Workbench';
 import {usePack} from '../hooks/usePack';
 import {fetchTasks, type Task} from '../api/tasks';
 import {fetchTaskLog, installLauncher, launchLauncher, type TaskLogEvent} from '../api/launcher';
+import {acknowledgeOnboarding} from '../api/onboarding';
 import {TaskStatusTag} from '../features/dashboard/signals';
+import {DirectoryPicker} from '../features/common/DirectoryPicker';
 import './pack-pages.css';
-
-/* 启动器页：调用自研 Rust 启动器内核 mPackLauncher 安装/启动当前整合包。
-   安装/启动入队为后台任务，进度与日志从任务域轮询。 */
 
 const LAUNCHER_TYPES = ['launcher_install', 'launcher_launch'];
 
@@ -41,9 +40,10 @@ export function LauncherPage() {
   const [task, setTask] = useState<Task | null>(null);
   const [logs, setLogs] = useState<TaskLogEvent[]>([]);
   const [busy, setBusy] = useState(false);
+  const [dirPickerOpen, setDirPickerOpen] = useState(false);
+  const [javaPickerOpen, setJavaPickerOpen] = useState(false);
   const busyRef = useRef(false);
 
-  /* 拉取当前包最新的启动器任务及其日志；返回是否仍有任务在运行。 */
   const refresh = useCallback(async (): Promise<boolean> => {
     const list = await fetchTasks();
     const mine = list
@@ -51,18 +51,17 @@ export function LauncherPage() {
       .sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))[0] ?? null;
     setTask(mine);
     if (mine) {
-      try { setLogs(await fetchTaskLog(mine.id)); } catch { /* 日志读取失败不阻塞进度展示 */ }
+      try { setLogs(await fetchTaskLog(mine.id)); } catch { /* ignore */ }
     }
     return mine?.status === 'running' || mine?.status === 'queued';
   }, []);
 
-  /* 页面挂载时拉一次；有运行中任务时每 3 秒轮询，任务结束后停止。 */
   useEffect(() => {
     let stopped = false;
     let timer: number | null = null;
     const loop = async () => {
       let running = false;
-      try { running = await refresh(); } catch { /* 忽略瞬时失败 */ }
+      try { running = await refresh(); } catch { /* ignore */ }
       if (stopped) return;
       if (running && timer === null) {
         timer = window.setInterval(() => { void refresh().catch(() => undefined); }, 3000);
@@ -86,13 +85,29 @@ export function LauncherPage() {
   };
   const releaseBusy = () => { busyRef.current = false; setBusy(false); };
 
+  /* 离线启动优先：配置过游戏目录/账号即视为启动台就绪，不必正版登录。 */
+  const markLauncherReady = () => {
+    void acknowledgeOnboarding({launcherReady: true}).catch(() => undefined);
+  };
+
+  const validateCommon = (): string | null => {
+    if (!pack) return '整合包尚未加载';
+    if (!minecraftDir.trim()) return '请先选择游戏目录';
+    return null;
+  };
+
   const onInstall = async () => {
-    if (!pack) return;
-    if (!minecraftDir.trim()) { message.error('请先填写游戏目录'); return; }
+    const invalid = validateCommon();
+    if (invalid) { message.error(invalid); return; }
     if (!guardBusy()) return;
     try {
-      const r = await installLauncher({version: pack.mcVersion, loader: pack.loader, minecraftDir: minecraftDir.trim()});
+      const r = await installLauncher({
+        version: pack!.mcVersion,
+        loader: pack!.loader,
+        minecraftDir: minecraftDir.trim(),
+      });
       message.success(`安装任务已入队（${r.taskId.slice(0, 8)}…）`);
+      markLauncherReady();
       void refresh().catch(() => undefined);
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
@@ -100,19 +115,21 @@ export function LauncherPage() {
   };
 
   const onLaunch = async () => {
-    if (!pack) return;
-    if (!minecraftDir.trim()) { message.error('请先填写游戏目录'); return; }
-    if (!username.trim()) { message.error('请填写启动账号'); return; }
+    const invalid = validateCommon();
+    if (invalid) { message.error(invalid); return; }
+    if (!username.trim()) { message.error('请填写启动账号（离线用户名，无需正版）'); return; }
+    if (xmxMb < 512) { message.error('内存至少 512 MB'); return; }
     if (!guardBusy()) return;
     try {
       const r = await launchLauncher({
-        version: pack.mcVersion,
+        version: pack!.mcVersion,
         username: username.trim(),
         minecraftDir: minecraftDir.trim(),
         javaPath: javaPath.trim() || undefined,
         xmxMb: xmxMb || undefined,
       });
       message.success(`启动任务已入队（${r.taskId.slice(0, 8)}…）`);
+      markLauncherReady();
       void refresh().catch(() => undefined);
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
@@ -123,7 +140,11 @@ export function LauncherPage() {
     <div className="workspace-page">
       <LauncherContext active="启动器"/>
       <div className="page-heading compact">
-        <div><span className="eyebrow">LAUNCHER</span><h1>启动器</h1><p>一键安装并启动当前整合包，走自研 mPackLauncher 内核。</p></div>
+        <div>
+          <span className="eyebrow">LAUNCHER</span>
+          <h1>启动器</h1>
+          <p>自研 mPackLauncher：离线用户名即可启动，不要求正版/Microsoft 登录。目录用选择器选取。</p>
+        </div>
       </div>
 
       <WorkbenchCard className="catalog-card">
@@ -138,16 +159,26 @@ export function LauncherPage() {
           </div>
           <div className="launcher-fields">
             <label className="launcher-field launcher-field-wide">
-              <span>游戏目录</span>
-              <input placeholder="Minecraft 实例目录（必填，如 D:\\mc\\instances\\KingingProject）" value={minecraftDir} onChange={e => setMinecraftDir(e.target.value)}/>
+              <span>游戏目录（必填）</span>
+              <div className="launcher-field-row">
+                <input
+                  placeholder="Minecraft 实例目录"
+                  value={minecraftDir}
+                  onChange={e => setMinecraftDir(e.target.value)}
+                />
+                <WorkbenchButton icon={<FolderOpenOutlined/>} onClick={() => setDirPickerOpen(true)}>选择目录</WorkbenchButton>
+              </div>
             </label>
             <label className="launcher-field">
-              <span>Java 路径</span>
-              <input placeholder="留空使用 PATH 中的 java" value={javaPath} onChange={e => setJavaPath(e.target.value)}/>
+              <span>Java 路径（可选）</span>
+              <div className="launcher-field-row">
+                <input placeholder="留空使用 PATH 中的 java" value={javaPath} onChange={e => setJavaPath(e.target.value)}/>
+                <WorkbenchButton tone="quiet" icon={<FolderOpenOutlined/>} onClick={() => setJavaPickerOpen(true)}>选择</WorkbenchButton>
+              </div>
             </label>
             <label className="launcher-field">
-              <span>启动账号</span>
-              <input placeholder="离线启动用户名（启动必填）" value={username} onChange={e => setUsername(e.target.value)}/>
+              <span>启动账号（离线，必填）</span>
+              <input placeholder="任意离线用户名，无需正版/Microsoft" value={username} onChange={e => setUsername(e.target.value)}/>
             </label>
             <label className="launcher-field">
               <span>内存 (MB)</span>
@@ -166,12 +197,12 @@ export function LauncherPage() {
           <WorkbenchSectionHeader title="安装 / 启动状态" action={task ? <TaskStatusTag status={task.status}/> : undefined}/>
           {task ? (
             <div className="launcher-task">
-              <div className="launcher-task-row"><span className="db-muted">{task.title}</span><b>{task.progress}%</b></div>
+              <div className="launcher-task-row"><span className="db-muted">{task.title}</span><b className="tabular">{task.progress}%</b></div>
               <div className="launcher-progress"><i style={{width: `${task.progress}%`}}/></div>
               {task.error && <div className="empty-inline">失败：{task.error}</div>}
             </div>
           ) : (
-            <div className="empty-inline">还没有启动器任务。填写配置后点击「安装游戏」或「启动游戏」。</div>
+            <div className="empty-inline">还没有启动器任务。选择游戏目录后点击「安装游戏」或「启动游戏」。</div>
           )}
         </WorkbenchCard>
 
@@ -180,6 +211,21 @@ export function LauncherPage() {
           <pre className="launcher-log">{logs.length > 0 ? logs.map(l => l.message).join('\n') : '（暂无日志）'}</pre>
         </WorkbenchCard>
       </div>
+
+      <DirectoryPicker
+        open={dirPickerOpen}
+        title="选择游戏目录"
+        value={minecraftDir}
+        onClose={() => setDirPickerOpen(false)}
+        onSelect={setMinecraftDir}
+      />
+      <DirectoryPicker
+        open={javaPickerOpen}
+        title="选择 Java 目录"
+        value={javaPath}
+        onClose={() => setJavaPickerOpen(false)}
+        onSelect={setJavaPath}
+      />
     </div>
   );
 }

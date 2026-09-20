@@ -107,7 +107,7 @@ type SystemRecord struct {
 }
 
 type OnboardingRecord struct {
-	CurseForgeKey, FirstPack, FirstMod bool
+	CurseForgeKey, FirstPack, FirstMod, LauncherReady bool
 }
 
 func (r *Repository) CreatePack(ctx context.Context, p PackRecord, version PackVersionRecord) error {
@@ -414,7 +414,7 @@ func (r *Repository) Onboarding(ctx context.Context) (OnboardingRecord, error) {
 	}
 	o.FirstPack = packs > 0
 	o.FirstMod = mods > 0
-	var steps [3]int
+	var steps [4]int
 	rows, err := r.db.QueryContext(ctx, `SELECT step,acknowledged FROM onboarding_state`)
 	if err != nil {
 		return o, err
@@ -433,11 +433,14 @@ func (r *Repository) Onboarding(ctx context.Context) (OnboardingRecord, error) {
 			steps[1] = ack
 		case "firstMod":
 			steps[2] = ack
+		case "launcherReady":
+			steps[3] = ack
 		}
 	}
 	o.CurseForgeKey = o.CurseForgeKey || steps[0] > 0
 	o.FirstPack = o.FirstPack || steps[1] > 0
 	o.FirstMod = o.FirstMod || steps[2] > 0
+	o.LauncherReady = steps[3] > 0
 	return o, rows.Err()
 }
 

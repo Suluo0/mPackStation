@@ -157,51 +157,11 @@ func isUnsafeZipPath(name string) bool {
 }
 
 // kindFromPath returns the content kind for a zip entry path without reading
-// the file. Returns ok=false for entries outside the data-driven scope.
+// kindFromPath returns the content kind for a jar entry using the
+// namespace-aware datapack category (advancement/recipes/** stays advancement).
 func kindFromPath(name string) (string, bool) {
-	lower := strings.ToLower(name)
-	if lower == "fabric.mod.json" || lower == "meta-inf/neoforge.mods.toml" ||
-		lower == "meta-inf/mods.toml" || lower == "quilt.mod.json" {
-		return "metadata", true
-	}
-	if !strings.HasPrefix(lower, "data/") && !strings.HasPrefix(lower, "assets/") {
-		return "", false
-	}
-	ext := path.Ext(lower)
-	if ext != ".json" && ext != ".nbt" && ext != ".png" {
-		return "", false
-	}
-	if strings.HasPrefix(lower, "data/") && (strings.Contains(lower, "/recipe/") || strings.Contains(lower, "/recipes/")) {
-		return "recipe", true
-	}
-	if strings.HasPrefix(lower, "assets/") && strings.Contains(lower, "/models/item/") {
-		return "item_model", true
-	}
-	if strings.HasPrefix(lower, "assets/") && (strings.Contains(lower, "/models/block/") || strings.Contains(lower, "/blockstates/")) {
-		return "item_model", true
-	}
-	if strings.HasPrefix(lower, "assets/") && strings.Contains(lower, "/lang/") {
-		return "lang", true
-	}
-	if strings.HasPrefix(lower, "assets/") && strings.Contains(lower, "/textures/") && ext == ".png" {
-		return "texture", true
-	}
-	if strings.HasPrefix(lower, "data/") && (strings.Contains(lower, "/worldgen/structure/") || strings.Contains(lower, "/structures/")) {
-		return "structure", true
-	}
-	if strings.HasPrefix(lower, "data/") && strings.Contains(lower, "/worldgen/") {
-		return "worldgen", true
-	}
-	if strings.HasPrefix(lower, "data/") && (strings.Contains(lower, "/loot_table/") || strings.Contains(lower, "/loot_tables/")) {
-		return "loot_table", true
-	}
-	if strings.HasPrefix(lower, "data/") && (strings.Contains(lower, "/advancement/") || strings.Contains(lower, "/advancements/")) {
-		return "advancement", true
-	}
-	if strings.HasPrefix(lower, "data/") && strings.Contains(lower, "/tags/") {
-		return "tag", true
-	}
-	return "", false
+	kind, _, ok := kindFromPathClassify(strings.ToLower(name))
+	return kind, ok
 }
 
 // appendContentItem appends a ContentItem to the correct slice on
@@ -237,78 +197,34 @@ func appendContentItem(out *ExtractedContent, item ContentItem) {
 // classifyAndParse maps a zip entry to a ContentItem. Returns ok=false for
 // entries outside the data-driven scope (binary assets, META-INF, etc.).
 func classifyAndParse(f *zip.File) (ContentItem, bool) {
-	name := f.Name
-	lower := strings.ToLower(name)
-
-	// Metadata files.
-	if lower == "fabric.mod.json" {
-		return parseMetadataFile(f, "fabric"), true
-	}
-	if lower == "meta-inf/neoforge.mods.toml" {
-		return parseMetadataFile(f, "neoforge"), true
-	}
-	if lower == "meta-inf/mods.toml" {
-		return parseMetadataFile(f, "forge"), true
-	}
-	if lower == "quilt.mod.json" {
-		return parseMetadataFile(f, "quilt"), true
-	}
-
-	// Must be under data/ or assets/ and end with .json (or .nbt for structures).
-	if !strings.HasPrefix(lower, "data/") && !strings.HasPrefix(lower, "assets/") {
+	lower := strings.ToLower(f.Name)
+	kind, ext, ok := kindFromPathClassify(lower)
+	if !ok {
 		return ContentItem{}, false
 	}
-
-	ext := path.Ext(lower)
-	if ext != ".json" && ext != ".nbt" && ext != ".png" {
+	switch kind {
+	case "metadata":
+		if lower == "fabric.mod.json" {
+			return parseMetadataFile(f, "fabric"), true
+		}
+		if lower == "meta-inf/neoforge.mods.toml" {
+			return parseMetadataFile(f, "neoforge"), true
+		}
+		if lower == "meta-inf/mods.toml" {
+			return parseMetadataFile(f, "forge"), true
+		}
+		if lower == "quilt.mod.json" {
+			return parseMetadataFile(f, "quilt"), true
+		}
 		return ContentItem{}, false
-	}
-
-	// Recipe.
-	if strings.HasPrefix(lower, "data/") && (strings.Contains(lower, "/recipe/") || strings.Contains(lower, "/recipes/")) {
+	case "recipe":
 		return parseRecipeFile(f), true
-	}
-	// Item model.
-	if strings.HasPrefix(lower, "assets/") && strings.Contains(lower, "/models/item/") {
-		return simpleItem(f, "item_model"), true
-	}
-	// Block model (for icon lookup).
-	if strings.HasPrefix(lower, "assets/") && strings.Contains(lower, "/models/block/") {
-		return simpleItem(f, "item_model"), true
-	}
-	if strings.HasPrefix(lower, "assets/") && strings.Contains(lower, "/blockstates/") {
-		return simpleItem(f, "item_model"), true
-	}
-	// Lang files (assets/<namespace>/lang/<locale>.json).
-	if strings.HasPrefix(lower, "assets/") && strings.Contains(lower, "/lang/") {
-		return simpleItem(f, "lang"), true
-	}
-	// Textures (PNG icons for items/blocks).
-	if strings.HasPrefix(lower, "assets/") && strings.Contains(lower, "/textures/") && ext == ".png" {
+	case "texture":
 		return simpleBinaryItem(f, "texture", "image/png"), true
+	default:
+		_ = ext
+		return simpleItem(f, kind), true
 	}
-	// Structure (worldgen/structure JSON or structures/ NBT template).
-	if strings.HasPrefix(lower, "data/") && (strings.Contains(lower, "/worldgen/structure/") || strings.Contains(lower, "/structures/")) {
-		return simpleItem(f, "structure"), true
-	}
-	// Other worldgen (configured_feature, placed_feature, biome, structure_set, etc.).
-	if strings.HasPrefix(lower, "data/") && strings.Contains(lower, "/worldgen/") {
-		return simpleItem(f, "worldgen"), true
-	}
-	// Loot table.
-	if strings.HasPrefix(lower, "data/") && (strings.Contains(lower, "/loot_table/") || strings.Contains(lower, "/loot_tables/")) {
-		return simpleItem(f, "loot_table"), true
-	}
-	// Advancement.
-	if strings.HasPrefix(lower, "data/") && (strings.Contains(lower, "/advancement/") || strings.Contains(lower, "/advancements/")) {
-		return simpleItem(f, "advancement"), true
-	}
-	// Tag.
-	if strings.HasPrefix(lower, "data/") && strings.Contains(lower, "/tags/") {
-		return simpleItem(f, "tag"), true
-	}
-
-	return ContentItem{}, false
 }
 
 // simpleItem reads a JSON entry and stores its raw payload. Used for all
@@ -383,20 +299,32 @@ func parseRecipeFile(f *zip.File) ContentItem {
 		}
 	}
 
-	// Dynamic detection (criterion A): recipe under recipe/special/ with only
-	// a type declaration (no ingredients / result / output).
-	isSpecialPath := strings.Contains(strings.ToLower(f.Name), "/recipe/special/")
+	// Dynamic / special crafting detection.
+	// A) recipe under recipe/special/ with only a type declaration.
+	// B) vanilla special crafting types, often flat under recipe/ (not special/):
+	//    minecraft:crafting_special_* and minecraft:crafting_decorated_pot.
+	// C) any recipe/recipes JSON with no ingredients/ingredient/result/output
+	//    (runtime logic; no fixed crafting grid).
+	typ, _ := raw["type"].(string)
+	lowerPath := strings.ToLower(f.Name)
+	isSpecialPath := strings.Contains(lowerPath, "/recipe/special/")
 	_, hasIngredients := raw["ingredients"]
 	_, hasIngredient := raw["ingredient"]
 	_, hasResult := raw["result"]
 	_, hasOutput := raw["output"]
 	hasContent := hasIngredients || hasIngredient || hasResult || hasOutput
-	if isSpecialPath && !hasContent {
+	isSpecialType := strings.HasPrefix(typ, "minecraft:crafting_special_") ||
+		typ == "minecraft:crafting_decorated_pot"
+	isRecipePath := isUnderCategory(lowerPath, "recipe", "recipes")
+	isDynamic := (isSpecialPath && !hasContent) ||
+		isSpecialType ||
+		(isRecipePath && !hasContent)
+	// Only recipes are dynamic; type-reclassified files (e.g. ae2:matter_cannon
+	// → ammo_definition) keep their own kind and must not flip IsDynamic.
+	if item.Kind == "recipe" && isDynamic {
 		item.IsDynamic = true
-		// Store only the type declaration as payload.
-		typ, _ := raw["type"].(string)
-		dynPayload, _ := json.Marshal(map[string]string{"type": typ})
-		item.Payload = json.RawMessage(dynPayload)
+		// Keep original JSON so type/category remain visible to the UI.
+		item.Payload = json.RawMessage(data)
 		return item
 	}
 

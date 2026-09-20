@@ -7,7 +7,7 @@ import {
   TagsOutlined,
 } from '@ant-design/icons';
 import {PackContext} from './PackPages';
-import {WorkbenchCard, WorkbenchSectionHeader} from '../ui/workbench/Workbench';
+import {WorkbenchButton, WorkbenchCard, WorkbenchSectionHeader} from '../ui/workbench/Workbench';
 import {listContentSources, type Mod} from '../api/mods';
 import {
   getModContentRun, listModContent, parseModContent, resolveModContentIcons,
@@ -15,6 +15,8 @@ import {
 } from '../api/modContent';
 import {ApiError} from '../api/http';
 import {getCatalogStatus, getItemCatalog, rebuildItemCatalog, type CatalogItem, type CatalogTag} from '../api/catalog';
+import {AdvancementTreeView} from '../features/content/AdvancementTreeView';
+import {itemsToAdvTrees} from '../features/content/advLayout';
 
 /* 内容编辑页：接入模组内容提取引擎。
    顶部选模组 → 解析状态 + 触发解析 → 页内三级子菜单(按 kind 过滤) → 内容列表 → 点击查看 payload 详情。 */
@@ -40,16 +42,33 @@ const KIND_TABS: KindTab[] = [
 
 const kindLabel = (kind: string) => KIND_TABS.find(t => t.kind === kind)?.label ?? kind;
 
-/* 解析配方 payload, 构建 3x3 合成网格。支持 crafting_shaped / crafting_shapeless。 */
-function parseRecipeGrid(payload: unknown): {grid: (string | null)[][]; output: {id: string; count: number} | null; type: string} {
-  if (!payload || typeof payload !== 'object') return {grid: [], output: null, type: 'unknown'};
+/* 原版/特殊合成类型：运行时逻辑，无固定合成表。 */
+function isSpecialRecipeType(type: string): boolean {
+  return type.startsWith('minecraft:crafting_special_') || type === 'minecraft:crafting_decorated_pot';
+}
+
+/* payload 是否属于特殊/动态配方（无 ingredients/result）。 */
+function isSpecialRecipePayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  const p = payload as Record<string, unknown>;
+  const type = String(p.type || '');
+  if (type === 'ae2:matter_cannon') return false;
+  if (isSpecialRecipeType(type)) return true;
+  return type !== '' && p.ingredients === undefined && p.ingredient === undefined
+    && p.result === undefined && p.output === undefined;
+}
+
+/* 解析配方 payload, 构建 3x3 合成网格。支持 crafting_shaped / crafting_shapeless。special 返回空网格。 */
+function parseRecipeGrid(payload: unknown): {grid: (string | null)[][]; output: {id: string; count: number} | null; type: string; special: boolean} {
+  if (!payload || typeof payload !== 'object') return {grid: [], output: null, type: 'unknown', special: false};
   const p = payload as Record<string, unknown>;
   const type = String(p.type || 'unknown');
   const result = p.result as Record<string, unknown> | undefined;
   const output = result ? {id: String(result.id || result.item || ''), count: Number(result.count || 1)} : null;
+  const special = isSpecialRecipePayload(payload);
 
   // crafting_shaped: pattern + key
-  if (type === 'minecraft:crafting_shaped' && Array.isArray(p.pattern) && p.key && typeof p.key === 'object') {
+  if (!special && type === 'minecraft:crafting_shaped' && Array.isArray(p.pattern) && p.key && typeof p.key === 'object') {
     const key = p.key as Record<string, {item?: string; id?: string; tag?: string}>;
     const grid: (string | null)[][] = [];
     for (let row = 0; row < 3; row++) {
@@ -64,11 +83,11 @@ function parseRecipeGrid(payload: unknown): {grid: (string | null)[][]; output: 
       }
       grid.push(gridRow);
     }
-    return {grid, output, type};
+    return {grid, output, type, special: false};
   }
 
   // crafting_shapeless / ae2:transform: ingredients 数组 → 输出
-  if ((type === 'minecraft:crafting_shapeless' || type === 'ae2:transform') && Array.isArray(p.ingredients)) {
+  if (!special && (type === 'minecraft:crafting_shapeless' || type === 'ae2:transform') && Array.isArray(p.ingredients)) {
     const grid: (string | null)[][] = [[null, null, null], [null, null, null], [null, null, null]];
     let idx = 0;
     for (const ing of p.ingredients as Array<{item?: string; id?: string; tag?: string}>) {
@@ -78,15 +97,33 @@ function parseRecipeGrid(payload: unknown): {grid: (string | null)[][]; output: 
         idx++;
       }
     }
-    return {grid, output, type};
+    return {grid, output, type, special: false};
   }
 
-  return {grid: [], output, type};
+  return {grid: [], output, type, special};
 }
 
-/* JEI 风格配方合成网格视图: 3x3 输入 + 箭头 + 输出。 */
-function RecipeViewer({payload, translateKey, getItemIcon, onSelect}: {payload: unknown; translateKey: (k: string) => string; getItemIcon: (k: string) => string | null; onSelect: (id: string) => void}) {
-  const {grid, output, type} = parseRecipeGrid(payload);
+/* 配方解锁进度（advancement）不是合成配方：payload 有 parent/criteria，无 type。 */
+function isAdvancementPayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  const p = payload as Record<string, unknown>;
+  return (typeof p.criteria === 'object' && p.criteria !== null)
+    || (typeof p.parent === 'string' && String(p.parent).includes('recipes/'))
+    || (typeof p.rewards === 'object' && p.rewards !== null && typeof p.type !== 'string');
+}
+
+/* JEI 风格配方合成网格视图: 3x3 输入 + 箭头 + 输出。special 显示运行时逻辑说明。 */
+function RecipeViewer({payload, translateKey, getItemIcon, onSelect, itemKind}: {payload: unknown; translateKey: (k: string) => string; getItemIcon: (k: string) => string | null; onSelect: (id: string) => void; itemKind?: string}) {
+  const {grid, output, type, special} = parseRecipeGrid(payload);
+
+  if (itemKind === 'advancement' || (type === 'unknown' && isAdvancementPayload(payload))) {
+    return (
+      <div className="recipe-viewer unsupported">
+        这是<strong>配方解锁进度（advancement）</strong>，不是合成配方。
+        原版会把 <code>data/&lt;ns&gt;/advancement/recipes/**</code> 用来解锁配方展示，真正的合成配方在 <code>recipe/</code> 目录。
+      </div>
+    );
+  }
 
   // ae2:matter_cannon 弹药属性, 不是合成配方
   if (type === 'ae2:matter_cannon' && payload && typeof payload === 'object') {
@@ -104,6 +141,25 @@ function RecipeViewer({payload, translateKey, getItemIcon, onSelect}: {payload: 
           </div>
           <div className="ammo-weight">重量: <strong>{weight}</strong></div>
         </div>
+      </div>
+    );
+  }
+
+  if (special) {
+    return (
+      <div className="recipe-viewer special-recipe">
+        <div className="special-recipe-note">特殊合成配方（运行时逻辑，无固定合成表）</div>
+        <div className="special-recipe-type"><code>{type}</code></div>
+        {type.includes('bookcloning') && (
+          <div className="special-recipe-hint">
+            书与笔复制：将「书与笔」与「已写成的书」放入合成栏，可复制书的内容（每份副本消耗书与笔的墨水）。
+          </div>
+        )}
+        {output && (
+          <div className="special-recipe-output">
+            可能产出：<code onClick={() => onSelect(output.id)} style={{cursor: 'pointer'}}>{translateKey(output.id)}</code>
+          </div>
+        )}
       </div>
     );
   }
@@ -166,6 +222,8 @@ export function ModContentPage() {
   const [iconRefresh, setIconRefresh] = useState(0);
   const [catalogRefresh, setCatalogRefresh] = useState(0);
   const [catalogRebuilding, setCatalogRebuilding] = useState(false);
+  /* 进度页：树视图 / 表格切换（M1 树画布） */
+  const [advViewMode, setAdvViewMode] = useState<'tree' | 'table'>('tree');
 
   /* 把模组内容 ID(ae2:misc/fluix_pearl) 翻译成语言文件里的显示名。
      语言文件 key 格式: item.ae2.misc.fluix_pearl / block.ae2.misc.fluix_pearl */
@@ -175,11 +233,24 @@ export function ModContentPage() {
     return catalogItems[key]?.displayName || key;
   }, [catalogItems, catalogTags]);
 
-  /* 对配方类型, 从 payload 提取输出物品 ID 和数量, 返回显示信息。 */
+  /* 对配方类型, 从 payload 提取输出物品 ID 和数量, 返回显示信息。
+     special/动态配方无固定产物 → 「特殊配方」或 lang 名，避免裸 key。 */
   const getRecipeDisplay = useCallback((item: ModContentItem): {name: string; techId: string} | null => {
     if (item.kind !== 'recipe' || !item.payload) return null;
     try {
       const payload = typeof item.payload === 'string' ? JSON.parse(item.payload) : item.payload;
+      const type = String(payload?.type || '');
+      if (isSpecialRecipePayload(payload) || item.isDynamic) {
+        const techId = type || item.key;
+        const candidates = [`recipe.${item.key}`, `recipe.${type}`, `recipe.minecraft.${item.key.split(':').pop()}`, item.key];
+        let name = '特殊配方';
+        for (const k of candidates) {
+          if (!k) continue;
+          const t = translateKey(k);
+          if (t && t !== k) { name = t; break; }
+        }
+        return {name, techId};
+      }
       const result = payload?.result;
       if (!result?.id) return null;
       const id = result.id as string;
@@ -214,7 +285,7 @@ export function ModContentPage() {
     setError('');
     try {
       const [listRes, runRes] = await Promise.all([
-        listModContent(id, selectedModId, {kind: activeKind || undefined, limit: 200}),
+        listModContent(id, selectedModId, {kind: activeKind || undefined, limit: activeKind === 'advancement' ? 500 : 200}),
         getModContentRun(id, selectedModId).catch(e => {
           if (e instanceof ApiError && e.status === 404) return null;
           throw e;
@@ -306,7 +377,7 @@ export function ModContentPage() {
     setParsing(true);
     setError('');
     try {
-      await parseModContent(id, selectedModId);
+      await parseModContent(id, selectedModId, true);
       /* 异步任务,轮询 run 状态直到 succeeded/failed。 */
       const poll = async (attempt: number): Promise<void> => {
         if (attempt > 60) return; /* 最多轮询约 2 分钟 */
@@ -364,33 +435,79 @@ export function ModContentPage() {
   const selectedRelationTag = relationKey.startsWith('#') ? catalogTags[relationKey.slice(1)] : undefined;
   const selectedRelationItem = !relationKey.startsWith('#') ? catalogItems[relationKey] : undefined;
 
+  /* kind=advancement：payload.parent/display/criteria → 进度树（§5bis 分组） */
+  const advTrees = useMemo(() => {
+    if (activeKind !== 'advancement' || items.length === 0) return [];
+    return itemsToAdvTrees(items, {getIcon: getItemIcon, translateKey});
+  }, [activeKind, items, getItemIcon, translateKey]);
+
+  const showAdvTree = activeKind === 'advancement' && advViewMode === 'tree' && advTrees.length > 0;
+
   return (
     <div className="workspace-page mod-content-page">
-      <PackContext active="内容编辑"/>
-      {selectedModId && <div role="status" style={{marginBottom: 12}}>
-        {iconsLoading ? '正在加载物品图标（首次需准备原版资源）…' : iconWarnings.join(' ')}
-        <Button size="small" loading={iconsLoading || catalogRebuilding} onClick={() => void handleReloadResources()} style={{marginLeft: 8}}>重建目录与图标</Button>
-      </div>}
+      <PackContext
+        active="内容编辑"
+        action={
+          <span style={{display: 'inline-flex', gap: 8, alignItems: 'center'}}>
+            <Button
+              icon={<ReloadOutlined/>}
+              loading={iconsLoading || catalogRebuilding}
+              onClick={() => void handleReloadResources()}
+            >
+              重建目录与图标
+            </Button>
+            <WorkbenchButton
+              tone="primary"
+              icon={<PlayCircleOutlined/>}
+              loading={parsing}
+              disabled={!selectedModId}
+              onClick={handleParse}
+            >
+              {run ? '重新解析' : '开始解析'}
+            </WorkbenchButton>
+          </span>
+        }
+      />
       <div className="page-heading compact">
         <div>
           <span className="eyebrow">MOD CONTENT / EXTRACTION</span>
           <h1>内容编辑</h1>
-          <p>从模组 jar 中提取配方、物品、结构、地形等数据驱动内容,识别动态配方。</p>
+          <p>从模组 jar 提取配方、物品、结构与语言内容。选模组 → 解析 → 按类型浏览。</p>
         </div>
       </div>
 
-      {/* 模组选择器 */}
-      <WorkbenchCard className="mod-selector-card">
-        <WorkbenchSectionHeader title="选择模组" action={
-          <Select
-            value={selectedModId || undefined}
-            onChange={setSelectedModId}
-            loading={modsLoading}
-            placeholder="选择一个模组"
-            style={{minWidth: 320}}
-            options={mods.map(m => ({label: m.origin === 'builtin' ? `Minecraft [原版] (${m.status})` : `${m.displayName} [${m.source}] (${m.status})`, value: m.id}))}
-          />
-        }/>
+      <WorkbenchCard className="mod-toolbar-card">
+        <div className="mod-toolbar">
+          <div className="mod-toolbar-field">
+            <span className="field-label">模组</span>
+            <Select
+              value={selectedModId || undefined}
+              onChange={setSelectedModId}
+              loading={modsLoading}
+              placeholder="选择一个模组"
+              style={{minWidth: 280, flex: 1}}
+              options={mods.map(m => ({
+                label: m.origin === 'builtin' ? `Minecraft [原版] (${m.status})` : `${m.displayName} [${m.source}] (${m.status})`,
+                value: m.id,
+              }))}
+            />
+          </div>
+          {selectedModId && (
+            <div className="mod-metrics">
+              <div><span>解析状态</span><strong>{runStatusTag(run)}</strong></div>
+              <div><span>已解析</span><strong className="tabular">{run?.parsedCount ?? 0}</strong></div>
+              <div><span>动态配方</span><strong className="tabular">{run?.dynamicCount ?? 0}</strong></div>
+              <div><span>解析错误</span><strong className="tabular">{run?.errorCount ?? 0}</strong></div>
+              <div><span>总文件</span><strong className="tabular">{run?.totalFiles ?? 0}</strong></div>
+            </div>
+          )}
+        </div>
+        {selectedModId && (iconsLoading || iconWarnings.length > 0) && (
+          <div className="toolbar-note" role="status">
+            {iconsLoading ? '正在加载物品图标（首次需准备原版资源）…' : iconWarnings.join(' ')}
+          </div>
+        )}
+        {run?.errorMessage && <div className="parse-error">错误: {run.errorMessage}</div>}
         {!selectedModId && mods.length === 0 && !modsLoading && (
           <Empty description="该整合包还没有添加模组"/>
         )}
@@ -398,51 +515,13 @@ export function ModContentPage() {
 
       {selectedModId && (
         <>
-          {/* 解析状态 + 操作 */}
-          <WorkbenchCard className="mod-content-status">
-            <div className="status-row">
-              <div className="status-item">
-                <span>解析状态</span>
-                <strong>{runStatusTag(run)}</strong>
-              </div>
-              <div className="status-item">
-                <span>已解析条目</span>
-                <strong>{run?.parsedCount ?? 0}</strong>
-              </div>
-              <div className="status-item">
-                <span>动态配方</span>
-                <strong>{run?.dynamicCount ?? 0}</strong>
-              </div>
-              <div className="status-item">
-                <span>解析错误</span>
-                <strong>{run?.errorCount ?? 0}</strong>
-              </div>
-              <div className="status-item">
-                <span>总文件数</span>
-                <strong>{run?.totalFiles ?? 0}</strong>
-              </div>
-              <div className="status-actions">
-                <Button
-                  type="primary"
-                  icon={<PlayCircleOutlined/>}
-                  loading={parsing}
-                  onClick={handleParse}
-                >
-                  {run ? '重新解析' : '开始解析'}
-                </Button>
-                <Button icon={<ReloadOutlined/>} onClick={loadContent} disabled={loading}>刷新</Button>
-              </div>
-            </div>
-            {run?.errorMessage && (
-              <div className="parse-error">错误: {run.errorMessage}</div>
-            )}
-          </WorkbenchCard>
-
-          {/* 三级子菜单 (按 kind 过滤) */}
-          <div className="mod-content-tabs">
+          <div className="mod-content-tabs" role="tablist" aria-label="内容类型">
             {KIND_TABS.map(tab => (
               <button
                 key={tab.kind || 'all'}
+                type="button"
+                role="tab"
+                aria-selected={activeKind === tab.kind}
                 className={`mod-content-tab ${activeKind === tab.kind ? 'active' : ''}`}
                 onClick={() => setActiveKind(tab.kind)}
               >
@@ -452,20 +531,45 @@ export function ModContentPage() {
             ))}
           </div>
 
-          {/* 内容列表 */}
           <WorkbenchCard className="mod-content-list">
             <WorkbenchSectionHeader
               title={`${activeKind ? kindLabel(activeKind) : '全部内容'} (${total})`}
-              action={selectedMod ? <span className="mod-name">{selectedMod.displayName}</span> : null}
+              action={<span style={{display: 'inline-flex', gap: 8, alignItems: 'center'}}>
+                {selectedMod ? <span className="mod-name">{selectedMod.displayName}</span> : null}
+                {activeKind === 'advancement' && (
+                  <span className="adv-view-toggle" role="group" aria-label="进度视图">
+                    <button
+                      type="button"
+                      className={advViewMode === 'tree' ? 'active' : ''}
+                      onClick={() => setAdvViewMode('tree')}
+                    >
+                      树
+                    </button>
+                    <button
+                      type="button"
+                      className={advViewMode === 'table' ? 'active' : ''}
+                      onClick={() => setAdvViewMode('table')}
+                    >
+                      表格
+                    </button>
+                  </span>
+                )}
+                <Button size="small" icon={<ReloadOutlined/>} onClick={loadContent} disabled={loading}>刷新</Button>
+              </span>}
             />
-            {loading && <div className="list-loading"><Spin description="加载中…"/></div>}
+            {loading && <div className="list-loading"><Spin/></div>}
             {error && <div className="list-error">{error}</div>}
             {!loading && !error && items.length === 0 && (
               <Empty
-                description={run ? '该分类下没有内容' : '尚未解析,点击"开始解析"提取模组内容'}
+                description={run ? '该分类下没有内容。切换其他类型或重新解析。' : '尚未解析。点击右上角「开始解析」提取模组内容。'}
               />
             )}
-            {!loading && !error && items.length > 0 && (
+            {!loading && !error && showAdvTree && (
+              <div className="adv-tree-wrap">
+                <AdvancementTreeView trees={advTrees} getIcon={getItemIcon}/>
+              </div>
+            )}
+            {!loading && !error && items.length > 0 && !showAdvTree && (
               <table className="mod-content-table">
                 <thead>
                   <tr>
@@ -500,7 +604,14 @@ export function ModContentPage() {
                         })() : '—'}
                       </td>
                       <td className="content-path">{item.path}</td>
-                      <td>{item.isDynamic ? <Tag color="orange">动态</Tag> : <span className="muted">—</span>}</td>
+                      <td>
+                        {(() => {
+                          const special = item.kind === 'recipe' && (isSpecialRecipePayload(item.payload) || item.isDynamic);
+                          if (special) return <Tag color="orange">特殊/动态</Tag>;
+                          if (item.isDynamic) return <Tag color="orange">动态</Tag>;
+                          return <span className="muted">—</span>;
+                        })()}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -523,13 +634,19 @@ export function ModContentPage() {
             <div className="detail-meta">
               <p><strong>ID:</strong> {detailItem.id}</p>
               <p><strong>路径:</strong> <code>{detailItem.path}</code></p>
-              <p><strong>动态配方:</strong> {detailItem.isDynamic ? '是' : '否'}</p>
+              <p><strong>动态配方:</strong> {detailItem.isDynamic ? (detailItem.kind === 'recipe' && isSpecialRecipePayload(detailItem.payload) ? '特殊/动态' : '是') : '否'}</p>
               {detailItem.parseError && <p className="parse-error"><strong>解析错误:</strong> {detailItem.parseError}</p>}
             </div>
-            {detailItem.kind === 'recipe' && (
+            {detailItem.kind === 'recipe' && !isAdvancementPayload(detailItem.payload) && (
               <div className="detail-recipe">
-                <h4>合成配方 (JEI 视图)</h4>
-                <RecipeViewer payload={detailItem.payload} translateKey={translateKey} getItemIcon={getItemIcon} onSelect={setRelationKey}/>
+                <h4>{isSpecialRecipePayload(detailItem.payload) || detailItem.isDynamic ? '配方说明' : '合成配方 (JEI 视图)'}</h4>
+                <RecipeViewer payload={detailItem.payload} translateKey={translateKey} getItemIcon={getItemIcon} onSelect={setRelationKey} itemKind={detailItem.kind}/>
+              </div>
+            )}
+            {(detailItem.kind === 'advancement' || isAdvancementPayload(detailItem.payload)) && (
+              <div className="detail-recipe">
+                <h4>内容说明</h4>
+                <RecipeViewer payload={detailItem.payload} translateKey={translateKey} getItemIcon={getItemIcon} onSelect={setRelationKey} itemKind="advancement"/>
               </div>
             )}
             <div className="detail-payload">

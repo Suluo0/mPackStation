@@ -1,0 +1,207 @@
+/* 共享无限画布样式：世界层 transform + 网格 + 缩放坞。 */
+
+.mp-canvas {
+  position: relative;
+  overflow: hidden;
+  min-height: 320px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  background: #1a2220;
+}
+
+.mp-canvas:active,
+.mp-canvas.is-panning {
+  cursor: grabbing;
+}
+
+.mp-canvas:focus-visible {
+  outline: 2px solid var(--mc-primary, #c9783b);
+  outline-offset: 2px;
+}
+
+.mp-canvas-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: 0 0;
+}
+
+.mp-canvas.background-dots .mp-canvas-grid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.mp-canvas.background-blank .mp-canvas-grid {
+  display: none;
+}
+
+.mp-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.mp-zoom-bar {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  color: #e8e2d4;
+  background: rgba(12, 16, 14, 0.86);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+  cursor: default;
+}
+
+.mp-zoom-bar.align-right {
+  left: auto;
+  right: 12px;
+}
+
+.mp-zoom-bar button {
+  min-width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  padding: 0 8px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.mp-zoom-bar button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.mp-zoom-slider {
+  width: 96px;
+  accent-color: var(--mc-primary, #c9783b);
+  cursor: pointer;
+}
+
+.mp-zoom-percent {
+  min-width: 44px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* 任务书画布内嵌（保留既有 class 兼容） */
+.qb-viewport.mp-canvas {
+  min-height: 420px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(73, 125, 111, 0.32), transparent 36%),
+    #203b34;
+}
+
+.qb-world.mp-world {
+  /* 节点仍用 left/top 世界坐标 */
+}
+
+.qb-node-port {
+  position: absolute;
+  right: -7px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border: 2px solid #f0b27a;
+  border-radius: 50%;
+  background: #314941;
+  cursor: crosshair;
+  z-index: 2;
+}
+
+.qb-node-port:hover {
+  background: #f0b27a;
+  box-shadow: 0 0 0 3px rgba(240, 178, 122, 0.35);
+}
+
+/* 连线箭头 / 状态 */
+.quest-edge-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.quest-edge-layer .quest-edge-hit {
+  pointer-events: stroke;
+  stroke-width: 14;
+  fill: none;
+  stroke: transparent;
+  cursor: pointer;
+}
+
+.quest-edge-layer .quest-edge-line {
+  fill: none;
+  stroke: #8aa89a;
+  stroke-width: 2;
+  marker-end: url(#mp-quest-arrow);
+}
+
+.quest-arrow-head {
+  fill: #8aa89a;
+}
+
+.quest-edge.is-selected .quest-edge-line {
+  stroke: #f0b27a;
+  stroke-width: 3;
+}
+
+.quest-edge.is-selected .quest-arrow-head,
+.quest-edge.is-selected ~ defs .quest-arrow-head {
+  fill: #f0b27a;
+}
+
+.quest-edge.is-cycle .quest-edge-line {
+  stroke: #e25d4a;
+  stroke-dasharray: 6 4;
+}
+
+.quest-edge.is-cross-chapter .quest-edge-line {
+  stroke: #7eb6ff;
+  stroke-dasharray: 4 3;
+}
+
+.quest-edge-preview {
+  fill: none;
+  stroke: #f0b27a;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  marker-end: url(#mp-quest-arrow);
+  pointer-events: none;
+}
+
+.quest-edge-cross-label {
+  fill: #9ec9ff;
+  font-size: 10px;
+  pointer-events: none;
+}
+
+/* 进度树画布沿用 MpCanvas 时的适配 */
+.adv-tree-canvas.mp-canvas {
+  min-height: 520px;
+  background: #1c221e;
+}
+
+.adv-tree-world.mp-world {
+  width: 0;
+  height: 0;
+}

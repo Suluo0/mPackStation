@@ -258,6 +258,12 @@ func TestParseRecipe_DynamicDetection(t *testing.T) {
 		{"normal_with_content", "data/x/recipe/normal.json", `{"type":"x:custom","ingredients":[],"result":{}}`, false},
 		{"special_with_content", "data/x/recipe/special/full.json", `{"type":"x:full","ingredients":[{"item":"minecraft:dirt"}],"result":{"id":"x:y"}}`, false},
 		{"special_only_type_and_extra", "data/x/recipe/special/extra.json", `{"type":"x:extra","conditions":[]}`, true},
+		// Vanilla special recipes are often flat under recipe/, not recipe/special/.
+		{"vanilla_book_cloning_flat", "data/minecraft/recipe/book_cloning.json", `{"type":"minecraft:crafting_special_bookcloning","category":"misc"}`, true},
+		{"vanilla_decorated_pot_flat", "data/minecraft/recipe/decorated_pot.json", `{"type":"minecraft:crafting_decorated_pot"}`, true},
+		{"type_only_custom_flat", "data/x/recipe/only_type.json", `{"type":"x:runtime_logic"}`, true},
+		{"furnace_with_content", "data/x/recipe/smelting.json", `{"type":"minecraft:smelting","ingredient":{"item":"minecraft:iron_ore"},"result":"minecraft:iron_ingot"}`, false},
+		{"shaped_with_content_flat", "data/x/recipe/planks.json", `{"type":"minecraft:crafting_shaped","pattern":["#"],"key":{"#":{"item":"minecraft:oak_log"}},"result":{"id":"minecraft:oak_planks","count":4}}`, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -277,6 +283,69 @@ func TestParseRecipe_DynamicDetection(t *testing.T) {
 				t.Errorf("IsDynamic = %v, want %v", ext.Recipes[0].IsDynamic, c.wantDyn)
 			}
 		})
+	}
+}
+
+// TestParseRecipe_AmmoDefinitionNotDynamic: type-reclassified recipe files
+// (ae2:matter_cannon → ammo_definition) must not be marked IsDynamic even
+// when they lack ingredients/result.
+func TestParseRecipe_AmmoDefinitionNotDynamic(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addZipFile(t, zw, "data/ae2/recipe/matter_cannon.json",
+		`{"type":"ae2:matter_cannon","ammo":{"item":"ae2:matter_ball"},"weight":64}`)
+	zw.Close()
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("zip reader: %v", err)
+	}
+	item, ok := classifyAndParse(zr.File[0])
+	if !ok {
+		t.Fatal("classifyAndParse ok = false, want true")
+	}
+	if item.Kind != "ammo_definition" {
+		t.Errorf("Kind = %q, want ammo_definition", item.Kind)
+	}
+	if item.IsDynamic {
+		t.Error("IsDynamic = true, want false for ammo_definition")
+	}
+}
+
+// TestParseRecipe_VanillaSpecialFlat ensures vanilla book_cloning style
+// payloads (flat under data/<ns>/recipe/, not recipe/special/) are dynamic.
+func TestParseRecipe_VanillaSpecialFlat(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addZipFile(t, zw, "fabric.mod.json", `{"id":"minecraft","version":"1.21.1"}`)
+	addZipFile(t, zw, "data/minecraft/recipe/book_cloning.json",
+		`{"type":"minecraft:crafting_special_bookcloning","category":"misc"}`)
+	zw.Close()
+	ext, err := ExtractModContent(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if len(ext.Recipes) != 1 {
+		t.Fatalf("Recipes len = %d, want 1", len(ext.Recipes))
+	}
+	r := ext.Recipes[0]
+	if !r.IsDynamic {
+		t.Fatalf("book_cloning IsDynamic = false, want true")
+	}
+	if r.ParseError != "" {
+		t.Errorf("ParseError = %q, want empty", r.ParseError)
+	}
+	if r.Key != "minecraft:book_cloning" {
+		t.Errorf("Key = %q, want minecraft:book_cloning", r.Key)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(r.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload["type"] != "minecraft:crafting_special_bookcloning" {
+		t.Errorf("payload type = %v, want minecraft:crafting_special_bookcloning", payload["type"])
+	}
+	if ext.Stats.DynamicCount != 1 {
+		t.Errorf("Stats.DynamicCount = %d, want 1", ext.Stats.DynamicCount)
 	}
 }
 

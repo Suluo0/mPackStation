@@ -575,7 +575,7 @@ func (a *API) addPackMod(ctx context.Context, packID string, in AddModInput, req
 		if err := tx.UpsertJarIndex(ctx, store.JarIndexRecord{SHA1: m.SHA1, SHA256: dl.SHA256, FilePath: "jar://" + m.SHA1, SizeBytes: dl.Size, ModIDs: []string{id}, ParsedAt: now}); err != nil {
 			return err
 		}
-		if err := tx.AddPackMod(ctx, m); err != nil {
+		if err := tx.AddPackMod(ctx, &m); err != nil {
 			return err
 		}
 		if extracted != nil {
@@ -589,10 +589,10 @@ func (a *API) addPackMod(ctx context.Context, packID string, in AddModInput, req
 		if err := tx.InvalidatePackGeneration(ctx, packID); err != nil {
 			return err
 		}
-		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: packID, Kind: "mod", Action: "add-mod", Text: activityText, At: now}, map[string]any{"mod_id": id}, requestID); err != nil {
+		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: packID, Kind: "mod", Action: "add-mod", Text: activityText, At: now}, map[string]any{"mod_id": m.ID}, requestID); err != nil {
 			return err
 		}
-		return tx.AddOutbox(ctx, newID("outbox"), packID, "pack_mod", id, "mod.added", map[string]any{"mod_id": id}, now)
+		return tx.AddOutbox(ctx, newID("outbox"), packID, "pack_mod", m.ID, "mod.added", map[string]any{"mod_id": m.ID}, now)
 	})
 	if err != nil {
 		return Mod{}, err
@@ -665,16 +665,16 @@ func (a *API) AddLocalPackMod(ctx context.Context, packID string, in LocalModInp
 		if err := tx.UpsertJarIndex(ctx, store.JarIndexRecord{SHA1: m.SHA1, SHA256: in.SHA256, FilePath: "jar://" + m.SHA1, SizeBytes: in.Size, ModIDs: []string{id}, ParsedAt: now}); err != nil {
 			return err
 		}
-		if err := tx.AddPackMod(ctx, m); err != nil {
+		if err := tx.AddPackMod(ctx, &m); err != nil {
 			return err
 		}
 		if err := tx.InvalidatePackGeneration(ctx, packID); err != nil {
 			return err
 		}
-		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: packID, Kind: "mod", Action: "add-mod", Text: "Added local " + m.DisplayName, At: now}, map[string]any{"mod_id": id}, requestID); err != nil {
+		if err := tx.AddActivity(ctx, store.ActivityRecord{ID: newID("activity"), PackID: packID, Kind: "mod", Action: "add-mod", Text: "Added local " + m.DisplayName, At: now}, map[string]any{"mod_id": m.ID}, requestID); err != nil {
 			return err
 		}
-		return tx.AddOutbox(ctx, newID("outbox"), packID, "pack_mod", id, "mod.added", map[string]any{"mod_id": id}, now)
+		return tx.AddOutbox(ctx, newID("outbox"), packID, "pack_mod", m.ID, "mod.added", map[string]any{"mod_id": m.ID}, now)
 	})
 	if err != nil {
 		return Mod{}, err

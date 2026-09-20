@@ -110,6 +110,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	registerCatalogRoutes(mux, app)
 	registerPublishRoutes(mux, app, taskAPI, p7, version)
 	registerImportRoutes(mux, importer)
+	registerFSRoutes(mux, app)
 	return requestIDMiddleware(accessLogMiddleware(recoverMiddleware(maxBodyMiddleware(securityMiddleware(token, fallbackEnvelopeMiddleware(mux))))))
 }
 

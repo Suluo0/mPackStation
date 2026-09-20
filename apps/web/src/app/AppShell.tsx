@@ -101,13 +101,21 @@ export function AppShell() {
           <Outlet/>
         </main>
       </div>
-      <OnboardingChecklist onboarding={onboarding} onSettings={() => navigate('/settings')} onRefresh={refreshOnboarding} />
+      <OnboardingChecklist
+        onboarding={onboarding}
+        onSettings={() => navigate('/settings')}
+        onRefresh={refreshOnboarding}
+        onLauncher={() => navigate(activePackId ? `/packs/${activePackId}/launcher` : '/packs')}
+      />
       <footer className="app-statusbar">
         <div className="app-status-item"><span className="app-status-icon"><DatabaseOutlined /></span><div><strong>{modTotal} 个模组</strong><small>模组库总数</small></div></div>
         <div className="app-status-item"><span className="app-status-check"><CheckCircleOutlined /></span><div><strong>{modInstalled} 已安装</strong><small>已选择模组</small></div></div>
         <div className="app-status-item app-status-index"><span className="app-status-icon"><AppstoreOutlined /></span><div className="app-status-index-body"><div className="app-status-index-head"><strong>索引进度</strong><b>待开始</b></div><div className="app-status-progress"><i /></div><small>创建整合包后自动扫描</small></div></div>
         <div className="app-status-item app-status-alert"><span className="app-status-warn"><WarningOutlined /></span><div><strong>{alertCount > 0 ? `${alertCount} 个告警` : '0 个告警'}</strong><small>{alertCount > 0 ? '存在待处理告警' : '健康状态良好'}</small></div></div>
-        <div className="app-status-actions"><button><FileTextOutlined /> 查看日志</button><button><FolderOpenOutlined /> 输出目录</button></div>
+        <div className="app-status-actions">
+          <button type="button" onClick={() => navigate('/')}> <FileTextOutlined /> 查看日志</button>
+          <button type="button" onClick={() => navigate('/settings')}> <FolderOpenOutlined /> 输出目录</button>
+        </div>
       </footer>
     </div>
   );

@@ -1,0 +1,233 @@
+[
+  {
+    "id": "BOOT",
+    "page": "setup",
+    "ok": true,
+    "detail": "packId=pack-35c7e82a7de9764d6538d368",
+    "at": "2026-09-18T20:42:31.849Z"
+  },
+  {
+    "id": "FE-PACKS-LOAD",
+    "page": "packs",
+    "ok": true,
+    "detail": "列表有数据",
+    "at": "2026-09-18T20:42:32.836Z"
+  },
+  {
+    "id": "FE-PACKS-CREATE-MODAL",
+    "page": "packs",
+    "ok": true,
+    "detail": "新建弹窗可打开",
+    "at": "2026-09-18T20:42:33.322Z"
+  },
+  {
+    "id": "FE-QUEST-OPEN",
+    "page": "quests",
+    "ok": true,
+    "detail": "pack=pack-5ff385a8c265798a38a2166a 任务书编辑器可见，无报错",
+    "at": "2026-09-18T20:43:05.415Z"
+  },
+  {
+    "id": "FE-QUEST-UI-NOT-JSON-DUMP",
+    "page": "quests",
+    "ok": true,
+    "detail": "章节/节点编辑 UI + 保存草稿",
+    "at": "2026-09-18T20:43:05.415Z"
+  },
+  {
+    "id": "FE-QUEST-SAVE",
+    "page": "quests",
+    "ok": true,
+    "detail": "整合包\n/\n无\n无任务书包\nMC 1.21.1 · neoforge · v0.1.0\n已保存\n任务书\n保存草稿\n校 验\n应 用\nQUEST BOOK\n任务书\n\n按章节组织任务节点；缺失时会自动创建初始草稿。当前修订 7 · draft\n\n章节\n新增\n1\n开始\n1 个任务\n开始\n添加任务节点\n入门\n完成基础准备\n属性\n",
+    "at": "2026-09-18T20:43:06.444Z"
+  },
+  {
+    "id": "FE-QUEST-OPEN-EXISTING",
+    "page": "quests",
+    "ok": true,
+    "detail": "整合包\n/\nr\nreadd-test\nMC 1.21.1 · neoforge · v0.1.0\n已保存\n任务书\n保存草稿\n校 验\n应 用\nQUEST BOOK\n任务书\n\n按章节组织任务节点；缺失时会自动创建初始草稿。当前修订 — · draft\n\n章节\n新增\n1\n开始\n1 个任务\n开始\n添加任务节点\n入门\n完成基础准",
+    "at": "2026-09-18T20:43:07.726Z"
+  },
+  {
+    "id": "FE-CONTENT-LAYOUT",
+    "page": "content",
+    "ok": true,
+    "detail": "h1=1 toolbar=2 parseCta=1 | 整合包\n/\nr\nreadd-test\nMC 1.21.1 · neoforge · v0.1.0\n已保存\n内容编辑\n重建目录与图标\n开始解析\nMOD CONTENT / EXTRACTION\n内容编辑\n\n从模组 jar 提取配方、物品、结构",
+    "at": "2026-09-18T20:43:09.003Z"
+  },
+  {
+    "id": "FE-CONTENT-NO-CRASH",
+    "page": "content",
+    "ok": true,
+    "detail": "整合包\n/\nr\nreadd-test\nMC 1.21.1 · neoforge · v0.1.0\n已保存\n内容编辑\n重建目录与图标\n开始解析\nMOD CONTENT / EXTRACTION\n内容编辑\n\n从模组 jar 提取配方、物品、结构",
+    "at": "2026-09-18T20:43:09.003Z"
+  },
+  {
+    "id": "FE-LAUNCHER-PICKER-BTN",
+    "page": "launcher",
+    "ok": true,
+    "detail": "存在选择目录按钮",
+    "at": "2026-09-18T20:43:09.885Z"
+  },
+  {
+    "id": "FE-LAUNCHER-PICKER-MODAL",
+    "page": "launcher",
+    "ok": true,
+    "detail": "选择游戏目录\n上级\n当前路径\n/Users/xunsu\n推荐位置\nhome\n/Users/xunsu\n子目录（21）\nApplications\n/Users/xunsu/Applications\nDesktop\n/Users/xunsu/Desktop\nDocuments\n/Users/xunsu/Documents\nDoubaoWork\n/Users/xu",
+    "at": "2026-09-18T20:43:10.617Z"
+  },
+  {
+    "id": "FE-LAUNCHER-PICKER-APPLY",
+    "page": "launcher",
+    "ok": true,
+    "detail": "picked=home value=/Users/xunsu",
+    "at": "2026-09-18T20:43:11.459Z"
+  },
+  {
+    "id": "FE-LAUNCHER-VALIDATE",
+    "page": "launcher",
+    "ok": true,
+    "detail": "空表单被前端拦截",
+    "at": "2026-09-18T20:43:11.894Z"
+  },
+  {
+    "id": "FE-PUBLISH-BUTTONS",
+    "page": "publish",
+    "ok": true,
+    "detail": "recheck=1 build=1 select=1",
+    "at": "2026-09-18T20:43:12.977Z"
+  },
+  {
+    "id": "FE-PUBLISH-DIR-PICKER",
+    "page": "publish",
+    "ok": true,
+    "detail": "选择导出目录\n上级\n当前路径\n/Users/xunsu\n推荐位置\nhome\n/Users/xunsu\n子目录（21）\nApplications\n/Users/xunsu/Applications\nDesktop\n/Users/xunsu/Desktop\nDocuments\n/Users/xunsu/Documents\n",
+    "at": "2026-09-18T20:43:13.611Z"
+  },
+  {
+    "id": "FE-PUBLISH-REGISTER-EXPORT",
+    "page": "publish",
+    "ok": true,
+    "detail": "注册反馈正常",
+    "at": "2026-09-18T20:43:15.007Z"
+  },
+  {
+    "id": "FE-PUBLISH-RECHECK",
+    "page": "publish",
+    "ok": true,
+    "detail": "整合包\n/\nr\nreadd-test\nMC 1.21.1 · neoforge · v0.1.0\n已保存\n打包与发布\nPUBLISH / DELIVERY\n打包与发布\n\n交付检查、导出目录与构建产物。构建前必须先注册允许的导出目录。\n\n交付检查\n重新检查\ncontent\npassed · {}\npassed\n版本与产物\n当前版本\n0.1.0\n还没有构建产物。注册导出目录后点击「开始构建」。\n构建目",
+    "at": "2026-09-18T20:43:15.939Z"
+  },
+  {
+    "id": "FE-PUBLISH-BUILD",
+    "page": "publish",
+    "ok": true,
+    "detail": "整合包工作台\nWORKBENCH\n工作台设置\n工作空间\n工作台\n整合包\n当前整合包\n包工作台\n概览\n模组\n依赖与冲突\n内容编辑\n任务书\n打包与发布\n启动器\n收起侧边栏\n整合包\n/\nr\nreadd-test\nMC 1.21.1 · neoforge · v0.1.0\n已保存\n打包与发布\nPUBLISH / DELIVERY\n打包与发布\n\n交付检查、导出目录与构建产物。构建前必须先注册允许的导出目录。\n\n交付检查\n重新检查\n暂无交付检查记录，点击「重新检查」生成。\n版本与产物\n当",
+    "at": "2026-09-18T20:43:17.170Z"
+  },
+  {
+    "id": "FE-MODS-SEARCH",
+    "page": "mods",
+    "ok": true,
+    "detail": "整合包\n/\nr\nreadd-test\nMC 1.21.1 · neoforge · v0.1.0\n已保存\n模组\nMOD CATALOG\n模组\n\n按名称同时搜索 Modrinth 和 CurseForge,版本按当前包 MC 1.21.1 · neoforge 过滤。\n\n搜索\nCurseForge:未配置(设置 CURSEFORGE_API_KEY 后可用)\n20 个搜索结果(按下载量排序)\nSodium\n226.9M 下载\nA high",
+    "at": "2026-09-18T20:43:20.775Z"
+  },
+  {
+    "id": "FE-MODS-VERSIONS",
+    "page": "mods",
+    "ok": true,
+    "detail": "version options=10",
+    "at": "2026-09-18T20:43:22.304Z"
+  },
+  {
+    "id": "FE-MODS-ADD",
+    "page": "mods",
+    "ok": true,
+    "detail": "整合包\n/\nr\nreadd-test\nMC 1.21.1 · neoforge · v0.1.0\n已保存\n模组\nMOD CATALOG\n模组\n\n按名称同时搜索 Modrinth 和 CurseForge,版本按当前包 MC 1.21.1 · neoforge 过滤。\n\n搜索\nCurseForge:未配置(设置 CURSEFORGE_API_KEY 后可用)\n20 个搜索结果(按下载量排序)\nSodium\n226.9M 下载\nA high",
+    "at": "2026-09-18T20:43:25.164Z"
+  },
+  {
+    "id": "FE-MODS-PARSE",
+    "page": "content",
+    "ok": true,
+    "detail": "解析任务有完成/条目产出",
+    "at": "2026-09-18T20:43:45.899Z"
+  },
+  {
+    "id": "FE-MODS-REMOVE",
+    "page": "mods",
+    "ok": true,
+    "detail": "整合包\n/\nr\nreadd-test\nMC 1.21.1 · neoforge · v0.1.0\n已保存\n模组\nMOD CATALOG\n模组\n\n按名称同时搜索 Modrinth 和 CurseForge,版本按当前包 MC 1.21.1 · neoforge 过滤。\n\n搜索\n推荐兼容模组(人工核实)\nPolymorph\n合成配方冲突的通用解法: 多个模组注册了相同原料的配方时, 由它在合成界面让你",
+    "at": "2026-09-18T20:43:48.702Z"
+  },
+  {
+    "id": "FE-ROUTE-_",
+    "page": "/",
+    "ok": true,
+    "detail": "可打开",
+    "at": "2026-09-18T20:43:49.478Z"
+  },
+  {
+    "id": "FE-ROUTE-_packs_pack-35c7e82a7de9764d6538d368",
+    "page": "/packs/pack-35c7e82a7de9764d6538d368",
+    "ok": true,
+    "detail": "可打开",
+    "at": "2026-09-18T20:43:50.263Z"
+  },
+  {
+    "id": "FE-ROUTE-_packs_pack-35c7e82a7de9764d6538d368_mods",
+    "page": "/packs/pack-35c7e82a7de9764d6538d368/mods",
+    "ok": true,
+    "detail": "可打开",
+    "at": "2026-09-18T20:43:51.021Z"
+  },
+  {
+    "id": "FE-ROUTE-_packs_pack-35c7e82a7de9764d6538d368_dependencies",
+    "page": "/packs/pack-35c7e82a7de9764d6538d368/dependencies",
+    "ok": true,
+    "detail": "可打开",
+    "at": "2026-09-18T20:43:51.790Z"
+  },
+  {
+    "id": "FE-ROUTE-_packs_pack-35c7e82a7de9764d6538d368_content",
+    "page": "/packs/pack-35c7e82a7de9764d6538d368/content",
+    "ok": true,
+    "detail": "可打开",
+    "at": "2026-09-18T20:43:52.556Z"
+  },
+  {
+    "id": "FE-ROUTE-_packs_pack-35c7e82a7de9764d6538d368_quests",
+    "page": "/packs/pack-35c7e82a7de9764d6538d368/quests",
+    "ok": true,
+    "detail": "可打开",
+    "at": "2026-09-18T20:43:53.306Z"
+  },
+  {
+    "id": "FE-ROUTE-_packs_pack-35c7e82a7de9764d6538d368_publish",
+    "page": "/packs/pack-35c7e82a7de9764d6538d368/publish",
+    "ok": true,
+    "detail": "可打开",
+    "at": "2026-09-18T20:43:54.073Z"
+  },
+  {
+    "id": "FE-ROUTE-_packs_pack-35c7e82a7de9764d6538d368_launcher",
+    "page": "/packs/pack-35c7e82a7de9764d6538d368/launcher",
+    "ok": true,
+    "detail": "可打开",
+    "at": "2026-09-18T20:43:54.830Z"
+  },
+  {
+    "id": "FE-ROUTE-_settings",
+    "page": "/settings",
+    "ok": true,
+    "detail": "可打开",
+    "at": "2026-09-18T20:43:55.602Z"
+  },
+  {
+    "id": "FE-CONSOLE",
+    "page": "all",
+    "ok": true,
+    "detail": "无页面 JS 错误（忽略 favicon/404/409 业务响应）",
+    "at": "2026-09-18T20:43:55.603Z"
+  }
+]

@@ -2,11 +2,35 @@
 
 ## 当前目标
 
-mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖锁定 → 内容/任务书 → 构建 .mrpack → 部署冒烟 → 便携 Prism 导入并启动 Minecraft。**流水线终局必须通向启动一个 Minecraft**(用户 2026-08-30 定调,取代旧的"不启动游戏"表述)。
+mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖锁定 → 内容/任务书 → 构建 .mrpack → **自研 mPackLauncher 安装并离线启动 Minecraft**（不要求正版；Prism 仅协议/CLI 兜底）。**流水线终局必须通向启动一个 Minecraft**。
 
 ## 当前状态
 
-分支 `DEV_2609-VK2`,远端 `origin = github.com/Suluo0/mPackStation`。**工作树有未提交改动(M6模组内容解析)**。启动器内核 M0-M4 全部完成验证,M5 后端集成完成+前端启动台页面已实现。M6 模组内容解析完成(lang/recipe/ammo/texture/item_icon + 等距投影渲染器)。
+分支 `DEV_2609-VK3`,远端 `origin = github.com/Suluo0/mPackStation`。中断会话剩余缺陷已修复;点击级 UI 回归 **33/33 PASS**;`go test ./...` 与前端 build 通过。改动未提交。
+
+- 2026-09-19 special 配方：后端 parseRecipeFile 将 `minecraft:crafting_special_*`/`decorated_pot`/recipe 路径下无 ingredients·result 的 JSON 标为 IsDynamic；前端 RecipeViewer 增加 special 分支与「特殊/动态」列。需 force 重解析后生效。
+- 2026-09-20 T14 开发包收口：
+  - **列表 padding**：`.wb-card` 默认 `padding: var(--wb-panel-padding)`（24px）；`.mod-content-list` / `.mod-toolbar-card` 与设计系统刻度对齐
+  - **进度树画布 M1**：`AdvancementTreeView` + `advLayout`（拖动/缩放/k_fit 分离/环打断/§5bis 分组）；内容编辑→进度 Tab 可切换树/表格；单测 `apps/web/scripts/test-adv-layout.ts` 18/18
+  - **任务书连线 M1**：edges 权威 + 坐标 + 前置同步；见下方专题条目
+- 2026-09-20 任务书 M1：**M1 任务图编辑：边+坐标+前置同步；非完整 FTB；AND/OR 与游戏内导出后续**。UI 以 draft.edges 为权威，保存同步 prerequisites；Shift+点击连线；保存前本地环检测。验证：`scripts/verify-quest-m1.sh`（tsc/build + go quest 测试 + API A→B GET edges 非空）。
+
+### 2026-09-20 · 任务书/进度：读原始实现后的体验级重做
+
+- 设计权威：`docs/design/quest-book-ftb-experience.md` v1.1、`docs/design/advancement-vanilla-experience.md` v1.1（进度以 vanilla 稿为准；canvas 旧稿仅历史参考）
+- 任务书：QuestBookEditor — 章节 rail + 可拖画布 + 分组 Inspector + 图例 + 编辑/预览；tasks/rewards/依赖 token（FTB）+ 预览模拟完成/锁定/领奖；migration **0020** meta 列
+- 进度：Tab=有 display 的 root；recipes 不进玩家树；requirements **OR(AND)** 三态；hover+Inspector；有界 pan；滚轮平移；缩放标「工作台增强」
+- 验证：go test/vet、tsc+build、test:quest、layout 28/28；独立测试+验收代理 **允许结束**
+- 残余：跨章依赖点击跳转、连线箭头、size 视觉、章节重命名/排序、服务端未强制 edges→prerequisites、HANDOFF 外文档需 checkpoint 刷新
+- **非完整 FTB 导出/SNBT/真实存档**；AND/OR/AND_N UI 已进预览求值
+
+### 2026-09-19 · 中断会话收尾
+
+- 用户点名问题:任务书报错、内容页排版、游戏目录选择器、发布页按钮、模组增删解析链路 —— 均已修复
+- 后端:removed 模组可再次添加(migration 0017 + AddPackMod 复活行);`GET /api/fs/browse` 目录浏览
+- schema version **18**；上手清单去 Prism 化：第4步改为「配置启动台（离线即可）」，`prismAccount` 契约字段恒 true（废弃）
+- 环境:Evo SMB 上 `data/` 曾卡死 server(进程 UN);本轮验证用本地 `-data /tmp/mpack-data`
+- 产物:`docs/tests/ui-click-regression-2026-09-18.md`
 
 - 一键启停:`scripts/dev.ps1`(启动前后端)、`scripts/dev-stop.ps1`(停止)
 - 前端 dev:`http://127.0.0.1:5273/`;后端 dev:`http://127.0.0.1:18871/api/health`
@@ -14,9 +38,23 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 - 启动器内核:`launcherCore/`(Rust),release binary 4.77MB
 - Go 1.27.0 已安装(C:\Program Files\Go\bin)
 - 写操作需 header `X-MPack-Token`
-- 数据库:`data/mpackstation.db`,schema version 14(migrations 0001-0014)
+- 数据库:`data/mpackstation.db`,schema version 17(migrations 0001-0017)
 
 ## 项目功能进展
+
+### 2026-09-19 · 任务书 M1 任务图编辑（诚实子集）
+
+- 状态：已实现并通过 tsc/build + API 边回读验证
+- 范围：**M1 任务图编辑：边+坐标+前置同步；非完整 FTB；AND/OR 与游戏内导出后续**
+- 进展：
+  - UI 以 `draft.edges` 为图权威；保存时把每个节点 `prerequisites` 同步为指向它的 `edges.fromNodeId` 列表
+  - 画布使用 payload `x/y`（缺失时按 chapter 内 position 网格初始化并写回 draft）
+  - SVG 父→子连线，画布可滚动；点击节点 A 再 Shift+点击节点 B = 创建 edge A→B
+  - Inspector 显示 prerequisites 列表，可从画布/下拉添加、移除；可编辑 title/description
+  - 选中边可删除；保存前本地 Kahn 环检测并提示（后端 validate/save 契约已有 cycle）
+- 非目标（禁止扩 scope）：SNBT/FTB 导出、任务完成模拟/解锁运行时、AND/OR/AND_N UI
+- 验证：`npx tsc -b` / `npm run build` 通过；纯函数断言通过；API 创建 A→B 保存后 GET 回来 `edges` 非空且 prerequisites 已同步
+- 相关产物：`apps/web/src/features/quest/questGraph.ts`、`apps/web/src/pages/PackPages.tsx`（QuestEditorPage）、`apps/web/src/pages/pack-pages.css`、`scripts/verify-quest-m1.sh`、`docs/project-state/history/quest-m1-verify-*.log`
 
 ### 2026-09-07 · 包内物品/方块/配方/标签/多语言目录
 

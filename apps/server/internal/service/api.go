@@ -162,6 +162,7 @@ type Onboarding struct {
 		FirstPack     bool `json:"firstPack"`
 		FirstMod      bool `json:"firstMod"`
 		PrismAccount  bool `json:"prismAccount"`
+		LauncherReady bool `json:"launcherReady"`
 	} `json:"steps"`
 }
 
@@ -543,7 +544,10 @@ func (a *API) Onboarding(ctx context.Context) (Onboarding, error) {
 	out.Steps.CurseForgeKey = o.CurseForgeKey
 	out.Steps.FirstPack = o.FirstPack
 	out.Steps.FirstMod = o.FirstMod
-	out.Steps.PrismAccount = a.prismAccountReady()
+	// 离线启动优先：自研 mPackLauncher 不要求正版/Microsoft 登录。
+	// prismAccount 仅兼容旧契约，恒为 true；真实待办是 launcherReady（启动台配置）。
+	out.Steps.PrismAccount = true
+	out.Steps.LauncherReady = o.LauncherReady
 	return out, nil
 }
 
@@ -735,17 +739,17 @@ func (a *API) AcknowledgeOnboarding(ctx context.Context, steps map[string]bool, 
 	}
 	for step := range steps {
 		switch step {
-		case "curseforgeKey", "firstPack", "firstMod":
+		case "curseforgeKey", "firstPack", "firstMod", "launcherReady":
 			// client-acknowledgeable steps
 		case "prismAccount":
-			// Backend-owned step: set automatically when the portable Prism
-			// accounts.json appears. Writing it is rejected per contract.
-			return &DomainError{Status: 422, Code: "onboarding_step_readonly", Message: "prismAccount is set by the backend and cannot be written"}
+			// Deprecated: offline-first launcher does not require Prism/Microsoft login.
+			// Field remains in the GET contract as always-true; writes are rejected.
+			return &DomainError{Status: 422, Code: "onboarding_step_readonly", Message: "prismAccount is deprecated (offline launch); acknowledge launcherReady instead"}
 		default:
 			return &DomainError{Status: 422, Code: "onboarding_unknown_step", Message: "unknown onboarding step: " + step}
 		}
 	}
-	for _, step := range []string{"curseforgeKey", "firstPack", "firstMod"} {
+	for _, step := range []string{"curseforgeKey", "firstPack", "firstMod", "launcherReady"} {
 		if !steps[step] {
 			continue
 		}

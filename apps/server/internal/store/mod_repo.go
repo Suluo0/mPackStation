@@ -65,12 +65,34 @@ func (r *Repository) ListPackMods(ctx context.Context, packID string) ([]PackMod
 	}
 	return out, rows.Err()
 }
-func (r *Repository) AddPackMod(ctx context.Context, m PackModRecord) error {
+func (r *Repository) AddPackMod(ctx context.Context, m *PackModRecord) error {
 	if m.ModID != "" {
 		if _, err := r.db.ExecContext(ctx, `INSERT OR IGNORE INTO mods(mod_id,display_name,kind) VALUES(?,?,?)`, m.ModID, m.DisplayName, "normal"); err != nil {
 			return fmt.Errorf("register mod identity: %w", err)
 		}
 	}
+	// 移除过的同名模组允许再次添加：复活 removed 行并回写真实 id，保证活动/出站引用有效。
+	findRemoved := `SELECT id FROM pack_mods WHERE pack_id=? AND status='removed' AND `
+	var existingID string
+	var findErr error
+	if m.ModID != "" {
+		findErr = r.db.QueryRowContext(ctx, findRemoved+`mod_id=?`, m.PackID, m.ModID).Scan(&existingID)
+	}
+	if existingID == "" && m.Source != "local" && m.ProjectID != "" {
+		findErr = r.db.QueryRowContext(ctx, findRemoved+`source=? AND project_id=?`, m.PackID, m.Source, m.ProjectID).Scan(&existingID)
+	}
+	if existingID != "" {
+		_, err := r.db.ExecContext(ctx, `UPDATE pack_mods SET source=?,project_id=?,version_id=?,display_name=?,file_name=?,sha1=?,status=?,required=?,updated_at=?,mirror_source=?,mirror_project_id=?,mirror_version_id=?,origin=?,mod_id=COALESCE(NULLIF(?,''),mod_id)
+			WHERE pack_id=? AND id=?`,
+			m.Source, nullString(m.ProjectID), nullString(m.VersionID), m.DisplayName, m.FileName, nullString(m.SHA1), m.Status, boolInt(m.Required), m.UpdatedAt,
+			m.MirrorSource, nullString(m.MirrorProjectID), nullString(m.MirrorVersionID), m.Origin, nullString(m.ModID), m.PackID, existingID)
+		if err != nil {
+			return fmt.Errorf("revive pack mod: %w", err)
+		}
+		m.ID = existingID
+		return nil
+	}
+	_ = findErr
 	_, err := r.db.ExecContext(ctx, `INSERT INTO pack_mods(id,pack_id,source,project_id,version_id,display_name,file_name,sha1,status,required,added_at,updated_at,mirror_source,mirror_project_id,mirror_version_id,origin,mod_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, m.ID, m.PackID, m.Source, nullString(m.ProjectID), nullString(m.VersionID), m.DisplayName, m.FileName, nullString(m.SHA1), m.Status, boolInt(m.Required), m.AddedAt, m.UpdatedAt, m.MirrorSource, nullString(m.MirrorProjectID), nullString(m.MirrorVersionID), m.Origin, nullString(m.ModID))
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {

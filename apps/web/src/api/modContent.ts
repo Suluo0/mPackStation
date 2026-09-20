@@ -43,9 +43,10 @@ export type ParseResult = z.infer<typeof parseResultSchema>;
 const base = (packId: string, modId: string) =>
   `/api/packs/${encodeURIComponent(packId)}/mods/${encodeURIComponent(modId)}/content`;
 
-/** 触发异步解析,返回 202 + taskId;同一 sha1 已解析时后端返回 409。 */
-export const parseModContent = (packId: string, modId: string) =>
-  post(`${base(packId, modId)}/parse`, {}, parseResultSchema);
+/** 触发异步解析,返回 202 + taskId;同一 sha1 已解析时后端返回 409。
+    force=true 时跳过 sha1 幂等，用于分类器修复后的重解析。 */
+export const parseModContent = (packId: string, modId: string, force = false) =>
+  post(`${base(packId, modId)}/parse${force ? '?force=true' : ''}`, {}, parseResultSchema);
 
 /** 列出解析结果,可按 kind 过滤、分页。 */
 export const listModContent = (

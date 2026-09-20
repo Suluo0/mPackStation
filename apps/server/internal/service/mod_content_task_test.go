@@ -353,7 +353,7 @@ func TestHandleParseModContentTask_LocalModNoBytes(t *testing.T) {
 	if err := a.repo.UpsertJarIndex(context.Background(), store.JarIndexRecord{SHA1: localSHA, FilePath: "jar://" + localSHA, ParsedAt: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.repo.AddPackMod(context.Background(), store.PackModRecord{
+	if err := a.repo.AddPackMod(context.Background(), &store.PackModRecord{
 		ID: modID, PackID: p.ID, Source: "local", DisplayName: "Local Mod",
 		FileName: "local.jar", SHA1: localSHA,
 		Status: "installed", AddedAt: 1, UpdatedAt: 1,

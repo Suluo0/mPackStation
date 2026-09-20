@@ -128,6 +128,97 @@ func questBase() QuestDraft {
 	}
 }
 
+// P0 FTB fields: optional node/chapter/book extensions round-trip through meta.
+func TestP6QuestFTBFieldsRoundTripAndValidation(t *testing.T) {
+	a, _, packID := p6Fixture(t)
+	ctx := context.Background()
+	draft := questBase()
+	draft.Book = &QuestBookMeta{Title: "整合包任务书", Icon: "minecraft:book", ProgressionMode: "flexible"}
+	draft.Chapters[0].Icon = "minecraft:book"
+	draft.Nodes[0].Subtitle = "石器之前"
+	draft.Nodes[0].Shape = "circle"
+	draft.Nodes[0].Size = 1
+	draft.Nodes[0].Icon = "minecraft:wooden_pickaxe"
+	draft.Nodes[0].Optional = true
+	draft.Nodes[0].DependencyRequirement = "all_completed"
+	draft.Nodes[0].MinRequiredDependencies = 0
+	draft.Nodes[0].Tasks = []any{map[string]any{"id": "t1", "type": "item", "itemId": "minecraft:wooden_pickaxe", "count": 1}}
+	draft.Nodes[1].DependencyRequirement = "one_completed"
+	draft.Nodes[1].MinRequiredDependencies = 1
+	draft.Nodes[1].Tasks = []any{map[string]any{"id": "t2", "type": "checkmark", "title": "确认"}}
+
+	r, issues, err := a.SaveQuestDraft(ctx, packID, draft, 0, "q-ftb")
+	if err != nil || r.Revision != 1 || len(issues) != 0 {
+		t.Fatalf("save ftb = %#v %#v %v", r, issues, err)
+	}
+	q, err := a.GetQuest(ctx, packID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.Revision.Draft.Book == nil || q.Revision.Draft.Book.Title != "整合包任务书" || q.Revision.Draft.Book.ProgressionMode != "flexible" {
+		t.Fatalf("book meta lost: %#v", q.Revision.Draft.Book)
+	}
+	if len(q.Revision.Draft.Chapters) != 1 || q.Revision.Draft.Chapters[0].Icon != "minecraft:book" {
+		t.Fatalf("chapter icon lost: %#v", q.Revision.Draft.Chapters)
+	}
+	var start, finish *QuestNode
+	for i := range q.Revision.Draft.Nodes {
+		n := &q.Revision.Draft.Nodes[i]
+		if n.ID == "start" {
+			start = n
+		}
+		if n.ID == "finish" {
+			finish = n
+		}
+	}
+	if start == nil || finish == nil {
+		t.Fatalf("nodes missing: %#v", q.Revision.Draft.Nodes)
+	}
+	if start.Subtitle != "石器之前" || start.Shape != "circle" || !start.Optional || start.DependencyRequirement != "all_completed" {
+		t.Fatalf("start FTB fields lost: %#v", start)
+	}
+	if len(start.Tasks) != 1 {
+		t.Fatalf("start tasks lost: %#v", start.Tasks)
+	}
+	if finish.DependencyRequirement != "one_completed" || finish.MinRequiredDependencies != 1 {
+		t.Fatalf("finish dep fields lost: %#v", finish)
+	}
+
+	// invalid_reward still blocks save
+	bad := questBase()
+	bad.Nodes[0].Rewards = []any{map[string]any{"kind": "nope"}}
+	_, badIssues, err := a.SaveQuestDraft(ctx, packID, bad, 1, "q-bad-reward")
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("invalid reward err = %v", err)
+	}
+	found := false
+	for _, i := range badIssues {
+		if i.Code == "invalid_reward" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("invalid_reward issue missing: %#v", badIssues)
+	}
+
+	// invalid dependencyRequirement is rejected
+	badDep := questBase()
+	badDep.Nodes[0].DependencyRequirement = "sometimes"
+	_, depIssues, err := a.SaveQuestDraft(ctx, packID, badDep, 1, "q-bad-dep")
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("invalid dep err = %v", err)
+	}
+	foundDep := false
+	for _, i := range depIssues {
+		if i.Code == "invalid_dependency_requirement" {
+			foundDep = true
+		}
+	}
+	if !foundDep {
+		t.Fatalf("invalid_dependency_requirement issue missing: %#v", depIssues)
+	}
+}
+
 func TestP6QuestGraphLifecycleAndValidation(t *testing.T) {
 	a, db, packID := p6Fixture(t)
 	ctx := context.Background()

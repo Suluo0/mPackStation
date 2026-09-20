@@ -40,26 +40,32 @@ type QuestBookRecord struct {
 	CreatedAt, UpdatedAt         int64
 }
 
-// QuestRevisionRecord is an append-only quest revision.
+// QuestRevisionRecord is an append-only quest revision. Meta holds optional
+// book-level FTB fields (title/icon/progressionMode) as a JSON object.
 type QuestRevisionRecord struct {
 	ID, QuestBookID, State string
 	Revision               int
 	CreatedAt              int64
+	Meta                   string
 }
 
-// QuestChapterRecord is a chapter in a quest revision.
+// QuestChapterRecord is a chapter in a quest revision. Meta holds optional
+// chapter fields such as icon.
 type QuestChapterRecord struct {
 	ID, RevisionID, Title, Description, CoverColor string
 	Position                                       int
+	Meta                                           string
 }
 
 // QuestNodeRecord is a node in a quest revision. JSON fields retain the
-// extensible prerequisite, reward, and mod reference structures.
+// extensible prerequisite, reward, and mod reference structures. Meta holds
+// optional FTB node fields (subtitle/shape/size/tasks/dependency*).
 type QuestNodeRecord struct {
 	ID, RevisionID, ChapterID, Title, Description, Icon string
 	X, Y                                                float64
 	Prerequisites, Rewards, ModRefs                     string
 	Position                                            int
+	Meta                                                string
 }
 
 // QuestEdgeRecord is a directed edge in a quest revision.
@@ -308,7 +314,11 @@ func (r *Repository) SaveQuestDraft(ctx context.Context, packID string, book Que
 			return fmt.Errorf("%w: expected revision %d, current %d", ErrConflict, expectedRevision, latest)
 		}
 		rev.QuestBookID, rev.Revision, rev.State = existing.ID, latest+1, "draft"
-		if _, err := tx.db.ExecContext(ctx, `INSERT INTO quest_revisions(id,quest_book_id,revision,state,created_at) VALUES (?,?,?,?,?)`, rev.ID, rev.QuestBookID, rev.Revision, rev.State, rev.CreatedAt); err != nil {
+		revMeta := rev.Meta
+		if revMeta == "" {
+			revMeta = "{}"
+		}
+		if _, err := tx.db.ExecContext(ctx, `INSERT INTO quest_revisions(id,quest_book_id,revision,state,created_at,meta) VALUES (?,?,?,?,?,?)`, rev.ID, rev.QuestBookID, rev.Revision, rev.State, rev.CreatedAt, revMeta); err != nil {
 			return err
 		}
 		chapterIDs := make(map[string]string, len(chapters))
@@ -316,7 +326,11 @@ func (r *Repository) SaveQuestDraft(ctx context.Context, packID string, book Que
 			physical := rev.ID + "::c::" + c.ID
 			chapterIDs[c.ID] = physical
 			c.RevisionID = rev.ID
-			if _, err := tx.db.ExecContext(ctx, `INSERT INTO quest_chapters(id,revision_id,title,description,cover_color,position) VALUES (?,?,?,?,?,?)`, physical, c.RevisionID, c.Title, c.Description, c.CoverColor, c.Position); err != nil {
+			meta := c.Meta
+			if meta == "" {
+				meta = "{}"
+			}
+			if _, err := tx.db.ExecContext(ctx, `INSERT INTO quest_chapters(id,revision_id,title,description,cover_color,position,meta) VALUES (?,?,?,?,?,?,?)`, physical, c.RevisionID, c.Title, c.Description, c.CoverColor, c.Position, meta); err != nil {
 				return err
 			}
 		}
@@ -326,7 +340,11 @@ func (r *Repository) SaveQuestDraft(ctx context.Context, packID string, book Que
 			nodeIDs[n.ID] = physical
 			n.RevisionID = rev.ID
 			chapterID := chapterIDs[n.ChapterID]
-			if _, err := tx.db.ExecContext(ctx, `INSERT INTO quest_nodes(id,revision_id,chapter_id,title,description,icon,x,y,prerequisites,rewards,mod_refs,position) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, physical, n.RevisionID, chapterID, n.Title, n.Description, n.Icon, n.X, n.Y, n.Prerequisites, n.Rewards, n.ModRefs, n.Position); err != nil {
+			meta := n.Meta
+			if meta == "" {
+				meta = "{}"
+			}
+			if _, err := tx.db.ExecContext(ctx, `INSERT INTO quest_nodes(id,revision_id,chapter_id,title,description,icon,x,y,prerequisites,rewards,mod_refs,position,meta) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, physical, n.RevisionID, chapterID, n.Title, n.Description, n.Icon, n.X, n.Y, n.Prerequisites, n.Rewards, n.ModRefs, n.Position, meta); err != nil {
 				return err
 			}
 		}
@@ -359,7 +377,7 @@ func (r *Repository) GetQuestRevision(ctx context.Context, packID string) (Quest
 		return b, QuestRevisionRecord{}, nil, nil, nil, err
 	}
 	var v QuestRevisionRecord
-	if err := r.db.QueryRowContext(ctx, `SELECT id,quest_book_id,revision,state,created_at FROM quest_revisions WHERE quest_book_id=? ORDER BY revision DESC LIMIT 1`, b.ID).Scan(&v.ID, &v.QuestBookID, &v.Revision, &v.State, &v.CreatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, `SELECT id,quest_book_id,revision,state,created_at,COALESCE(meta,'{}') FROM quest_revisions WHERE quest_book_id=? ORDER BY revision DESC LIMIT 1`, b.ID).Scan(&v.ID, &v.QuestBookID, &v.Revision, &v.State, &v.CreatedAt, &v.Meta); err != nil {
 		return b, v, nil, nil, nil, err
 	}
 	cs, err := r.listQuestChapters(ctx, v.ID)
@@ -378,7 +396,7 @@ func (r *Repository) GetQuestRevision(ctx context.Context, packID string) (Quest
 func (r *Repository) GetQuestRevisionByID(ctx context.Context, packID, revisionID string) (QuestBookRecord, QuestRevisionRecord, []QuestChapterRecord, []QuestNodeRecord, []QuestEdgeRecord, error) {
 	var b QuestBookRecord
 	var v QuestRevisionRecord
-	if err := r.db.QueryRowContext(ctx, `SELECT b.id,b.pack_id,COALESCE(b.active_revision_id,''),b.created_at,b.updated_at,q.id,q.quest_book_id,q.revision,q.state,q.created_at FROM quest_books b JOIN quest_revisions q ON q.quest_book_id=b.id WHERE b.pack_id=? AND q.id=?`, packID, revisionID).Scan(&b.ID, &b.PackID, &b.ActiveRevisionID, &b.CreatedAt, &b.UpdatedAt, &v.ID, &v.QuestBookID, &v.Revision, &v.State, &v.CreatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, `SELECT b.id,b.pack_id,COALESCE(b.active_revision_id,''),b.created_at,b.updated_at,q.id,q.quest_book_id,q.revision,q.state,q.created_at,COALESCE(q.meta,'{}') FROM quest_books b JOIN quest_revisions q ON q.quest_book_id=b.id WHERE b.pack_id=? AND q.id=?`, packID, revisionID).Scan(&b.ID, &b.PackID, &b.ActiveRevisionID, &b.CreatedAt, &b.UpdatedAt, &v.ID, &v.QuestBookID, &v.Revision, &v.State, &v.CreatedAt, &v.Meta); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return b, v, nil, nil, nil, ErrNotFound
 		}
@@ -396,7 +414,7 @@ func (r *Repository) GetQuestRevisionByID(ctx context.Context, packID, revisionI
 	return b, v, cs, ns, es, err
 }
 func (r *Repository) listQuestChapters(ctx context.Context, id string) ([]QuestChapterRecord, error) {
-	rows, e := r.db.QueryContext(ctx, `SELECT id,revision_id,title,description,cover_color,position FROM quest_chapters WHERE revision_id=? ORDER BY position,id`, id)
+	rows, e := r.db.QueryContext(ctx, `SELECT id,revision_id,title,description,cover_color,position,COALESCE(meta,'{}') FROM quest_chapters WHERE revision_id=? ORDER BY position,id`, id)
 	if e != nil {
 		return nil, e
 	}
@@ -404,7 +422,7 @@ func (r *Repository) listQuestChapters(ctx context.Context, id string) ([]QuestC
 	var o []QuestChapterRecord
 	for rows.Next() {
 		var x QuestChapterRecord
-		if e := rows.Scan(&x.ID, &x.RevisionID, &x.Title, &x.Description, &x.CoverColor, &x.Position); e != nil {
+		if e := rows.Scan(&x.ID, &x.RevisionID, &x.Title, &x.Description, &x.CoverColor, &x.Position, &x.Meta); e != nil {
 			return nil, e
 		}
 		o = append(o, x)
@@ -412,7 +430,7 @@ func (r *Repository) listQuestChapters(ctx context.Context, id string) ([]QuestC
 	return o, rows.Err()
 }
 func (r *Repository) listQuestNodes(ctx context.Context, id string) ([]QuestNodeRecord, error) {
-	rows, e := r.db.QueryContext(ctx, `SELECT id,revision_id,chapter_id,title,description,icon,x,y,prerequisites,rewards,mod_refs,position FROM quest_nodes WHERE revision_id=? ORDER BY chapter_id,position,id`, id)
+	rows, e := r.db.QueryContext(ctx, `SELECT id,revision_id,chapter_id,title,description,icon,x,y,prerequisites,rewards,mod_refs,position,COALESCE(meta,'{}') FROM quest_nodes WHERE revision_id=? ORDER BY chapter_id,position,id`, id)
 	if e != nil {
 		return nil, e
 	}
@@ -420,7 +438,7 @@ func (r *Repository) listQuestNodes(ctx context.Context, id string) ([]QuestNode
 	var o []QuestNodeRecord
 	for rows.Next() {
 		var x QuestNodeRecord
-		if e := rows.Scan(&x.ID, &x.RevisionID, &x.ChapterID, &x.Title, &x.Description, &x.Icon, &x.X, &x.Y, &x.Prerequisites, &x.Rewards, &x.ModRefs, &x.Position); e != nil {
+		if e := rows.Scan(&x.ID, &x.RevisionID, &x.ChapterID, &x.Title, &x.Description, &x.Icon, &x.X, &x.Y, &x.Prerequisites, &x.Rewards, &x.ModRefs, &x.Position, &x.Meta); e != nil {
 			return nil, e
 		}
 		o = append(o, x)

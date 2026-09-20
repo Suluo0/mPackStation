@@ -67,6 +67,12 @@ type ModContentRun struct {
 // the task and a bool indicating whether it was newly submitted (false =
 // idempotent skip because the same sha1 is already parsed).
 func (a *API) SubmitParseModContent(ctx context.Context, packID, modID string) (*task.Task, bool, error) {
+	return a.SubmitParseModContentOpts(ctx, packID, modID, false)
+}
+
+// SubmitParseModContentOpts enqueues a parse; force=true skips the
+// same-sha1 idempotent skip so classifier fixes can be re-extracted.
+func (a *API) SubmitParseModContentOpts(ctx context.Context, packID, modID string, force bool) (*task.Task, bool, error) {
 	if err := a.ready(); err != nil {
 		return nil, false, err
 	}
@@ -81,7 +87,8 @@ func (a *API) SubmitParseModContent(ctx context.Context, packID, modID string) (
 		return nil, false, &DomainError{Status: 422, Code: "mod_not_installed", Message: "mod is not installed"}
 	}
 	// Idempotency: if the latest run succeeded for this exact sha1, skip.
-	if mod.SHA1 != "" {
+	// force=true bypasses this so classifier fixes can re-extract the same jar.
+	if !force && mod.SHA1 != "" {
 		if run, err := a.repo.LatestModContentRun(ctx, modID); err == nil && run.Status == "succeeded" && run.SHA1 == mod.SHA1 {
 			return nil, false, ErrModContentAlreadyCurrent
 		}

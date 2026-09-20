@@ -63,50 +63,70 @@ export const applyContent = (packId: string, documentId: string, revisionId?: st
 export const rollbackContent = (packId: string, documentId: string, revisionId: string) =>
   post(`/api/packs/${encodeURIComponent(packId)}/content/${encodeURIComponent(documentId)}/rollback`, {revisionId}, revisionSchema);
 
-/* ---- 任务书(同一 pack 下的特殊内容,后端是 QuestBookView) ---- */
+/* ---- 任务书(同一 pack 下的特殊内容,后端是 QuestBookView) ----
+   P0 FTB 扩展字段全部 optional，旧 draft 无字段时前端默认值。 */
+
+export const questBookMetaSchema = z.object({
+  title: z.string().optional(),
+  icon: z.string().optional(),
+  progressionMode: z.string().optional(),
+}).optional();
 
 export const questChapterSchema = z.object({
   id: z.string(),
-  title: z.string(),
-  description: z.string(),
-  coverColor: z.string(),
-  position: z.number().int(),
+  title: z.string().default(''),
+  description: z.string().default(''),
+  coverColor: z.string().default(''),
+  position: z.number().int().default(0),
+  icon: z.string().optional(),
 });
 export const questNodeSchema = z.object({
   id: z.string(),
   chapterId: z.string(),
-  title: z.string(),
-  description: z.string(),
-  icon: z.string(),
-  x: z.number(),
-  y: z.number(),
-  prerequisites: z.array(z.unknown()),
-  rewards: z.array(z.unknown()),
-  modRefs: z.array(z.unknown()),
-  position: z.number().int(),
+  title: z.string().default(''),
+  description: z.string().default(''),
+  icon: z.string().default(''),
+  x: z.number().default(0),
+  y: z.number().default(0),
+  /* M1：保存时由 draft.edges 同步为指向该节点的 fromNodeId 字符串列表。 */
+  prerequisites: z.array(z.unknown()).default([]),
+  rewards: z.array(z.unknown()).default([]),
+  modRefs: z.array(z.unknown()).default([]),
+  position: z.number().int().default(0),
+  /* FTB P0 optional extensions */
+  subtitle: z.string().optional(),
+  shape: z.string().optional(),
+  size: z.number().optional(),
+  optional: z.boolean().optional(),
+  invisible: z.boolean().optional(),
+  dependencyRequirement: z.string().optional(),
+  minRequiredDependencies: z.number().int().optional(),
+  tasks: z.array(z.record(z.string(), z.unknown())).optional(),
 });
+/* draft.edges 是任务图权威源；后端 quest_edges + 环检测已就绪。 */
 export const questEdgeSchema = z.object({
   id: z.string(),
   fromNodeId: z.string(),
   toNodeId: z.string(),
 });
 export const questDraftSchema = z.object({
-  chapters: z.array(questChapterSchema),
-  nodes: z.array(questNodeSchema),
-  edges: z.array(questEdgeSchema),
+  book: questBookMetaSchema,
+  chapters: z.array(questChapterSchema).default([]),
+  nodes: z.array(questNodeSchema).default([]),
+  edges: z.array(questEdgeSchema).default([]),
 });
 export const questRevisionSchema = z.object({
   id: z.string(),
   questBookId: z.string(),
   state: z.string(),
   revision: z.number().int(),
-  createdAt: z.iso.datetime(),
+  createdAt: z.string(),
   draft: questDraftSchema,
 });
 export const questBookSchema = z.object({
   id: z.string(),
   packId: z.string(),
-  activeRevisionId: z.string().nullable(),
+  activeRevisionId: z.string().nullable().default(null),
   revision: questRevisionSchema,
 });
 export type QuestBook = z.infer<typeof questBookSchema>;

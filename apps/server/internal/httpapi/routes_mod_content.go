@@ -19,9 +19,11 @@ func registerModContentRoutes(mux *http.ServeMux, app *service.API) {
 		}
 		WriteJSON(w, http.StatusOK, result)
 	})
-	// Trigger a parse task for one installed mod.
+	// Trigger a parse task for one installed mod. ?force=true re-parses even
+	// when the same jar sha1 is already current (used after classifier fixes).
 	mux.HandleFunc("POST /api/packs/{packId}/mods/{modId}/content/parse", func(w http.ResponseWriter, r *http.Request) {
-		t, submitted, err := app.SubmitParseModContent(r.Context(), r.PathValue("packId"), r.PathValue("modId"))
+		force := r.URL.Query().Get("force") == "true" || r.URL.Query().Get("force") == "1"
+		t, submitted, err := app.SubmitParseModContentOpts(r.Context(), r.PathValue("packId"), r.PathValue("modId"), force)
 		if err != nil {
 			writeError(w, r, err)
 			return

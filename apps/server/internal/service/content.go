@@ -406,13 +406,23 @@ func isBlocking(x []ValidationIssue) bool {
 }
 
 // Quest domain DTOs.
+// FTB optional fields are accepted and round-tripped via store meta JSON so
+// older drafts without them still load (omitempty + frontend defaults).
+type QuestBookMeta struct {
+	Title           string `json:"title,omitempty"`
+	Icon            string `json:"icon,omitempty"`
+	ProgressionMode string `json:"progressionMode,omitempty"`
+}
+
 type QuestChapter struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	CoverColor  string `json:"coverColor"`
 	Position    int    `json:"position"`
+	Icon        string `json:"icon,omitempty"`
 }
+
 type QuestNode struct {
 	ID            string  `json:"id"`
 	ChapterID     string  `json:"chapterId"`
@@ -425,6 +435,15 @@ type QuestNode struct {
 	Rewards       []any   `json:"rewards"`
 	ModRefs       []any   `json:"modRefs"`
 	Position      int     `json:"position"`
+	// FTB-aligned optional extensions
+	Subtitle                  string  `json:"subtitle,omitempty"`
+	Shape                     string  `json:"shape,omitempty"`
+	Size                      float64 `json:"size,omitempty"`
+	Optional                  bool    `json:"optional,omitempty"`
+	Invisible                 bool    `json:"invisible,omitempty"`
+	DependencyRequirement     string  `json:"dependencyRequirement,omitempty"`
+	MinRequiredDependencies   int     `json:"minRequiredDependencies,omitempty"`
+	Tasks                     []any   `json:"tasks,omitempty"`
 }
 type QuestEdge struct {
 	ID         string `json:"id"`
@@ -432,9 +451,10 @@ type QuestEdge struct {
 	ToNodeID   string `json:"toNodeId"`
 }
 type QuestDraft struct {
-	Chapters []QuestChapter `json:"chapters"`
-	Nodes    []QuestNode    `json:"nodes"`
-	Edges    []QuestEdge    `json:"edges"`
+	Book     *QuestBookMeta  `json:"book,omitempty"`
+	Chapters []QuestChapter  `json:"chapters"`
+	Nodes    []QuestNode     `json:"nodes"`
+	Edges    []QuestEdge     `json:"edges"`
 }
 type QuestRevision struct {
 	ID          string     `json:"id"`
@@ -457,6 +477,107 @@ type QuestReward struct {
 	Experience int    `json:"experience,omitempty"`
 	Command    string `json:"command,omitempty"`
 	UnlockID   string `json:"unlockId,omitempty"`
+}
+
+// nodeMetaPayload packs FTB optional node fields into the meta JSON column.
+type nodeMetaPayload struct {
+	Subtitle                string  `json:"subtitle,omitempty"`
+	Shape                   string  `json:"shape,omitempty"`
+	Size                    float64 `json:"size,omitempty"`
+	Optional                bool    `json:"optional,omitempty"`
+	Invisible               bool    `json:"invisible,omitempty"`
+	DependencyRequirement   string  `json:"dependencyRequirement,omitempty"`
+	MinRequiredDependencies int     `json:"minRequiredDependencies,omitempty"`
+	Tasks                   []any   `json:"tasks,omitempty"`
+}
+
+type chapterMetaPayload struct {
+	Icon string `json:"icon,omitempty"`
+}
+
+type bookMetaPayload struct {
+	Title           string `json:"title,omitempty"`
+	Icon            string `json:"icon,omitempty"`
+	ProgressionMode string `json:"progressionMode,omitempty"`
+}
+
+func packNodeMeta(n QuestNode) string {
+	// Always emit a JSON object so the column stays valid even when empty.
+	raw, _ := json.Marshal(nodeMetaPayload{
+		Subtitle:                n.Subtitle,
+		Shape:                   n.Shape,
+		Size:                    n.Size,
+		Optional:                n.Optional,
+		Invisible:               n.Invisible,
+		DependencyRequirement:   n.DependencyRequirement,
+		MinRequiredDependencies: n.MinRequiredDependencies,
+		Tasks:                   n.Tasks,
+	})
+	return string(raw)
+}
+
+func unpackNodeMeta(n *QuestNode, meta string) {
+	if meta == "" || meta == "{}" {
+		return
+	}
+	var m nodeMetaPayload
+	if err := json.Unmarshal([]byte(meta), &m); err != nil {
+		return
+	}
+	n.Subtitle = m.Subtitle
+	n.Shape = m.Shape
+	n.Size = m.Size
+	n.Optional = m.Optional
+	n.Invisible = m.Invisible
+	n.DependencyRequirement = m.DependencyRequirement
+	n.MinRequiredDependencies = m.MinRequiredDependencies
+	n.Tasks = m.Tasks
+}
+
+func packChapterMeta(c QuestChapter) string {
+	raw, _ := json.Marshal(chapterMetaPayload{Icon: c.Icon})
+	return string(raw)
+}
+
+func unpackChapterMeta(c *QuestChapter, meta string) {
+	if meta == "" || meta == "{}" {
+		return
+	}
+	var m chapterMetaPayload
+	if err := json.Unmarshal([]byte(meta), &m); err != nil {
+		return
+	}
+	c.Icon = m.Icon
+}
+
+func packBookMeta(b *QuestBookMeta) string {
+	if b == nil {
+		return "{}"
+	}
+	raw, _ := json.Marshal(bookMetaPayload{Title: b.Title, Icon: b.Icon, ProgressionMode: b.ProgressionMode})
+	return string(raw)
+}
+
+func unpackBookMeta(meta string) *QuestBookMeta {
+	if meta == "" || meta == "{}" {
+		return nil
+	}
+	var m bookMetaPayload
+	if err := json.Unmarshal([]byte(meta), &m); err != nil {
+		return nil
+	}
+	if m.Title == "" && m.Icon == "" && m.ProgressionMode == "" {
+		return nil
+	}
+	return &QuestBookMeta{Title: m.Title, Icon: m.Icon, ProgressionMode: m.ProgressionMode}
+}
+
+var validDependencyRequirements = map[string]bool{
+	"":                 true,
+	"all_completed":    true,
+	"one_completed":    true,
+	"all_started":      true,
+	"one_started":      true,
 }
 
 func (a *API) GetQuest(ctx context.Context, packID string) (QuestBook, error) {
@@ -484,23 +605,23 @@ func (a *API) SaveQuestDraft(ctx context.Context, packID string, in QuestDraft, 
 		if i.Code == "cross_pack_reference" {
 			return QuestRevision{}, issues, &ValidationError{Domain: "quest", Issues: issues}
 		}
-		if i.Severity == "error" && (i.Code == "duplicate_id" || i.Code == "duplicate_position" || i.Code == "missing_chapter" || i.Code == "missing_node" || i.Code == "self_edge" || i.Code == "invalid_reward" || i.Code == "cross_pack_reference") {
+		if i.Severity == "error" && (i.Code == "duplicate_id" || i.Code == "duplicate_position" || i.Code == "missing_chapter" || i.Code == "missing_node" || i.Code == "self_edge" || i.Code == "invalid_reward" || i.Code == "invalid_dependency_requirement" || i.Code == "cross_pack_reference") {
 			return QuestRevision{}, issues, ErrInvalidArgument
 		}
 	}
 	now := time.Now().UnixMilli()
 	book := store.QuestBookRecord{ID: newID("quest-book"), PackID: packID, CreatedAt: now, UpdatedAt: now}
-	rev := store.QuestRevisionRecord{ID: newID("quest-revision"), CreatedAt: now}
+	rev := store.QuestRevisionRecord{ID: newID("quest-revision"), CreatedAt: now, Meta: packBookMeta(in.Book)}
 	chs := make([]store.QuestChapterRecord, 0, len(in.Chapters))
 	for _, c := range in.Chapters {
-		chs = append(chs, store.QuestChapterRecord{ID: c.ID, Title: c.Title, Description: c.Description, CoverColor: c.CoverColor, Position: c.Position})
+		chs = append(chs, store.QuestChapterRecord{ID: c.ID, Title: c.Title, Description: c.Description, CoverColor: c.CoverColor, Position: c.Position, Meta: packChapterMeta(c)})
 	}
 	nodes := make([]store.QuestNodeRecord, 0, len(in.Nodes))
 	for _, n := range in.Nodes {
 		pre, _ := json.Marshal(n.Prerequisites)
 		rew, _ := json.Marshal(n.Rewards)
 		refs, _ := json.Marshal(n.ModRefs)
-		nodes = append(nodes, store.QuestNodeRecord{ID: n.ID, ChapterID: n.ChapterID, Title: n.Title, Description: n.Description, Icon: n.Icon, X: n.X, Y: n.Y, Prerequisites: string(pre), Rewards: string(rew), ModRefs: string(refs), Position: n.Position})
+		nodes = append(nodes, store.QuestNodeRecord{ID: n.ID, ChapterID: n.ChapterID, Title: n.Title, Description: n.Description, Icon: n.Icon, X: n.X, Y: n.Y, Prerequisites: string(pre), Rewards: string(rew), ModRefs: string(refs), Position: n.Position, Meta: packNodeMeta(n)})
 	}
 	edges := make([]store.QuestEdgeRecord, 0, len(in.Edges))
 	for _, ed := range in.Edges {
@@ -594,15 +715,20 @@ func (a *API) QuestPreview(ctx context.Context, packID string) (QuestDraft, erro
 }
 func questDTO(b store.QuestBookRecord, v store.QuestRevisionRecord, c []store.QuestChapterRecord, n []store.QuestNodeRecord, e []store.QuestEdgeRecord) QuestBook {
 	d := QuestDraft{Chapters: make([]QuestChapter, 0, len(c)), Nodes: make([]QuestNode, 0, len(n)), Edges: make([]QuestEdge, 0, len(e))}
+	d.Book = unpackBookMeta(v.Meta)
 	for _, x := range c {
-		d.Chapters = append(d.Chapters, QuestChapter{ID: logicalQuestID(x.ID, v.ID, "c"), Title: x.Title, Description: x.Description, CoverColor: x.CoverColor, Position: x.Position})
+		ch := QuestChapter{ID: logicalQuestID(x.ID, v.ID, "c"), Title: x.Title, Description: x.Description, CoverColor: x.CoverColor, Position: x.Position}
+		unpackChapterMeta(&ch, x.Meta)
+		d.Chapters = append(d.Chapters, ch)
 	}
 	for _, x := range n {
 		var pre, rew, refs []any
 		_ = json.Unmarshal([]byte(x.Prerequisites), &pre)
 		_ = json.Unmarshal([]byte(x.Rewards), &rew)
 		_ = json.Unmarshal([]byte(x.ModRefs), &refs)
-		d.Nodes = append(d.Nodes, QuestNode{ID: logicalQuestID(x.ID, v.ID, "n"), ChapterID: logicalQuestID(x.ChapterID, v.ID, "c"), Title: x.Title, Description: x.Description, Icon: x.Icon, X: x.X, Y: x.Y, Prerequisites: pre, Rewards: rew, ModRefs: refs, Position: x.Position})
+		node := QuestNode{ID: logicalQuestID(x.ID, v.ID, "n"), ChapterID: logicalQuestID(x.ChapterID, v.ID, "c"), Title: x.Title, Description: x.Description, Icon: x.Icon, X: x.X, Y: x.Y, Prerequisites: pre, Rewards: rew, ModRefs: refs, Position: x.Position}
+		unpackNodeMeta(&node, x.Meta)
+		d.Nodes = append(d.Nodes, node)
 	}
 	for _, x := range e {
 		d.Edges = append(d.Edges, QuestEdge{ID: logicalQuestID(x.ID, v.ID, "e"), FromNodeID: logicalQuestID(x.FromNodeID, v.ID, "n"), ToNodeID: logicalQuestID(x.ToNodeID, v.ID, "n")})
@@ -657,6 +783,12 @@ func (a *API) validateQuest(ctx context.Context, packID string, d QuestDraft) ([
 		}
 		nodePos[n.ChapterID][n.Position] = true
 		nodeChapter[n.ID] = n.ChapterID
+		if !validDependencyRequirements[n.DependencyRequirement] {
+			issues = append(issues, ValidationIssue{Code: "invalid_dependency_requirement", Severity: "error", Path: "nodes." + n.ID + ".dependencyRequirement", Message: "dependencyRequirement must be all_completed|one_completed|all_started|one_started"})
+		}
+		if n.MinRequiredDependencies < 0 {
+			issues = append(issues, ValidationIssue{Code: "invalid_min_required_dependencies", Severity: "error", Path: "nodes." + n.ID + ".minRequiredDependencies", Message: "minRequiredDependencies must be >= 0"})
+		}
 		if len(n.Rewards) > 0 {
 			for _, r := range n.Rewards {
 				if !validReward(r) {
