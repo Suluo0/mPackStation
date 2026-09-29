@@ -31,18 +31,21 @@ func TestCatalogStatusAndRebuildAuthorization(t *testing.T) {
 	}
 	router := NewRouterWithService(app, "test", "token")
 	request := httptest.NewRequest(http.MethodGet, "/api/packs/"+pack.ID+"/mods?includeBuiltin=true", nil)
+	request.Host = "localhost"
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"canonicalModId":"minecraft"`) || !strings.Contains(response.Body.String(), `"origin":"builtin"`) {
 		t.Fatalf("builtin content source = %d %s", response.Code, response.Body.String())
 	}
 	request = httptest.NewRequest(http.MethodGet, "/api/packs/"+pack.ID+"/catalog/status", nil)
+	request.Host = "localhost"
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"status":"pending"`) {
 		t.Fatalf("status response %d %s", response.Code, response.Body.String())
 	}
 	request = httptest.NewRequest(http.MethodPost, "/api/packs/"+pack.ID+"/catalog/rebuild", strings.NewReader(`{}`))
+	request.Host = "localhost"
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)

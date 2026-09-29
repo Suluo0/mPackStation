@@ -53,6 +53,8 @@ go run ./cmd/server -data ../../data
 验证后端：`curl http://127.0.0.1:18871/api/health` 应返回 `{"status":"ready","db":true,...}`；存活探针为 `/api/healthz`，就绪探针为 `/api/readyz`。
 
 > 端口约定：前端 5273、后端 18871。本机 5173 / 18765 / 18766 可能被其他本地服务占用，请勿复用。
+>
+> 跨机访问：dev 前端绑 `0.0.0.0`，另一台设备用 `http://<本机局域网 IP>:5273` 打开即可，接口经 vite 代理回本机后端（后端只绑回环，不直接对外）。若要用 mDNS 主机名而非 IP 访问，需同时给两端加白名单：vite 的 `server.allowedHosts` 与后端的 `MPACK_ALLOWED_HOSTS`。
 
 ### 写操作令牌
 

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -383,7 +384,7 @@ func securityMiddleware(token string, next http.Handler) http.Handler {
 			apiError(w, r, http.StatusBadRequest, "invalid_host", "request host is not allowed")
 			return
 		}
-		if origin := r.Header.Get("Origin"); origin != "" && !validOrigin(origin) {
+		if origin := r.Header.Get("Origin"); origin != "" && !validOrigin(origin, r.Host) {
 			apiError(w, r, http.StatusForbidden, "invalid_origin", "request origin is not allowed")
 			return
 		}
@@ -406,24 +407,76 @@ func securityMiddleware(token string, next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// Host 校验防的是 DNS rebinding:攻击者域名重绑到本机后,浏览器送来的 Host 是
+// 域名而不是地址。字面 IP 只认回环与私有网段(跨机访问时 Host 就是本机局域网地址),
+// 主机名必须出现在 MPACK_ALLOWED_HOSTS 里。
 func validHost(host string) bool {
+	h := hostName(host)
+	if h == "" {
+		return false
+	}
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(h); ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate()
+	}
+	return inList(h, csvEnv("MPACK_ALLOWED_HOSTS"))
+}
+
+// Origin 校验防的是跨站请求:同源即合法(含从另一台设备用局域网地址打开),
+// 回环别名 localhost/127.0.0.1/::1 视为同一台机器,其余靠 MPACK_FRONTEND_ORIGIN 显式放行。
+func validOrigin(raw, requestHost string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return false
+	}
+	oh, rh := hostName(u.Host), hostName(requestHost)
+	if oh != "" && strings.EqualFold(oh, rh) {
+		return true
+	}
+	if isLoopbackName(oh) && isLoopbackName(rh) {
+		return true
+	}
+	for _, allowed := range csvEnv("MPACK_FRONTEND_ORIGIN") {
+		if strings.EqualFold(raw, allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+func hostName(host string) string {
 	h := host
 	if i := strings.LastIndex(h, ":"); i > 0 && !strings.Contains(h[i+1:], "]") {
 		h = h[:i]
 	}
-	h = strings.Trim(h, "[]")
-	return strings.EqualFold(h, "localhost") || h == "127.0.0.1" || h == "::1" || h == "[::1]" || h == "example.com"
+	return strings.Trim(h, "[]")
 }
-func validOrigin(raw string) bool {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "http" || u.Host == "" {
-		return false
+
+func isLoopbackName(h string) bool {
+	if strings.EqualFold(h, "localhost") {
+		return true
 	}
-	cfg := os.Getenv("MPACK_FRONTEND_ORIGIN")
-	if cfg != "" {
-		return raw == cfg
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
+}
+
+func csvEnv(key string) []string {
+	var out []string
+	for _, item := range strings.Split(os.Getenv(key), ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
 	}
-	return strings.EqualFold(u.Host, "127.0.0.1:5273") || strings.EqualFold(u.Host, "localhost:5273") || strings.EqualFold(u.Hostname(), "localhost")
+	return out
+}
+
+func inList(h string, list []string) bool {
+	return slices.ContainsFunc(list, func(item string) bool {
+		return strings.EqualFold(h, item)
+	})
 }
 func fallbackEnvelopeMiddleware(mux *http.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

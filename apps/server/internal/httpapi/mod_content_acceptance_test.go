@@ -349,6 +349,7 @@ func TestModContentIconsHTTPPackBoundary(t *testing.T) {
 		want        int
 	}{{packID, "", 401}, {"other-pack", "test-token", 404}} {
 		req := httptest.NewRequest("POST", "/api/packs/"+tc.pack+"/mods/"+modID+"/content/icons/resolve", bytes.NewBufferString(`{}`))
+		req.Host = "localhost"
 		req.Header.Set("Content-Type", "application/json")
 		if tc.token != "" {
 			req.Header.Set("X-MPack-Token", tc.token)

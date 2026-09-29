@@ -14,11 +14,11 @@
 
 | 项 | 值 |
 |---|---|
-| 后端基址 | `http://127.0.0.1:18871` |
-| 前端开发服务器 | `http://127.0.0.1:5273`，`/api` 由 vite 代理到后端（`changeOrigin: false`） |
+| 后端基址 | `http://127.0.0.1:18871`（只绑回环；跨机访问走前端 dev 服务器代理） |
+| 前端开发服务器 | `0.0.0.0:5273`（支持另一台设备用局域网地址打开），`/api` 由 vite 代理到后端（`changeOrigin: false`，Host 原样透传） |
 | 写鉴权 | 非 GET 请求需 `X-MPack-Token`，缺失 401，未配置 503 `auth_not_configured` |
-| Host 白名单 | `localhost` / `127.0.0.1` / `::1`，否则 400 `invalid_host` |
-| Origin 白名单 | `http://127.0.0.1:5273` / `http://localhost:5273`，否则 403 `invalid_origin` |
+| Host 白名单 | `localhost` + 字面 IP 的回环与私有网段（`127/8`、`::1`、`10/8`、`172.16/12`、`192.168/16`、`fc00::/7`），主机名需另经 `MPACK_ALLOWED_HOSTS`（逗号列表）放行，否则 400 `invalid_host` |
+| Origin 白名单 | 与请求 Host 同源即合法（含局域网地址）；`localhost` 与 `127.0.0.1`/`::1` 互为别名；`MPACK_FRONTEND_ORIGIN`（逗号列表）可显式追加跨主机来源，否则 403 `invalid_origin` |
 | 请求体上限 | 8 MB，超出 413 |
 
 不使用的路径：API 不带 `/api/v1` 前缀；只增字段，破坏性变更才开 `/api/v2`。
