@@ -20,6 +20,7 @@ export default defineConfig({
     __MPACK_WRITE_TOKEN__: JSON.stringify(resolveWriteToken()),
   },
   server: {
+    host: '0.0.0.0',
     port: 5273,
     proxy: {
       // VITE_API_TARGET 可覆盖代理目标(隔离测试用),默认指向本机 dev 后端

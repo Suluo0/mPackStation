@@ -123,14 +123,23 @@ func registerContentRoutes(mux *http.ServeMux, app *service.API) {
 			writeError(w, r, err)
 			return
 		}
-		WriteJSON(w, http.StatusOK, map[string]any{"issues": v})
+		WriteJSON(w, http.StatusOK, map[string]any{
+			"status":     v.Status,
+			"issues":     v.Issues,
+			"revisionId": v.RevisionID,
+		})
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/quests/apply", func(w http.ResponseWriter, r *http.Request) {
-		if err := app.ApplyQuest(r.Context(), r.PathValue("packId"), RequestID(r.Context())); err != nil {
+		v, err := app.ApplyQuest(r.Context(), r.PathValue("packId"), RequestID(r.Context()))
+		if err != nil {
 			writeError(w, r, err)
 			return
 		}
-		WriteJSON(w, http.StatusOK, map[string]any{"status": "applied"})
+		WriteJSON(w, http.StatusOK, map[string]any{
+			"status":     v.Status,
+			"revisionId": v.RevisionID,
+			"issues":     v.Issues,
+		})
 	})
 	mux.HandleFunc("POST /api/packs/{packId}/quests/rollback", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {

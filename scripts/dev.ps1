@@ -24,7 +24,7 @@ $serverError = Join-Path $logDir 'server.error.log'
 $webLog = Join-Path $logDir 'web.log'
 $webError = Join-Path $logDir 'web.error.log'
 $serverArgs = @('run', './cmd/server', '-addr', "127.0.0.1:$ServerPort", '-data', $dataPath)
-$webArgs = @('run', 'dev', '--', '--host', '127.0.0.1', '--port', "$WebPort")
+$webArgs = @('run', 'dev', '--', '--host', '0.0.0.0', '--port', "$WebPort")
 
 $server = Start-Process -FilePath $go -ArgumentList $serverArgs -WorkingDirectory $script:ServerDir -RedirectStandardOutput $serverLog -RedirectStandardError $serverError -WindowStyle Hidden -PassThru
 $web = Start-Process -FilePath $npm -ArgumentList $webArgs -WorkingDirectory $script:WebDir -RedirectStandardOutput $webLog -RedirectStandardError $webError -WindowStyle Hidden -PassThru

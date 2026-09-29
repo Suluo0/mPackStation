@@ -54,6 +54,18 @@ export function AppShell() {
   const modTotal = activePack?.modCount.total ?? 0;
   const modInstalled = activePack?.modCount.installed ?? 0;
   const alertCount = (activePack?.alerts.crashes ?? 0) + (activePack?.alerts.updatable ?? 0);
+  /* 顶栏包上下文信息迁入底边栏「索引进度」格（原索引进度内容已删除）。 */
+  const path = location.pathname;
+  const sectionLabel = (() => {
+    if (path === '/settings') return '设置';
+    if (!activePackId) return path.startsWith('/packs') ? '整合包列表' : '工作台';
+    const hit = packNav.find(n =>
+      n.suffix === ''
+        ? path === `/packs/${activePackId}` || path === `/packs/${activePackId}/`
+        : path.startsWith(`/packs/${activePackId}${n.suffix}`),
+    );
+    return hit?.label ?? '包工作台';
+  })();
   return (
     <div className={collapsed ? 'app-shell app-shell-collapsed' : 'app-shell'}>
       <aside className="app-sider">
@@ -110,7 +122,23 @@ export function AppShell() {
       <footer className="app-statusbar">
         <div className="app-status-item"><span className="app-status-icon"><DatabaseOutlined /></span><div><strong>{modTotal} 个模组</strong><small>模组库总数</small></div></div>
         <div className="app-status-item"><span className="app-status-check"><CheckCircleOutlined /></span><div><strong>{modInstalled} 已安装</strong><small>已选择模组</small></div></div>
-        <div className="app-status-item app-status-index"><span className="app-status-icon"><AppstoreOutlined /></span><div className="app-status-index-body"><div className="app-status-index-head"><strong>索引进度</strong><b>待开始</b></div><div className="app-status-progress"><i /></div><small>创建整合包后自动扫描</small></div></div>
+        <div className="app-status-item app-status-index app-status-pack" data-testid="statusbar-pack-context" title={activePack?.name ?? '未选择整合包'}>
+          <span className="app-status-icon app-status-pack-cover" aria-hidden>
+            {activePack?.name?.slice(0, 1) ?? '—'}
+          </span>
+          <div className="app-status-index-body">
+            <div className="app-status-index-head">
+              <strong className="app-status-pack-name">{activePack?.name ?? '未选择整合包'}</strong>
+              <b className="app-status-pack-saved">已保存</b>
+            </div>
+            <div className="app-status-meta" data-testid="statusbar-pack-meta">
+              <span>{activePack ? `MC ${activePack.mcVersion}` : 'MC —'}</span>
+              <span className="app-status-pack-loader">{activePack?.loader ?? '—'}</span>
+              <span className="tabular">v{activePack?.packVersion ?? '—'}</span>
+              <span className="app-status-pack-section">{sectionLabel}</span>
+            </div>
+          </div>
+        </div>
         <div className="app-status-item app-status-alert"><span className="app-status-warn"><WarningOutlined /></span><div><strong>{alertCount > 0 ? `${alertCount} 个告警` : '0 个告警'}</strong><small>{alertCount > 0 ? '存在待处理告警' : '健康状态良好'}</small></div></div>
         <div className="app-status-actions">
           <button type="button" onClick={() => navigate('/')}> <FileTextOutlined /> 查看日志</button>

@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
-import {App, Tag} from 'antd';
+import {App} from 'antd';
 import {DownloadOutlined, FolderOpenOutlined, PlayCircleOutlined} from '@ant-design/icons';
-import {useNavigate, useParams} from 'react-router-dom';
+import {useParams} from 'react-router-dom';
 import {WorkbenchButton, WorkbenchCard, WorkbenchSectionHeader} from '../ui/workbench/Workbench';
 import {usePack} from '../hooks/usePack';
 import {fetchTasks, type Task} from '../api/tasks';
@@ -12,22 +12,6 @@ import {DirectoryPicker} from '../features/common/DirectoryPicker';
 import './pack-pages.css';
 
 const LAUNCHER_TYPES = ['launcher_install', 'launcher_launch'];
-
-function LauncherContext({active}: {active: string}) {
-  const {id} = useParams();
-  const navigate = useNavigate();
-  const {pack} = usePack(id);
-  const name = pack?.name ?? '整合包';
-  return <header className="pack-context">
-    <button className="pack-context-back" onClick={() => navigate('/packs')} aria-label="返回整合包列表">整合包</button>
-    <span className="pack-context-sep">/</span>
-    <div className="pack-context-cover">{name.slice(0, 1)}</div>
-    <div className="pack-context-title"><strong>{name}</strong><span>{pack ? `MC ${pack.mcVersion} · ${pack.loader} · v${pack.packVersion}` : '加载中…'}</span></div>
-    <Tag color="green">已保存</Tag>
-    <div className="pack-context-tabs">{active}</div>
-    <div className="pack-context-action" />
-  </header>;
-}
 
 export function LauncherPage() {
   const {id} = useParams();
@@ -138,7 +122,6 @@ export function LauncherPage() {
 
   return (
     <div className="workspace-page">
-      <LauncherContext active="启动器"/>
       <div className="page-heading compact">
         <div>
           <span className="eyebrow">LAUNCHER</span>

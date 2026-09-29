@@ -20,8 +20,8 @@ if not errorlevel 1 (echo [dev] port 5273 already in use, stop it first: scripts
 echo [dev] starting backend  (go run, 127.0.0.1:18871)
 start "mpack-server" /min cmd /c "cd /d "%ROOT%\apps\server" && "%GO%" run ./cmd/server -addr 127.0.0.1:18871 -data "%ROOT%\data" > "%LOGDIR%\server.log" 2>&1"
 
-echo [dev] starting frontend (vite, 127.0.0.1:5273)
-start "mpack-web" /min cmd /c "cd /d "%ROOT%\apps\web" && npm run dev -- --host 127.0.0.1 --port 5273 > "%LOGDIR%\web.log" 2>&1"
+echo [dev] starting frontend (vite, 0.0.0.0:5273)
+start "mpack-web" /min cmd /c "cd /d "%ROOT%\apps\web" && npm run dev -- --host 0.0.0.0 --port 5273 > "%LOGDIR%\web.log" 2>&1"
 
 rem wait for real readiness (max 90s)
 set /a tries=0

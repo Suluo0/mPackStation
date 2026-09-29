@@ -2,24 +2,34 @@ import {useCallback, useEffect, useState} from 'react';
 import {App} from 'antd';
 import {ApiError} from '../api/http';
 import {
-  applyContent, applyQuest, getQuest, listContent, saveQuestDraft, validateContent, validateQuest,
-  type ContentDocument, type QuestBook,
+  applyContent, applyQuest, getQuest, listContent, saveQuestDraft,
+  validateContent, validateQuest,
+  type ContentDocument, type QuestBook, type QuestValidation,
 } from '../api/content';
 
-/* 修订式编辑器的共用动作:校验/应用,412 revision_conflict 统一提示。 */
+function formatIssues(issues: QuestValidation['issues']): string {
+  if (!issues?.length) return '（无问题）';
+  return issues.slice(0, 12).map(i => {
+    const sev = i.severity || 'info';
+    const path = i.path ? ` @${i.path}` : '';
+    return `· [${sev}] ${i.code || 'issue'}${path}: ${i.message || ''}`;
+  }).join('\n');
+}
+
 function useRevisionedActions(conflictText: string) {
   const {message} = App.useApp();
   const run = (fn: () => Promise<unknown>, ok: string) => {
     void fn().then(() => message.success(ok)).catch(e => {
-      if (e instanceof ApiError && e.code === 'revision_conflict') { message.error(conflictText); return; }
+      if (e instanceof ApiError && (e.code === 'revision_conflict' || e.status === 409 || e.status === 412)) {
+        message.error(e.message || conflictText);
+        return;
+      }
       message.error(e instanceof Error ? e.message : String(e));
     });
   };
   return {run};
 }
 
-/* M1：edges 为图权威；坐标用画布网格值，避免全 0 被当成未定位。
-   P0 FTB：book/节点扩展字段一并写入默认草稿。 */
 export const defaultQuestDraft = {
   book: {title: '整合包任务书', icon: 'minecraft:book', progressionMode: 'flexible'},
   chapters: [{id: 'ch1', title: '开始', description: '', coverColor: '#C9783B', icon: 'minecraft:book', position: 0}],
@@ -27,18 +37,19 @@ export const defaultQuestDraft = {
     id: 'n1', chapterId: 'ch1', title: '入门', subtitle: '基础准备', description: '完成基础准备', icon: 'minecraft:wooden_pickaxe',
     x: 48, y: 48, shape: 'circle', size: 1, optional: false, invisible: false,
     dependencyRequirement: 'all_completed', minRequiredDependencies: 0,
-    prerequisites: [] as unknown[], tasks: [{id: 'n1-t1', type: 'item', itemId: 'minecraft:wooden_pickaxe', count: 1}],
-    rewards: [{kind: 'experience', experience: 10}] as unknown[], modRefs: [] as unknown[], position: 0,
+    prerequisites: [] as unknown[],
+    tasks: [{id: 'n1-t1', type: 'item', itemId: 'minecraft:wooden_pickaxe', count: 1}],
+    rewards: [{kind: 'experience', experience: 10}] as unknown[],
+    modRefs: [] as unknown[],
+    position: 0,
   }],
   edges: [] as {id: string; fromNodeId: string; toNodeId: string}[],
 };
 
-/* 内容编辑场景:拉首个文档 + 校验/应用。 */
 export function useContentEditor(packId: string) {
   const [doc, setDoc] = useState<ContentDocument | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
-    if (!packId) return;
     void listContent(packId).then(v => setDoc(v[0] ?? null)).catch(e => setError(String(e)));
   }, [packId]);
   const {run} = useRevisionedActions('内容已被修改,请刷新后重试');
@@ -57,7 +68,6 @@ const isMissingQuest = (e: unknown) => {
       || e.code === 'quest_not_found'
       || /not found/i.test(e.message);
   }
-  // zod 契约失败也视为“尚无可用任务书”，走自举而不是整页报错
   return e instanceof Error && /接口数据结构不符合约定/.test(e.message);
 };
 
@@ -77,14 +87,22 @@ function emptyQuestBook(packId: string): QuestBook {
   };
 }
 
-/* 任务书:缺失/契约不完整时自动用默认草稿自举,避免点进页面直接报错。 */
+export type QuestActionResult = {
+  ok: boolean;
+  status?: string;
+  issues?: QuestValidation['issues'];
+  revisionId?: string | null;
+};
+
+export type QuestLastAction = {type: 'validate' | 'apply' | 'save'; status: string; text: string};
+
 export function useQuestBook(packId: string | undefined) {
-  const {message} = App.useApp();
+  const {message, modal} = App.useApp();
   const [book, setBook] = useState<QuestBook | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const {run} = useRevisionedActions('任务书已被修改,请刷新后重试');
+  const [lastAction, setLastAction] = useState<QuestLastAction | null>(null);
 
   const reload = useCallback(async () => {
     if (!packId) return;
@@ -104,15 +122,9 @@ export function useQuestBook(packId: string | undefined) {
         const b = await getQuest(packId);
         setBook(b);
         message.success('已为该包创建初始任务书草稿');
-      } catch (e2) {
-        // 自举失败时先展示可编辑的本地草稿，不把用户堵在报错页
-        if (isMissingQuest(e2) || e2 instanceof Error) {
-          setBook(emptyQuestBook(packId));
-          setError('');
-        } else {
-          setError(e2 instanceof Error ? e2.message : String(e2));
-          setBook(null);
-        }
+      } catch {
+        setBook(emptyQuestBook(packId));
+        setError('');
       }
     } finally {
       setLoading(false);
@@ -121,32 +133,118 @@ export function useQuestBook(packId: string | undefined) {
 
   useEffect(() => { void reload(); }, [reload]);
 
-  const saveDraft = useCallback(async (draft: unknown, ifMatch: number) => {
-    if (!packId) return;
+  const saveDraft = useCallback(async (draft: unknown, ifMatch: number): Promise<boolean> => {
+    if (!packId) return false;
     setBusy(true);
     try {
       await saveQuestDraft(packId, ifMatch, draft);
       await reload();
+      setLastAction({type: 'save', status: 'ok', text: '草稿已保存'});
       message.success('任务书草稿已保存');
+      return true;
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'revision_conflict') {
+      if (e instanceof ApiError && (e.code === 'revision_conflict' || e.status === 409 || e.status === 412)) {
+        setLastAction({type: 'save', status: 'conflict', text: e.message || '修订冲突'});
         message.error('任务书已被修改,请刷新后重试');
-        return;
+        return false;
       }
-      message.error(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setLastAction({type: 'save', status: 'error', text: msg});
+      message.error(msg);
+      return false;
     } finally {
       setBusy(false);
     }
   }, [packId, message, reload]);
+
+  const showIssues = useCallback((title: string, result: QuestValidation) => {
+    const issues = result.issues ?? [];
+    const failed = result.status === 'failed';
+    const warn = result.status === 'warning' || issues.length > 0;
+    if (failed) {
+      setLastAction({type: 'validate', status: 'failed', text: `校验未通过（${issues.length}）`});
+    } else if (warn) {
+      setLastAction({type: 'validate', status: result.status || 'warning', text: `校验警告（${issues.length}）`});
+    } else {
+      setLastAction({type: 'validate', status: 'passed', text: '校验通过'});
+    }
+    if (!issues.length) {
+      message.success('校验通过');
+      return;
+    }
+    modal.info({
+      title,
+      width: 560,
+      content: formatIssues(issues),
+    });
+  }, [message, modal]);
+
+  const validate = useCallback(async (): Promise<QuestActionResult | null> => {
+    if (!packId) return null;
+    setBusy(true);
+    try {
+      const result = await validateQuest(packId);
+      showIssues(`校验结果 · ${result.status}`, result);
+      return {ok: result.status !== 'failed', status: result.status, issues: result.issues, revisionId: result.revisionId};
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setLastAction({type: 'validate', status: 'error', text: msg});
+      message.error(msg);
+      return {ok: false};
+    } finally {
+      setBusy(false);
+    }
+  }, [packId, message, showIssues]);
+
+  const apply = useCallback(async (): Promise<QuestActionResult | null> => {
+    if (!packId) return null;
+    setBusy(true);
+    try {
+      const result = await applyQuest(packId);
+      await reload();
+      const st = (result as {status?: string}).status || '';
+      if (st === 'applied' || st === 'ok' || st === 'success') {
+        setLastAction({type: 'apply', status: 'applied', text: '已应用'});
+        message.success('已应用');
+        return {ok: true, status: st, revisionId: result.revisionId};
+      }
+      setLastAction({type: 'apply', status: st || 'unknown', text: `应用返回 ${st || '空状态'}`});
+      message.warning(`应用请求完成，但状态为「${st || '未知'}」，已刷新页面数据`);
+      return {ok: false, status: st, revisionId: result.revisionId};
+    } catch (e) {
+      await reload();
+      if (e instanceof ApiError && (e.status === 409 || e.code === 'quest_apply_conflict' || e.code === 'revision_conflict')) {
+        setLastAction({type: 'apply', status: 'conflict', text: e.message || '应用冲突'});
+        message.error(e.message || '当前修订无法应用（可能已是 applied，请先保存新草稿再应用）');
+        return {ok: false, status: 'conflict'};
+      }
+      if (e instanceof ApiError && (e.status === 422 || e.code === 'validation_failed' || e.code === 'quest_validation_failed')) {
+        setLastAction({type: 'apply', status: 'validation_failed', text: '校验阻断，未应用'});
+        message.error('存在阻断性校验问题，未应用。');
+        try {
+          const preview = await validateQuest(packId);
+          showIssues('应用前校验未通过', preview);
+        } catch { /* ignore */ }
+        return {ok: false, status: 'validation_failed'};
+      }
+      const msg = e instanceof Error ? e.message : String(e);
+      setLastAction({type: 'apply', status: 'error', text: msg});
+      message.error(msg);
+      return {ok: false};
+    } finally {
+      setBusy(false);
+    }
+  }, [packId, message, reload, showIssues]);
 
   return {
     book,
     error,
     loading,
     busy,
+    lastAction,
     reload,
     saveDraft,
-    validate: () => run(() => validateQuest(packId!), '校验通过'),
-    apply: () => run(() => applyQuest(packId!), '已应用'),
+    validate,
+    apply,
   };
 }

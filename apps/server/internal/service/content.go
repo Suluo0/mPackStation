@@ -636,14 +636,21 @@ func (a *API) SaveQuestDraft(ctx context.Context, packID string, in QuestDraft, 
 	}
 	return questRevDTO(v, in), issues, nil
 }
-func (a *API) ValidateQuest(ctx context.Context, packID string, requestID string) ([]ValidationIssue, error) {
+// QuestValidationResult is the quest validate/apply response body.
+type QuestValidationResult struct {
+	Status     string            `json:"status"`
+	Issues     []ValidationIssue `json:"issues"`
+	RevisionID string            `json:"revisionId"`
+}
+
+func (a *API) ValidateQuest(ctx context.Context, packID, requestID string) (QuestValidationResult, error) {
 	b, e := a.GetQuest(ctx, packID)
 	if e != nil {
-		return nil, e
+		return QuestValidationResult{}, e
 	}
 	issues, e := a.validateQuest(ctx, packID, b.Revision.Draft)
 	if e != nil {
-		return nil, e
+		return QuestValidationResult{}, e
 	}
 	status := "passed"
 	if isBlocking(issues) {
@@ -654,23 +661,33 @@ func (a *API) ValidateQuest(ctx context.Context, packID string, requestID string
 	raw, _ := json.Marshal(issues)
 	v := store.ContentValidationRecord{ID: newID("quest-validation"), Status: status, Issues: string(raw), AffectedMods: "[]", CreatedAt: time.Now().UnixMilli()}
 	if e = a.repo.ValidateQuest(ctx, packID, b.Revision.ID, v, requestID); e != nil {
-		return nil, e
+		return QuestValidationResult{}, e
 	}
-	return issues, nil
+	return QuestValidationResult{Status: status, Issues: issues, RevisionID: b.Revision.ID}, nil
 }
-func (a *API) ApplyQuest(ctx context.Context, packID, requestID string) error {
+func (a *API) ApplyQuest(ctx context.Context, packID, requestID string) (QuestValidationResult, error) {
 	b, e := a.GetQuest(ctx, packID)
 	if e != nil {
-		return e
+		return QuestValidationResult{}, e
 	}
 	issues, e := a.validateQuest(ctx, packID, b.Revision.Draft)
 	if e != nil {
-		return e
+		return QuestValidationResult{}, e
 	}
 	if isBlocking(issues) {
-		return &ValidationError{Domain: "quest", Issues: issues}
+		return QuestValidationResult{}, &ValidationError{Domain: "quest", Issues: issues}
 	}
-	return a.repo.ApplyQuest(ctx, packID, b.Revision.ID, requestID, time.Now().UnixMilli())
+	if e = a.repo.ApplyQuest(ctx, packID, b.Revision.ID, requestID, time.Now().UnixMilli()); e != nil {
+		if IsConflict(e) {
+			return QuestValidationResult{}, &DomainError{
+				Status:  409,
+				Code:    "quest_apply_conflict",
+				Message: "当前修订无法应用（状态可能已是 applied，请先保存新草稿再应用）",
+			}
+		}
+		return QuestValidationResult{}, e
+	}
+	return QuestValidationResult{Status: "applied", Issues: issues, RevisionID: b.Revision.ID}, nil
 }
 func (a *API) RollbackQuest(ctx context.Context, packID, targetRevisionID, requestID string) (QuestRevision, error) {
 	if err := a.ready(); err != nil {

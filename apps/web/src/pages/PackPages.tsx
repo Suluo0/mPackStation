@@ -22,22 +22,6 @@ import {QuestBookEditor} from '../features/quest/QuestBookEditor';
 import {CreatePackModal, ImportPackModal} from '../features/dashboard/PackModals';
 import {DirectoryPicker} from '../features/common/DirectoryPicker';
 
-export function PackContext({active = '概览', action}: {active?: string; action?: React.ReactNode}) {
-  const {id} = useParams();
-  const navigate = useNavigate();
-  const {pack} = usePack(id);
-  const name = pack?.name ?? '整合包';
-  return <header className="pack-context">
-    <button className="pack-context-back" onClick={() => navigate('/packs')} aria-label="返回整合包列表">整合包</button>
-    <span className="pack-context-sep">/</span>
-    <div className="pack-context-cover">{name.slice(0, 1)}</div>
-    <div className="pack-context-title"><strong>{name}</strong><span>{pack ? `MC ${pack.mcVersion} · ${pack.loader} · v${pack.packVersion}` : '加载中…'}</span></div>
-    <Tag color="green">已保存</Tag>
-    <div className="pack-context-tabs">{active}</div>
-    <div className="pack-context-action">{action}</div>
-  </header>;
-}
-
 export function PacksPage() {
   const navigate = useNavigate();
   const {message} = App.useApp();
@@ -113,14 +97,16 @@ export function PackWorkbenchPage() {
   };
   useEffect(reloadMods, [id]);
   return <div className="workspace-page">
-    <PackContext action={<WorkbenchButton tone="primary" onClick={() => navigate(`/packs/${id}/publish`)} icon={<FileZipOutlined/>}>开始打包</WorkbenchButton>}/>
     <div className="page-heading compact">
       <div>
         <span className="eyebrow">PACK WORKBENCH</span>
         <h1>{pack?.name ?? '加载中…'}</h1>
         <p>选择模组、锁定依赖,处理会阻塞交付的冲突。</p>
       </div>
-      <Button icon={<SettingOutlined/>} onClick={() => { message.info('包设置将迁移至设置页导出目录与平台配置'); navigate('/settings'); }}>包设置</Button>
+      <span style={{display: 'inline-flex', gap: 8, alignItems: 'center'}}>
+        <Button icon={<SettingOutlined/>} onClick={() => { message.info('包设置将迁移至设置页导出目录与平台配置'); navigate('/settings'); }}>包设置</Button>
+        <WorkbenchButton tone="primary" onClick={() => navigate(`/packs/${id}/publish`)} icon={<FileZipOutlined/>}>开始打包</WorkbenchButton>
+      </span>
     </div>
     {error && <div className="empty-inline">加载失败:{error}</div>}
     <div className="workbench-grid">
@@ -204,7 +190,6 @@ export function PackModsPage() {
   const s = useModSearch(id, pack);
 
   return <div className="workspace-page">
-    <PackContext active="模组"/>
     <div className="page-heading compact">
       <div>
         <span className="eyebrow">MOD CATALOG</span>
@@ -267,7 +252,6 @@ export function DependenciesPage() {
   const {id} = useParams();
   const {conflicts, locks, error, resolve} = useDependencies(id);
   return <div className="workspace-page">
-    <PackContext active="依赖与冲突"/>
     <div className="page-heading compact">
       <div>
         <span className="eyebrow">DEPENDENCIES / RESOLUTION</span>
@@ -300,7 +284,6 @@ export function ContentEditorPage() {
   const {id = ''} = useParams();
   const editor = useContentEditor(id);
   return <div className="workspace-page editor-page">
-    <PackContext active="内容文档"/>
     <div className="page-heading compact">
       <div>
         <span className="eyebrow">CONTENT DOCUMENT</span>
@@ -330,7 +313,6 @@ export function QuestEditorPage() {
 
   if (quest.error) {
     return <div className="workspace-page">
-      <PackContext active="任务书"/>
       <div className="page-heading compact"><div><span className="eyebrow">QUEST BOOK</span><h1>任务书</h1></div></div>
       <WorkbenchCard>
         <div className="empty-inline">任务书加载失败：{quest.error}</div>
@@ -341,29 +323,35 @@ export function QuestEditorPage() {
 
   if (quest.loading || !quest.book) {
     return <div className="workspace-page">
-      <PackContext active="任务书"/>
       <div className="page-heading compact"><div><span className="eyebrow">QUEST BOOK</span><h1>任务书</h1><p>正在准备任务书…</p></div></div>
       <WorkbenchCard><div className="empty-inline">加载中…</div></WorkbenchCard>
     </div>;
   }
 
   return <div className="workspace-page editor-page">
-    <PackContext
-      active="任务书"
-      action={<span style={{display: 'inline-flex', gap: 8}}>
-        <Button loading={quest.busy} onClick={() => quest.reload()}>刷新</Button>
-        <Button onClick={quest.validate}>校验</Button>
-        <WorkbenchButton tone="primary" onClick={quest.apply}>应用</WorkbenchButton>
-      </span>}
-    />
-    <div className="page-heading compact">
+    <div className="page-heading compact qb-page-heading">
       <div>
         <span className="eyebrow">QUEST BOOK</span>
-        <h1>{quest.book.revision.draft && (quest.book.revision.draft as {book?: {title?: string}}).book?.title || '任务书'}</h1>
+        <h1>{((quest.book.revision.draft as {book?: {title?: string}} | null)?.book?.title) || '任务书'}</h1>
         <p>
-          仿 FTB 任务书：章节 rail · 画布拖节点 · 依赖语义 · 预览模拟。
-          当前修订 {quest.book.revision.revision || '—'} · {quest.book.revision.state}。
+          章节 · 画布 · 依赖 · 预览；保存后校验，通过再应用。
         </p>
+      </div>
+      <div className="qb-rev-meta" data-testid="quest-rev-meta">
+        <span className={`qb-state-tag state-${quest.book.revision.state}`}>
+          {quest.book.revision.state === 'applied' ? '已应用' : quest.book.revision.state === 'draft' ? '草稿' : quest.book.revision.state}
+        </span>
+        <span className="qb-rev-no">修订 {quest.book.revision.revision || '—'}</span>
+        {quest.lastAction && (
+          <span className={`qb-last-action is-${quest.lastAction.status}`} title={quest.lastAction.text}>
+            {quest.lastAction.text}
+          </span>
+        )}
+        <span style={{display: 'inline-flex', gap: 8, alignItems: 'center'}}>
+          <Button size="small" loading={quest.busy} onClick={() => void quest.reload()}>刷新</Button>
+          <Button size="small" loading={quest.busy} onClick={() => void quest.validate()}>校验</Button>
+          <WorkbenchButton size="small" tone="primary" loading={quest.busy} onClick={() => void quest.apply()}>应用</WorkbenchButton>
+        </span>
       </div>
     </div>
     <QuestBookEditor
@@ -374,8 +362,8 @@ export function QuestEditorPage() {
       onSave={(draft, ifMatch) => {
         void quest.saveDraft(draft, ifMatch);
       }}
-      onValidate={quest.validate}
-      onApply={quest.apply}
+      onValidate={() => { void quest.validate(); }}
+      onApply={() => { void quest.apply(); }}
     />
   </div>;
 }
@@ -473,7 +461,6 @@ export function PublishPage() {
   };
 
   return <div className="workspace-page">
-    <PackContext active="打包与发布"/>
     <div className="page-heading compact">
       <div>
         <span className="eyebrow">PUBLISH / DELIVERY</span>

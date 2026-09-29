@@ -29,10 +29,10 @@ export const revisionSchema = z.object({
 export type ContentRevision = z.infer<typeof revisionSchema>;
 
 export const validationIssueSchema = z.object({
-  code: z.string(),
-  severity: z.string(),
-  path: z.string(),
-  message: z.string(),
+  code: z.string().default(''),
+  severity: z.string().default('info'),
+  path: z.string().default(''),
+  message: z.string().default(''),
   details: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -45,6 +45,14 @@ export const validationSchema = z.object({
   createdAt: z.iso.datetime(),
 });
 export type ContentValidation = z.infer<typeof validationSchema>;
+
+/** 任务书校验/应用出参与后端一致：{status, issues, revisionId} */
+export const questValidationSchema = z.object({
+  status: z.string().default(''),
+  issues: z.array(validationIssueSchema).default([]),
+  revisionId: z.string().nullable().optional().default(null),
+});
+export type QuestValidation = z.infer<typeof questValidationSchema>;
 
 const listEnvelope = <T extends z.ZodTypeAny>(item: T) =>
   z.object({items: z.array(item), next_cursor: z.string().nullable(), total: z.number().int()});
@@ -136,9 +144,9 @@ export const getQuest = (packId: string) =>
 export const saveQuestDraft = (packId: string, ifMatch: number, body: unknown) =>
   put(`/api/packs/${encodeURIComponent(packId)}/quests/draft`, body, questRevisionSchema, {headers: {'If-Match': `"${ifMatch}"`}});
 export const validateQuest = (packId: string) =>
-  post(`/api/packs/${encodeURIComponent(packId)}/quests/validate`, {}, validationSchema);
+  post(`/api/packs/${encodeURIComponent(packId)}/quests/validate`, {}, questValidationSchema);
 export const applyQuest = (packId: string) =>
-  post(`/api/packs/${encodeURIComponent(packId)}/quests/apply`, {}, z.object({status: z.string()}));
+  post(`/api/packs/${encodeURIComponent(packId)}/quests/apply`, {}, questValidationSchema);
 export const rollbackQuest = (packId: string, revisionId: string) =>
   post(`/api/packs/${encodeURIComponent(packId)}/quests/rollback`, {revisionId}, questRevisionSchema);
 export const questHistory = (packId: string) =>

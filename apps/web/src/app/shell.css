@@ -89,3 +89,38 @@
   .app-nav-item, .app-sider-fold { justify-content: center; padding-inline: 8px; }
   .app-nav-pack-group { padding-top: 10px; }
 }
+
+/* 底边栏：原「索引进度」格改为当前整合包上下文（包名/环境/版本/分区） */
+.app-status-pack .app-status-pack-cover {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  color: #fffaf0;
+  background: linear-gradient(145deg, #c9783b, #7a3e28);
+  font-size: 18px;
+  font-weight: 700;
+}
+.app-status-pack-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-status-pack-saved { color: #a8b8a0 !important; }
+.app-status-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 8px;
+  color: rgba(255, 250, 240, 0.72);
+  font-size: 12px;
+}
+.app-status-meta .tabular { font-variant-numeric: tabular-nums; }
+.app-status-pack-loader,
+.app-status-pack-section {
+  padding: 1px 8px;
+  border: 1px solid rgba(255, 250, 240, 0.22);
+  border-radius: 999px;
+}

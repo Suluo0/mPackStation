@@ -21,8 +21,8 @@ echo "[dev] starting backend  (go run, 127.0.0.1:18871)"
 (cd "$ROOT/apps/server" && "$GO" run ./cmd/server -addr 127.0.0.1:18871 -data "$ROOT/data" \
   > "$LOGDIR/server.log" 2>&1) &
 
-echo "[dev] starting frontend (vite, 127.0.0.1:5273)"
-(cd "$ROOT/apps/web" && npm run dev -- --host 127.0.0.1 --port 5273 \
+echo "[dev] starting frontend (vite, 0.0.0.0:5273)"
+(cd "$ROOT/apps/web" && npm run dev -- --host 0.0.0.0 --port 5273 \
   > "$LOGDIR/web.log" 2>&1) &
 
 for i in $(seq 1 45); do

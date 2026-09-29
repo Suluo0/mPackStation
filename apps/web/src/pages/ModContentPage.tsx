@@ -6,7 +6,6 @@ import {
   FileTextOutlined, FireOutlined, GiftOutlined, GlobalOutlined, PlayCircleOutlined, ReloadOutlined,
   TagsOutlined,
 } from '@ant-design/icons';
-import {PackContext} from './PackPages';
 import {WorkbenchButton, WorkbenchCard, WorkbenchSectionHeader} from '../ui/workbench/Workbench';
 import {listContentSources, type Mod} from '../api/mods';
 import {
@@ -58,16 +57,80 @@ function isSpecialRecipePayload(payload: unknown): boolean {
     && p.result === undefined && p.output === undefined;
 }
 
-/* 解析配方 payload, 构建 3x3 合成网格。支持 crafting_shaped / crafting_shapeless。special 返回空网格。 */
-function parseRecipeGrid(payload: unknown): {grid: (string | null)[][]; output: {id: string; count: number} | null; type: string; special: boolean} {
-  if (!payload || typeof payload !== 'object') return {grid: [], output: null, type: 'unknown', special: false};
+/* 机器配方类型标签（非 3×3 合成表） */
+const MACHINE_RECIPE_LABELS: Record<string, string> = {
+  'minecraft:stonecutting': '切石机',
+  'minecraft:smelting': '熔炉',
+  'minecraft:blasting': '高炉',
+  'minecraft:smoking': '烟熏炉',
+  'minecraft:campfire_cooking': '营火',
+  'minecraft:smithing_transform': '锻造台',
+  'minecraft:smithing_trim': '锻造台·纹饰',
+};
+
+/** 处理设备的方块图标（叠在箭头上，替代文字胶囊） */
+const MACHINE_RECIPE_ICONS: Record<string, string> = {
+  'minecraft:stonecutting': 'minecraft:stonecutter',
+  'minecraft:smelting': 'minecraft:furnace',
+  'minecraft:blasting': 'minecraft:blast_furnace',
+  'minecraft:smoking': 'minecraft:smoker',
+  'minecraft:campfire_cooking': 'minecraft:campfire',
+  'minecraft:smithing_transform': 'minecraft:smithing_table',
+  'minecraft:smithing_trim': 'minecraft:smithing_table',
+};
+
+function SlotIcon({itemId, translateKey, getItemIcon, onSelect}: {
+  itemId: string;
+  translateKey: (k: string) => string;
+  getItemIcon: (k: string) => string | null;
+  onSelect: (id: string) => void;
+}) {
+  if (!itemId) {
+    return <div className="recipe-slot empty"><span className="recipe-item-name">—</span></div>;
+  }
+  return (
+    <div className="recipe-slot filled" onClick={() => onSelect(itemId)} title={itemId}>
+      {getItemIcon(itemId) && <img className="recipe-icon" src={getItemIcon(itemId)!} alt=""/>}
+      <span className="recipe-item-name">{translateKey(itemId)}</span>
+    </div>
+  );
+}
+
+function ingredientId(ing: unknown): string {
+  if (!ing) return '';
+  if (typeof ing === 'string') return ing;
+  const o = ing as {item?: string; id?: string; tag?: string};
+  return o.item || o.id || (o.tag ? `#${o.tag}` : '');
+}
+
+function resultId(res: unknown): {id: string; count: number} | null {
+  if (!res) return null;
+  if (typeof res === 'string') return {id: res, count: 1};
+  const o = res as {id?: string; item?: string; count?: number};
+  const id = o.id || o.item || '';
+  if (!id) return null;
+  return {id, count: Number(o.count || 1)};
+}
+
+/* 解析配方 payload：合成网格 或 机器配方（切石机/熔炉等）。 */
+function parseRecipeGrid(payload: unknown): {
+  grid: (string | null)[][];
+  output: {id: string; count: number} | null;
+  type: string;
+  special: boolean;
+  machine: string | null;
+  machineLabel: string | null;
+  machineInputs: string[];
+  extra?: Record<string, string>;
+} {
+  if (!payload || typeof payload !== 'object') {
+    return {grid: [], output: null, type: 'unknown', special: false, machine: null, machineLabel: null, machineInputs: []};
+  }
   const p = payload as Record<string, unknown>;
   const type = String(p.type || 'unknown');
-  const result = p.result as Record<string, unknown> | undefined;
-  const output = result ? {id: String(result.id || result.item || ''), count: Number(result.count || 1)} : null;
+  const result = resultId(p.result) ?? resultId(p.output);
   const special = isSpecialRecipePayload(payload);
 
-  // crafting_shaped: pattern + key
   if (!special && type === 'minecraft:crafting_shaped' && Array.isArray(p.pattern) && p.key && typeof p.key === 'object') {
     const key = p.key as Record<string, {item?: string; id?: string; tag?: string}>;
     const grid: (string | null)[][] = [];
@@ -83,10 +146,9 @@ function parseRecipeGrid(payload: unknown): {grid: (string | null)[][]; output: 
       }
       grid.push(gridRow);
     }
-    return {grid, output, type, special: false};
+    return {grid, output: result, type, special: false, machine: null, machineLabel: null, machineInputs: []};
   }
 
-  // crafting_shapeless / ae2:transform: ingredients 数组 → 输出
   if (!special && (type === 'minecraft:crafting_shapeless' || type === 'ae2:transform') && Array.isArray(p.ingredients)) {
     const grid: (string | null)[][] = [[null, null, null], [null, null, null], [null, null, null]];
     let idx = 0;
@@ -97,10 +159,29 @@ function parseRecipeGrid(payload: unknown): {grid: (string | null)[][]; output: 
         idx++;
       }
     }
-    return {grid, output, type, special: false};
+    return {grid, output: result, type, special: false, machine: null, machineLabel: null, machineInputs: []};
   }
 
-  return {grid: [], output, type, special};
+  // 切石机 / 熔炉类 / 锻造台
+  const machineLabel = MACHINE_RECIPE_LABELS[type];
+  if (!special && machineLabel) {
+    const inputs: string[] = [];
+    if (type === 'minecraft:smithing_transform') {
+      for (const k of ['template', 'base', 'addition']) {
+        const id = ingredientId(p[k]);
+        if (id) inputs.push(id);
+      }
+    } else {
+      const id = ingredientId(p.ingredient) || ingredientId(p.ingredient0);
+      if (id) inputs.push(id);
+    }
+    const extra: Record<string, string> = {};
+    if (typeof p.cookingtime === 'number') extra.cookTime = `${p.cookingtime} tick`;
+    if (typeof p.experience === 'number') extra.experience = String(p.experience);
+    return {grid: [], output: result, type, special: false, machine: type, machineLabel, machineInputs: inputs, extra};
+  }
+
+  return {grid: [], output: result, type, special, machine: null, machineLabel: null, machineInputs: []};
 }
 
 /* 配方解锁进度（advancement）不是合成配方：payload 有 parent/criteria，无 type。 */
@@ -114,13 +195,52 @@ function isAdvancementPayload(payload: unknown): boolean {
 
 /* JEI 风格配方合成网格视图: 3x3 输入 + 箭头 + 输出。special 显示运行时逻辑说明。 */
 function RecipeViewer({payload, translateKey, getItemIcon, onSelect, itemKind}: {payload: unknown; translateKey: (k: string) => string; getItemIcon: (k: string) => string | null; onSelect: (id: string) => void; itemKind?: string}) {
-  const {grid, output, type, special} = parseRecipeGrid(payload);
+  const {grid, output, type, special, machine, machineLabel, machineInputs, extra} = parseRecipeGrid(payload);
 
   if (itemKind === 'advancement' || (type === 'unknown' && isAdvancementPayload(payload))) {
     return (
       <div className="recipe-viewer unsupported">
         这是<strong>配方解锁进度（advancement）</strong>，不是合成配方。
         原版会把 <code>data/&lt;ns&gt;/advancement/recipes/**</code> 用来解锁配方展示，真正的合成配方在 <code>recipe/</code> 目录。
+      </div>
+    );
+  }
+
+  // 机器配方：原料 → 箭头（叠处理设备图标）→ 产物
+  if (machine && machineLabel) {
+    const machineIconId = MACHINE_RECIPE_ICONS[machine] || '';
+    const machineIcon = machineIconId ? getItemIcon(machineIconId) : null;
+    return (
+      <div className="recipe-viewer machine-recipe" data-machine={machine}>
+        <div className="recipe-row" style={{alignItems: 'center'}}>
+          {(machineInputs.length ? machineInputs : ['']).map((itemId, i) => (
+            <SlotIcon key={i} itemId={itemId} translateKey={translateKey} getItemIcon={getItemIcon} onSelect={onSelect}/>
+          ))}
+        </div>
+        <div className="recipe-process" title={machineLabel} data-testid="recipe-process-icon">
+          {machineIcon ? (
+            <img className="recipe-process-icon" src={machineIcon} alt={machineLabel}/>
+          ) : (
+            <span className="recipe-process-icon placeholder" aria-label={machineLabel}>
+              {machineLabel.slice(0, 1)}
+            </span>
+          )}
+          <div className="recipe-arrow-process" aria-hidden>→</div>
+        </div>
+        <div className="recipe-output">
+          {output ? (
+            <div className="recipe-slot filled output-slot" onClick={() => onSelect(output.id)} title={output.id}>
+              {getItemIcon(output.id) && <img className="recipe-icon" src={getItemIcon(output.id)!} alt=""/>}
+              <span className="recipe-item-name">{translateKey(output.id)}</span>
+              {output.count > 1 && <span className="recipe-count">×{output.count}</span>}
+            </div>
+          ) : <div className="recipe-slot empty"><span className="recipe-item-name">无输出</span></div>}
+        </div>
+        {extra && Object.keys(extra).length > 0 && (
+          <div className="machine-recipe-extra">
+            {Object.entries(extra).map(([k, v]) => <span key={k}>{k}: {v}</span>)}
+          </div>
+        )}
       </div>
     );
   }
@@ -153,6 +273,51 @@ function RecipeViewer({payload, translateKey, getItemIcon, onSelect, itemKind}: 
         {type.includes('bookcloning') && (
           <div className="special-recipe-hint">
             书与笔复制：将「书与笔」与「已写成的书」放入合成栏，可复制书的内容（每份副本消耗书与笔的墨水）。
+          </div>
+        )}
+        {(type.includes('bannerduplicate') || type.includes('banner_duplicate')) && (
+          <div className="special-recipe-hint">
+            旗帜复制：任意 1 面旗帜 + 任意 1 个染料 → 2 面同款旗帜（含已印图案）。染料颜色不影响复制结果。
+          </div>
+        )}
+        {type.includes('armordye') && (
+          <div className="special-recipe-hint">
+            盔甲染色：皮革盔甲 + 染料，可染成对应颜色（可多染料混色）。
+          </div>
+        )}
+        {type.includes('mapcloning') && (
+          <div className="special-recipe-hint">
+            地图复制：已有地图 + 空地图 → 两份相同地图。
+          </div>
+        )}
+        {type.includes('mapextending') && (
+          <div className="special-recipe-hint">
+            地图扩展：已有地图 + 纸 → 扩大地图比例尺。
+          </div>
+        )}
+        {type.includes('repairitem') && (
+          <div className="special-recipe-hint">
+            物品修理：两件同类工具/武器在合成栏合并，按耐久计算修复结果。
+          </div>
+        )}
+        {type.includes('firework_rocket') && (
+          <div className="special-recipe-hint">
+            烟花火箭：火药 + 纸（可选烟火之星）→ 烟花；火药数量影响飞行时长。
+          </div>
+        )}
+        {type.includes('tippedarrow') && (
+          <div className="special-recipe-hint">
+            药箭：箭 + 滞留型药水 → 对应药水效果的药箭。
+          </div>
+        )}
+        {type.includes('shulkerboxcoloring') && (
+          <div className="special-recipe-hint">
+            潜影盒染色：潜影盒 + 染料 → 同色潜影盒。
+          </div>
+        )}
+        {type.includes('suspiciousstew') && (
+          <div className="special-recipe-hint">
+            迷之炖菜：碗 + 红蘑菇 + 棕蘑菇（+ 可选花）→ 迷之炖菜，效果随花变化。
           </div>
         )}
         {output && (
@@ -251,12 +416,10 @@ export function ModContentPage() {
         }
         return {name, techId};
       }
-      const result = payload?.result;
-      if (!result?.id) return null;
-      const id = result.id as string;
-      const count = result.count ?? 1;
-      const name = translateKey(id);
-      return {name: count > 1 ? `${name} ×${count}` : name, techId: id};
+      const parsed = resultId(payload?.result) ?? resultId(payload?.output);
+      if (!parsed?.id) return null;
+      const name = translateKey(parsed.id);
+      return {name: parsed.count > 1 ? `${name} ×${parsed.count}` : name, techId: parsed.id};
     } catch {
       return null;
     }
@@ -445,35 +608,30 @@ export function ModContentPage() {
 
   return (
     <div className="workspace-page mod-content-page">
-      <PackContext
-        active="内容编辑"
-        action={
-          <span style={{display: 'inline-flex', gap: 8, alignItems: 'center'}}>
-            <Button
-              icon={<ReloadOutlined/>}
-              loading={iconsLoading || catalogRebuilding}
-              onClick={() => void handleReloadResources()}
-            >
-              重建目录与图标
-            </Button>
-            <WorkbenchButton
-              tone="primary"
-              icon={<PlayCircleOutlined/>}
-              loading={parsing}
-              disabled={!selectedModId}
-              onClick={handleParse}
-            >
-              {run ? '重新解析' : '开始解析'}
-            </WorkbenchButton>
-          </span>
-        }
-      />
       <div className="page-heading compact">
         <div>
           <span className="eyebrow">MOD CONTENT / EXTRACTION</span>
           <h1>内容编辑</h1>
           <p>从模组 jar 提取配方、物品、结构与语言内容。选模组 → 解析 → 按类型浏览。</p>
         </div>
+        <span style={{display: 'inline-flex', gap: 8, alignItems: 'center'}}>
+          <Button
+            icon={<ReloadOutlined/>}
+            loading={iconsLoading || catalogRebuilding}
+            onClick={() => void handleReloadResources()}
+          >
+            重建目录与图标
+          </Button>
+          <WorkbenchButton
+            tone="primary"
+            icon={<PlayCircleOutlined/>}
+            loading={parsing}
+            disabled={!selectedModId}
+            onClick={handleParse}
+          >
+            {run ? '重新解析' : '开始解析'}
+          </WorkbenchButton>
+        </span>
       </div>
 
       <WorkbenchCard className="mod-toolbar-card">

@@ -230,7 +230,7 @@ func TestP6QuestGraphLifecycleAndValidation(t *testing.T) {
 	if _, err := a.ValidateQuest(ctx, packID, "q-validate"); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.ApplyQuest(ctx, packID, "q-apply"); err != nil {
+	if _, err := a.ApplyQuest(ctx, packID, "q-apply"); err != nil {
 		t.Fatal(err)
 	}
 	q, err := a.GetQuest(ctx, packID)
@@ -274,7 +274,7 @@ func TestP6QuestRejectsCycleOrCrossPackReference(t *testing.T) {
 		t.Fatalf("cycle issues=%#v", issues)
 	}
 	var ve *ValidationError
-	if err := a.ApplyQuest(ctx, packID, "q-apply"); !errors.As(err, &ve) || ve.Domain != "quest" {
+	if _, err := a.ApplyQuest(ctx, packID, "q-apply"); !errors.As(err, &ve) || ve.Domain != "quest" {
 		t.Fatalf("cycle apply=%v", err)
 	}
 	_ = r
