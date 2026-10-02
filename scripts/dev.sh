@@ -22,7 +22,9 @@ echo "[dev] starting backend  (go run, 127.0.0.1:18871)"
   > "$LOGDIR/server.log" 2>&1) &
 
 echo "[dev] starting frontend (vite, 0.0.0.0:5273)"
-(cd "$ROOT/apps/web" && npm run dev -- --host 0.0.0.0 --port 5273 \
+# 入口已切到 web2（工作台 IA v2.1，docs/design/workbench-interaction-design.md）。
+# apps/web 保留在树上但不再由 dev.sh 起；要回看旧版：cd apps/web && npm run dev -- --port 5275
+(cd "$ROOT/apps/web2" && npm run dev -- --host 0.0.0.0 --port 5273 \
   > "$LOGDIR/web.log" 2>&1) &
 
 for i in $(seq 1 45); do
