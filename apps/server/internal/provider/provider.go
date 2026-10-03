@@ -61,8 +61,12 @@ type File struct {
 	DownloadURL string `json:"downloadUrl"`
 	SHA1        string `json:"sha1"`
 	SHA256      string `json:"sha256"`
-	Size        int64  `json:"size"`
-	Primary     bool   `json:"primary"`
+	// SHA512 只有 Modrinth 提供（GET /v2/project/{id}/version 的 files[].hashes
+	// 实测返回 {sha1, sha512}）。它是 .mrpack manifest 的必填哈希，此前被解析器
+	// 直接丢掉，导致装配出来的 manifest 里 sha512 恒为空串，Prism 一类严格读方会拒。
+	SHA512    string `json:"sha512"`
+	Size      int64  `json:"size"`
+	Primary   bool   `json:"primary"`
 }
 
 // UnmarshalJSON normalizes the string and numeric identifiers and the
@@ -77,6 +81,7 @@ func (f *File) UnmarshalJSON(data []byte) error {
 		URL         string          `json:"url"`
 		SHA1        string          `json:"sha1"`
 		SHA256      string          `json:"sha256"`
+		SHA512      string          `json:"sha512"`
 		Size        int64           `json:"size"`
 		FileLength  int64           `json:"fileLength"`
 		Primary     bool            `json:"primary"`
@@ -104,7 +109,7 @@ func (f *File) UnmarshalJSON(data []byte) error {
 	if size == 0 {
 		size = raw.FileLength
 	}
-	sha1, sha256 := raw.SHA1, raw.SHA256
+	sha1, sha256, sha512 := raw.SHA1, raw.SHA256, raw.SHA512
 	// CurseForge: hashes is [{value, algo}]; Modrinth: {"sha1": ..., "sha512": ...}.
 	var cfHashes []struct {
 		Value string `json:"value"`
@@ -123,10 +128,11 @@ func (f *File) UnmarshalJSON(data []byte) error {
 				}
 			}
 		}
-	} else if len(raw.Hashes) > 0 {
+} else if len(raw.Hashes) > 0 {
 		var mrHashes struct {
 			SHA1   string `json:"sha1"`
 			SHA256 string `json:"sha256"`
+			SHA512 string `json:"sha512"`
 		}
 		if json.Unmarshal(raw.Hashes, &mrHashes) == nil {
 			if sha1 == "" {
@@ -135,9 +141,12 @@ func (f *File) UnmarshalJSON(data []byte) error {
 			if sha256 == "" {
 				sha256 = mrHashes.SHA256
 			}
+			if sha512 == "" {
+				sha512 = mrHashes.SHA512
+			}
 		}
 	}
-	f.ID, f.Name, f.DownloadURL, f.SHA1, f.SHA256, f.Size, f.Primary = id, name, url, sha1, sha256, size, raw.Primary
+	f.ID, f.Name, f.DownloadURL, f.SHA1, f.SHA256, f.SHA512, f.Size, f.Primary = id, name, url, sha1, sha256, sha512, size, raw.Primary
 	return nil
 }
 

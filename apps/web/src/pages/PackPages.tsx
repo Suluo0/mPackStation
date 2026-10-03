@@ -1,8 +1,8 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {App, Button, Divider, Input, Select, Tag} from 'antd';
 import {
-  ArrowRightOutlined, CheckCircleFilled, CheckOutlined,
-  CodeOutlined, FileZipOutlined,
+  ArrowRightOutlined, BookOutlined, CheckCircleFilled, CheckOutlined,
+  CodeOutlined, EditOutlined, ExperimentOutlined, FileZipOutlined, GoldOutlined,
   InfoCircleOutlined, LinkOutlined, PlusOutlined,
   ReloadOutlined, SearchOutlined, SettingOutlined, UploadOutlined, WarningFilled,
 } from '@ant-design/icons';
@@ -10,7 +10,7 @@ import {useNavigate, useParams} from 'react-router-dom';
 import {WorkbenchButton, WorkbenchCard, WorkbenchSectionHeader} from '../ui/workbench/Workbench';
 import './pack-pages.css';
 import {listMods, packHealth, listConflicts, listLocks, type Mod, type PackHealth} from '../api/mods';
-import {listDeliveryChecks, runDeliveryChecks, listVersions, listArtifacts, buildPack} from '../api/releases';
+import {listDeliveryChecks, runDeliveryChecks, listVersions, listArtifacts, buildPack, createVersion, type Artifact} from '../api/releases';
 import {fetchHealth, fetchStatus, saveCurseForgeKey, clearCurseForgeKey, type SystemHealth, type SystemStatus} from '../api/system';
 import {registerExportDir} from '../api/fs';
 import {usePack} from '../hooks/usePack';
@@ -18,9 +18,16 @@ import {usePacks} from '../hooks/usePacks';
 import {useModSearch} from '../hooks/useModSearch';
 import {useDependencies} from '../hooks/useDependencies';
 import {useContentEditor, useQuestBook} from '../hooks/useEditors';
+import {usePackCatalog} from '../features/pack/PackCatalogContext';
+import {useFocus} from '../features/focus/FocusContext';
 import {QuestBookEditor} from '../features/quest/QuestBookEditor';
 import {CreatePackModal, ImportPackModal} from '../features/dashboard/PackModals';
 import {DirectoryPicker} from '../features/common/DirectoryPicker';
+import {formatBytes, relativeTime} from '../features/dashboard/signals';
+
+/* 包状态/封面色板的展示映射。 */
+const statusLabel = (s: string) => ({active: '正常', archived: '已归档', removed: '已删除'}[s] ?? s);
+const coverTone = (id: string) => (id.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 2 ? 'adventure' : 'demo');
 
 export function PacksPage() {
   const navigate = useNavigate();
@@ -55,14 +62,15 @@ export function PacksPage() {
       {visible.map(p => (
         <button className="pack-table pack-table-row" key={p.id} onClick={() => navigate(`/packs/${p.id}`)}>
           <span className="pack-table-name">
-            <span className={`pack-mini-cover pack-mini-${p.id}`}>{p.name.slice(0, 1)}</span>
+            {/* pack-mini-<包id> 这种类名永远命不中样式(库里只有 demo/adventure 两种渐变),
+                封面因此一直是无底色方块;改成按 id 稳定地在两种渐变里取一种。 */}
+            <span className={`pack-mini-cover pack-mini-${coverTone(p.id)}`}>{p.name.slice(0, 1)}</span>
             <strong>{p.name}</strong>
-            <Tag>{p.packVersion}</Tag>
           </span>
           <span><Tag>MC {p.mcVersion}</Tag><Tag>{p.loader}</Tag></span>
           <span className="tabular">{p.packVersion}</span>
-          <span className="text-success tabular">{p.status}</span>
-          <span className="db-muted">{p.updatedAt ?? p.createdAt ?? '—'}</span>
+          <span className={p.status === 'active' ? 'text-success tabular' : 'db-muted tabular'}>{statusLabel(p.status)}</span>
+          <span className="db-muted">{relativeTime(p.updatedAt || p.createdAt)}</span>
           <span />
         </button>
       ))}
@@ -87,8 +95,9 @@ export function PacksPage() {
 export function PackWorkbenchPage() {
   const {id} = useParams();
   const navigate = useNavigate();
-  const {message} = App.useApp();
   const {pack} = usePack(id);
+  const {items: catalogItems, phase} = usePackCatalog();
+  const {focusMod} = useFocus();
   const [items, setItems] = useState<Mod[]>([]);
   const [error, setError] = useState('');
   const reloadMods = () => {
@@ -104,20 +113,23 @@ export function PackWorkbenchPage() {
         <p>选择模组、锁定依赖,处理会阻塞交付的冲突。</p>
       </div>
       <span style={{display: 'inline-flex', gap: 8, alignItems: 'center'}}>
-        <Button icon={<SettingOutlined/>} onClick={() => { message.info('包设置将迁移至设置页导出目录与平台配置'); navigate('/settings'); }}>包设置</Button>
+        <Button icon={<SettingOutlined/>} onClick={() => navigate('/settings')} title="导出目录白名单与平台凭证在全局设置里管理">全局设置</Button>
         <WorkbenchButton tone="primary" onClick={() => navigate(`/packs/${id}/publish`)} icon={<FileZipOutlined/>}>开始打包</WorkbenchButton>
       </span>
     </div>
     {error && <div className="empty-inline">加载失败:{error}</div>}
     <div className="workbench-grid">
       <main className="workbench-main">
+        <CatalogSignalCard packId={id} phase={phase} itemCount={catalogItems.length}/>
         <WorkbenchCard className="mod-search-card">
           <div className="result-note">
             <span><strong className="tabular">{items.length}</strong> 个已选择模组</span>
             <Button type="link" onClick={() => navigate(`/packs/${id}/mods`)}>查看完整搜索 <ArrowRightOutlined/></Button>
           </div>
           {items.slice(0, 5).map(m => (
-            <div className="mod-row" key={m.id}>
+            <div className="mod-row mod-row-clickable" key={m.id}
+              onClick={() => focusMod(m.canonicalModId || m.id, m.displayName, '概览')}
+              title="点击在 Inspector 中聚焦此模组">
               <span className="mod-symbol"><CodeOutlined/></span>
               <div className="mod-row-main">
                 <strong>{m.displayName}</strong>
@@ -125,7 +137,7 @@ export function PackWorkbenchPage() {
                 <small>{m.fileName}</small>
               </div>
               <Tag color={m.status === 'disabled' ? 'gold' : 'green'}>{m.status}</Tag>
-              <Button size="small" onClick={() => navigate(`/packs/${id}/mods`)}>查看</Button>
+              <Button size="small" onClick={e => { e.stopPropagation(); navigate(`/packs/${id}/mods`); }}>查看</Button>
             </div>
           ))}
           {!error && items.length === 0 && <div className="empty-inline">当前还没有模组。去模组页搜索并添加。</div>}
@@ -135,6 +147,31 @@ export function PackWorkbenchPage() {
       <PackHealthRail id={id}/>
     </div>
   </div>;
+}
+
+/* 概览的目录信号卡：把「物品大一统 / 合成器」的规模一眼摆在工作台首页，
+   点任一格直达对应模块 —— 概览不再是死数字，而是进入链路的入口。 */
+function CatalogSignalCard({packId, phase, itemCount}: {packId?: string; phase: string; itemCount: number}) {
+  const navigate = useNavigate();
+  const ready = phase === 'ready';
+  const go = (suffix: string) => navigate(`/packs/${packId}${suffix}`);
+  return <WorkbenchCard className="catalog-card overview-signals">
+    <WorkbenchSectionHeader title="目录信号" action={<span className="db-muted">{ready ? '已构建' : phase === 'building' ? '构建中' : '未构建'}</span>}/>
+    <div className="signal-grid">
+      <button type="button" className="signal-tile" onClick={() => go('/items')} disabled={!ready}>
+        <GoldOutlined/><b className="tabular">{ready ? itemCount : '—'}</b><span>物品</span>
+      </button>
+      <button type="button" className="signal-tile" onClick={() => go('/recipes')} disabled={!ready}>
+        <ExperimentOutlined/><b className="tabular">{ready ? '浏览' : '—'}</b><span>合成器</span>
+      </button>
+      <button type="button" className="signal-tile" onClick={() => go('/tweak')}>
+        <EditOutlined/><b className="tabular">魔改</b><span>内容文档</span>
+      </button>
+      <button type="button" className="signal-tile" onClick={() => go('/quests')}>
+        <BookOutlined/><b className="tabular">任务</b><span>任务书</span>
+      </button>
+    </div>
+  </WorkbenchCard>;
 }
 
 function PackHealthRail({id}: {id?: string}) {
@@ -186,8 +223,27 @@ const platformTag = (pl: string) => <Tag key={pl} color={pl === 'modrinth' ? 'gr
 
 export function PackModsPage() {
   const {id} = useParams();
+  const navigate = useNavigate();
   const {pack} = usePack(id);
   const s = useModSearch(id, pack);
+  const {items} = usePackCatalog();
+  const {focusMod} = useFocus();
+
+  /* 命名空间 → 物品数：物品 id 前缀即贡献它的模组命名空间（minecraft: / create: …）。
+     用于在已安装模组行给出「贡献 N 物品」的反向入口，点击直达过滤后的物品页。 */
+  const itemsByNs = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const it of items) {
+      const ns = it.id.split(':')[0];
+      if (ns) m.set(ns, (m.get(ns) ?? 0) + 1);
+    }
+    return m;
+  }, [items]);
+
+  const openModItems = (modId: string, label: string) => {
+    focusMod(modId, label, '模组页');
+    navigate(`/packs/${id}/items?ns=${encodeURIComponent(modId)}`);
+  };
 
   return <div className="workspace-page">
     <div className="page-heading compact">
@@ -241,6 +297,12 @@ export function PackModsPage() {
         {m.origin === 'compat-fix' && <Tag color="blue">兼容补丁</Tag>}
         {!m.mirrorSource && (m.source === 'modrinth' || m.source === 'curseforge') && <Tag>仅单平台</Tag>}
         <Tag color={m.status === 'disabled' ? 'gold' : 'green'}>{m.status}</Tag>
+        {(itemsByNs.get(m.canonicalModId) ?? 0) > 0 && (
+          <Button size="small" type="link" icon={<GoldOutlined/>}
+            onClick={() => openModItems(m.canonicalModId, m.displayName)}>
+            贡献 {itemsByNs.get(m.canonicalModId)} 物品
+          </Button>
+        )}
         <Button size="small" danger={m.status !== 'disabled'} onClick={() => s.toggleInstalled(m)}>{m.status === 'disabled' ? '启用' : '移除'}</Button>
       </div>)}
       {!s.installed.length && <div className="empty-inline">当前还没有模组。搜索并添加第一个。</div>}
@@ -251,6 +313,10 @@ export function PackModsPage() {
 export function DependenciesPage() {
   const {id} = useParams();
   const {conflicts, locks, error, resolve} = useDependencies(id);
+  /* 后端 /conflicts 返回的是全量(含 ignored/resolved),这里只呈现真正待处理的。
+     之前「待处理项」把已忽略的冲突也列出来,与上方计数口径不一致。 */
+  const pending = conflicts.filter(c => c.status === 'pending');
+  const statusLabel: Record<string, string> = {pending: '待处理', ignored: '已忽略', resolved: '已解决'};
   return <div className="workspace-page">
     <div className="page-heading compact">
       <div>
@@ -261,19 +327,21 @@ export function DependenciesPage() {
       <WorkbenchButton tone="primary" icon={<CheckOutlined/>} onClick={resolve}>重新解析依赖</WorkbenchButton>
     </div>
     {error && <div className="empty-inline">加载失败:{error}</div>}
-    <div className="dependency-grid">
+    {/* 本页没有右侧 rail(样式里的 .dependency-rail 未被使用),
+        沿用两列栅格会在右边留出一条 320px 空白带 —— 用 solo 收成单列。 */}
+    <div className="dependency-grid solo">
       <main>
         <div className="resolution-summary">
           <div><span>锁定快照</span><strong className="text-success tabular">{locks.length}</strong></div>
-          <div><span>待处理冲突</span><strong className="text-danger tabular">{conflicts.filter(c => c.status !== 'resolved').length}</strong></div>
+          <div><span>待处理冲突</span><strong className="text-danger tabular">{pending.length}</strong></div>
         </div>
         <WorkbenchCard className="conflict-card">
           <WorkbenchSectionHeader title="待处理项" action={<Button type="text" icon={<ReloadOutlined/>} onClick={resolve}>重新检查</Button>}/>
-          {conflicts.map(c => <div className="conflict-row" key={c.id}>
-            <span className={`conflict-mark ${c.severity}`}><WarningFilled/></span>
-            <div><strong>{c.summary}</strong><Tag color={c.severity === 'high' ? 'red' : 'gold'}>{c.kind}</Tag><p>{c.status}</p></div>
+          {pending.map(c => <div className="conflict-row" key={c.id}>
+            <span className={`conflict-mark ${c.severity === 'error' ? 'high' : 'medium'}`}><WarningFilled/></span>
+            <div><strong>{c.summary}</strong><Tag color={c.severity === 'error' ? 'red' : 'gold'}>{c.kind}</Tag><p>{statusLabel[c.status] ?? c.status}</p></div>
           </div>)}
-          {!error && !conflicts.length && <div className="resolved-state"><CheckCircleFilled/><strong>没有冲突</strong></div>}
+          {!error && !pending.length && <div className="resolved-state"><CheckCircleFilled/><strong>没有冲突</strong></div>}
         </WorkbenchCard>
       </main>
     </div>
@@ -373,13 +441,15 @@ export function PublishPage() {
   const {message} = App.useApp();
   const [checks, setChecks] = useState<{kind: string; status: string; detail: string}[]>([]);
   const [versions, setVersions] = useState<{id: string; version: string}[]>([]);
-  const [artifacts, setArtifacts] = useState<{id: string; fileName: string; sha256: string}[]>([]);
+  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
   const [exportDirName, setExportDirName] = useState('default-export');
   const [exportDirPath, setExportDirPath] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [exportReady, setExportReady] = useState(false);
+  const [newVersion, setNewVersion] = useState('');
+  const [newChannel, setNewChannel] = useState<'draft' | 'release'>('draft');
 
   const refresh = () => {
     void Promise.all([
@@ -424,6 +494,20 @@ export function PublishPage() {
     } finally { setBusy(''); }
   };
 
+  const onCreateVersion = async () => {
+    const version = newVersion.trim();
+    if (!version) { message.error('请填写版本号，例如 0.1.0'); return; }
+    setBusy('version');
+    try {
+      await createVersion(id, {version, channel: newChannel});
+      message.success(`版本 ${version} 已登记`);
+      setNewVersion('');
+      refresh();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(''); }
+  };
+
   const onBuild = async () => {
     const packVersionId = versions[0]?.id;
     if (!packVersionId) { message.error('暂无版本，无法构建'); return; }
@@ -435,21 +519,12 @@ export function PublishPage() {
       }
       const locks = await listLocks(id).catch(() => []);
       const lockSnapshot = locks[0]?.snapshot ? JSON.parse(locks[0].snapshot) : {packId: id, mods: []};
-      const manifest = {
-        formatVersion: 1,
-        game: 'minecraft',
-        versionId: versions[0]?.version || '0.1.0',
-        name: id,
-        dependencies: {},
-        generatedBy: 'mPackStation',
-      };
+      // 这里以前由前端拼一个 {formatVersion:1} 的空 manifest 塞进 files[]，
+      // 产物因此是不含任何模组的 283 字节空壳。files[] 省略即走后端装配：
+      // 服务端从包内权威清单（pack_mods → 选中项 → 平台发布文件）生成真 modrinth.index.json。
       const res = await buildPack(id, {
         packVersionId,
         exportDirName: exportDirName.trim() || 'default-export',
-        files: [{
-          path: 'modrinth.index.json',
-          content: btoa(unescape(encodeURIComponent(JSON.stringify(manifest)))),
-        }],
         lockSnapshot,
       });
       message.success(`构建完成：${res.artifact?.fileName ?? 'artifact'}`);
@@ -492,14 +567,21 @@ export function PublishPage() {
           <WorkbenchSectionHeader title="版本与产物"/>
           <div className="check-row">
             <div>
-              <strong>当前版本</strong>
-              <span>{versions.length ? versions.map(v => v.version).join(', ') : '暂无版本'}</span>
+              <strong>已登记版本</strong>
+              <span>{versions.length ? versions.map(v => `${v.version}`).join(', ') : '暂无版本'}</span>
             </div>
           </div>
+          <div className="version-new-row">
+            <Input value={newVersion} onChange={e => setNewVersion(e.target.value)} placeholder="新版本号，如 0.2.0" onPressEnter={onCreateVersion}/>
+            <Select value={newChannel} onChange={v => setNewChannel(v)} style={{width: 108}}
+              options={[{value: 'draft', label: '草稿'}, {value: 'release', label: '正式'}]}/>
+            <Button loading={busy === 'version'} onClick={onCreateVersion}>登记版本</Button>
+          </div>
+          <p className="version-new-hint">构建与发布都按「最新登记的版本」执行，产物名里的版本号即它。</p>
           {artifacts.map(a => (
             <div className="artifact-row" key={a.id}>
               <FileZipOutlined/>
-              <div><strong>{a.fileName}</strong><span className="tabular">{a.sha256}</span></div>
+              <div><strong>{a.fileName}</strong><span className="tabular">{a.kind === 'mrpack' ? '整合包 .mrpack' : a.kind} · {formatBytes(a.sizeBytes)} · {a.sha256.slice(0, 16)}…</span></div>
             </div>
           ))}
           {!artifacts.length && <div className="empty-inline">还没有构建产物。注册导出目录后点击「开始构建」。</div>}
@@ -530,12 +612,6 @@ export function PublishPage() {
       onSelect={setExportDirPath}
     />
   </div>;
-}
-
-function formatBytes(n: number): string {
-  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)} MB`;
-  return `${n} B`;
 }
 
 const providerStatusText: Record<string, {label: string; color: string}> = {

@@ -16,6 +16,7 @@ import {
 } from './questDeps';
 import {QUEST_ICON_CATALOG, iconDisplay, iconUrlOrNull} from './questIcons';
 import {MpCanvas, MpZoomBar, type MpCanvasApi, type Bounds} from '../../ui/canvas';
+import {ItemPickerModal} from '../catalog/ItemPickerModal';
 import './QuestBookEditor.css';
 
 export type QuestBookEditorProps = {
@@ -70,14 +71,19 @@ function shapeClass(shape?: string): string {
 
 function TaskFields({task, onChange}: {task: QuestTaskDraft; onChange: (t: QuestTaskDraft) => void}) {
   const t = task.type;
+  const [pickerOpen, setPickerOpen] = useState(false);
   return (
     <div className="qb-task-fields">
       {t === 'item' && (
         <>
           <label>物品 ID</label>
-          <Input size="small" value={task.itemId ?? ''} onChange={e => onChange({...task, itemId: e.target.value})} placeholder="minecraft:stone"/>
+          <div className="qb-item-id-row">
+            <Input size="small" value={task.itemId ?? ''} onChange={e => onChange({...task, itemId: e.target.value})} placeholder="minecraft:stone"/>
+            <Button size="small" onClick={() => setPickerOpen(true)}>选择</Button>
+          </div>
           <label>数量</label>
           <InputNumber size="small" min={1} value={task.count ?? 1} onChange={v => onChange({...task, count: Number(v) || 1})}/>
+          <ItemPickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} onPick={id => onChange({...task, itemId: id})} title="选择目标物品"/>
         </>
       )}
       {t === 'checkmark' && (
@@ -131,14 +137,19 @@ function TaskFields({task, onChange}: {task: QuestTaskDraft; onChange: (t: Quest
 
 function RewardFields({reward, onChange}: {reward: QuestRewardDraft; onChange: (r: QuestRewardDraft) => void}) {
   const k = reward.kind;
+  const [pickerOpen, setPickerOpen] = useState(false);
   return (
     <div className="qb-task-fields">
       {k === 'item' && (
         <>
           <label>物品 ID</label>
-          <Input size="small" value={reward.item ?? ''} onChange={e => onChange({...reward, item: e.target.value})} placeholder="minecraft:diamond"/>
+          <div className="qb-item-id-row">
+            <Input size="small" value={reward.item ?? ''} onChange={e => onChange({...reward, item: e.target.value})} placeholder="minecraft:diamond"/>
+            <Button size="small" onClick={() => setPickerOpen(true)}>选择</Button>
+          </div>
           <label>数量</label>
           <InputNumber size="small" min={1} value={reward.amount ?? 1} onChange={v => onChange({...reward, amount: Number(v) || 1})}/>
+          <ItemPickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} onPick={id => onChange({...reward, item: id})} title="选择奖励物品"/>
         </>
       )}
       {k === 'experience' && (
@@ -617,12 +628,11 @@ export function QuestBookEditor(props: QuestBookEditorProps) {
           />
         </div>
         <div className="qb-topbar-mid">
-          <span className={`qb-mode-badge ${mode}`} data-testid="quest-mode-badge" aria-live="polite">
-            {mode === 'edit' ? '编辑' : '预览'}
-          </span>
+          {/* 原来这里还有一枚「编辑/预览」徽标,和右侧开关的选中态是同一句话,
+              工具栏上会并排出现两个「编辑」。状态改由开关自身用 aria-pressed 表达。 */}
           <div className="qb-mode-switch" role="group" aria-label="编辑或预览">
-            <button type="button" className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>编辑</button>
-            <button type="button" className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}>
+            <button type="button" aria-pressed={mode === 'edit'} className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>编辑</button>
+            <button type="button" aria-pressed={mode === 'preview'} className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}>
               <EyeOutlined/> 预览
             </button>
           </div>

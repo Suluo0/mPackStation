@@ -148,9 +148,12 @@ pub fn scan_system_java() -> Vec<JavaRuntime> {
         if dir.is_dir() {
             if let Ok(entries) = std::fs::read_dir(&dir) {
                 for entry in entries.flatten() {
-                    let java_exe = entry.path().join("bin").join(java_executable_name());
-                    if let Some(rt) = check_and_add(&java_exe, &mut seen) {
-                        runtimes.push(rt);
+                    // macOS 的 .jdk 是 bundle，可执行文件在 Contents/Home/bin 下，
+                    // 直接拼 bin/java 会一条都扫不到。
+                    if let Some(java_exe) = find_java_exec_in(&entry.path()) {
+                        if let Some(rt) = check_and_add(&java_exe, &mut seen) {
+                            runtimes.push(rt);
+                        }
                     }
                 }
             }
@@ -162,10 +165,12 @@ pub fn scan_system_java() -> Vec<JavaRuntime> {
         if runtime_dir.is_dir() {
             if let Ok(entries) = std::fs::read_dir(&runtime_dir) {
                 for entry in entries.flatten() {
-                    // runtime/{component}/bin/java.exe
-                    let java_exe = entry.path().join("bin").join(java_executable_name());
-                    if let Some(rt) = check_and_add(&java_exe, &mut seen) {
-                        runtimes.push(rt);
+                    // runtime/{component}/…：Windows/Linux 是 bin/java，
+                    // Mojang 的 macOS runtime 是 jre.bundle/Contents/Home/bin/java。
+                    if let Some(java_exe) = find_java_exec_in(&entry.path()) {
+                        if let Some(rt) = check_and_add(&java_exe, &mut seen) {
+                            runtimes.push(rt);
+                        }
                     }
                 }
             }
@@ -334,6 +339,62 @@ fn java_executable_name() -> &'static str {
     }
 }
 
+/// 在一个「Java 安装根目录」下找可执行文件。
+///
+/// 各平台的落地形状并不统一，只按 `<root>/bin/java` 拼路径会漏掉一整类：
+/// - Windows / Linux 解压出来的 JRE：`<root>/bin/java(.exe)`
+/// - macOS 系统 JDK（/Library/Java/JavaVirtualMachines/*.jdk）：
+///   `<root>/Contents/Home/bin/java`
+/// - Mojang 自动下载的 macOS runtime（java-runtime-delta / macos）：
+///   `<root>/jre.bundle/Contents/Home/bin/java`
+/// 实测：改之前 `java list` 在本机只回 /usr/bin/java 一条，`java install
+/// --version 21` 下载完 145 个文件后报「未找到可执行文件」，因为文件其实在
+/// runtime/java-runtime-delta/jre.bundle/Contents/Home/bin/java。
+/// 兜底再做一次有界递归（深度 ≤3），换平台的 bundle 布局时不用回来改代码。
+pub fn find_java_exec_in(root: &Path) -> Option<PathBuf> {
+    let name = java_executable_name();
+    for rel in [
+        PathBuf::from("bin").join(name),
+        PathBuf::from("Contents/Home/bin").join(name),
+        PathBuf::from("jre.bundle/Contents/Home/bin").join(name),
+    ] {
+        let cand = root.join(&rel);
+        if cand.is_file() {
+            return Some(cand);
+        }
+    }
+    find_java_exec_shallow(root, 3)
+}
+
+fn find_java_exec_shallow(dir: &Path, depth: u32) -> Option<PathBuf> {
+    if depth == 0 {
+        return None;
+    }
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut subdirs = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_type = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if file_type.is_file() && path.file_name().map(|n| n == java_executable_name()) == Some(true) {
+            // 只认 bin/ 下的那个，避免撞到别的同名文件
+            if path.parent().map(|p| p.file_name().map(|n| n == "bin").unwrap_or(false)) == Some(true) {
+                return Some(path);
+            }
+        } else if file_type.is_dir() {
+            subdirs.push(path);
+        }
+    }
+    for sub in subdirs {
+        if let Some(found) = find_java_exec_shallow(&sub, depth - 1) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 /// 启动器 runtime 目录（用于存放自动下载的 Java）
 fn launcher_runtime_dir() -> Option<PathBuf> {
     // 优先使用环境变量 MPACK_LAUNCHER_DIR
@@ -418,11 +479,6 @@ fn scan_registry_java() -> Vec<JavaRuntime> {
     }
 
     runtimes
-}
-
-#[cfg(not(windows))]
-fn scan_registry_java() -> Vec<JavaRuntime> {
-    Vec::new()
 }
 
 #[cfg(test)]

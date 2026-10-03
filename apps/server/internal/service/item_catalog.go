@@ -16,6 +16,11 @@ import (
 var catalogIDPattern = regexp.MustCompile(`^[a-z0-9_.-]+:[a-z0-9_./-]+$`)
 var catalogLocalePattern = regexp.MustCompile(`^[a-z]{2,3}_[a-z0-9]{2,8}$`)
 
+// catalogResolverVersion 标记目录是哪一版解析规则产出的。v3 把物品条目从
+// 「models/item 下有这个文件」改成「语言键/被引用/方块的物品形态」；v4 再加一道收口：
+// 光有语言键不算物品，必须同时有模型资产或被配方/标签引用。
+const catalogResolverVersion = "catalog-v4"
+
 func catalogLocale(value string) string {
 	if value == "" {
 		return "zh_cn"
@@ -37,6 +42,18 @@ func catalogPathID(name, top string, directories ...string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// langKeyToID 把语言键的后半段（去掉 item./block. 前缀）转成资源 ID：
+// "minecraft.apple" → "minecraft:apple"。命名空间不含点，所以路径里再出现点就不是
+// 注册表条目，而是文案子键（block.minecraft.banner.base.creeper 这类），一律拒绝——
+// 它们此前被当成物品/方块建了 890 行。
+func langKeyToID(rest string) string {
+	ns, path, ok := strings.Cut(rest, ".")
+	if !ok || path == "" || strings.Contains(path, ".") {
+		return ""
+	}
+	return resourceID(ns + ":" + path)
 }
 
 func catalogTagPath(name string) (registry, id string, ok bool) {
@@ -71,10 +88,16 @@ type catalogBuilder struct {
 	tags    map[string]*store.CatalogTag
 	recipes map[string]*store.CatalogRecipe
 	langs   map[string]map[string]catalogLanguage
+	// models 只是图标/材质的来源，不再凭空产生物品条目；收集起来在 finish 阶段
+	// 给已确立资格的物品回填 model_path。
+	models map[string]string
+	// referenced 记录被配方或标签点名过的 ID，与 items 里的 evidence 字段分开维护，
+	// 因为语言键先到时会把 evidence 锁在 lang 上，引用信息就丢了。
+	referenced map[string]bool
 }
 
 func newCatalogBuilder() *catalogBuilder {
-	return &catalogBuilder{items: map[string]*store.CatalogItem{}, blocks: map[string]*store.CatalogBlock{}, tags: map[string]*store.CatalogTag{}, recipes: map[string]*store.CatalogRecipe{}, langs: map[string]map[string]catalogLanguage{}}
+	return &catalogBuilder{items: map[string]*store.CatalogItem{}, blocks: map[string]*store.CatalogBlock{}, tags: map[string]*store.CatalogTag{}, recipes: map[string]*store.CatalogRecipe{}, langs: map[string]map[string]catalogLanguage{}, models: map[string]string{}, referenced: map[string]bool{}}
 }
 
 func (b *catalogBuilder) item(id, evidence, source, modelPath string) {
@@ -82,9 +105,18 @@ func (b *catalogBuilder) item(id, evidence, source, modelPath string) {
 	if !catalogIDPattern.MatchString(id) {
 		return
 	}
+	if evidence == "reference" {
+		b.referenced[id] = true
+	}
 	if old := b.items[id]; old != nil {
-		if old.Evidence == "reference" && evidence == "model" {
-			old.Evidence, old.Source, old.ModelPath = evidence, source, modelPath
+		if old.Evidence == "lang" {
+			return // 语言键是权威，任何来源都不覆盖
+		}
+		if old.Evidence == "reference" && (evidence == "model" || evidence == "lang") {
+			old.Evidence, old.Source = evidence, source
+		}
+		if evidence != "lang" && old.ModelPath == "" {
+			old.ModelPath = modelPath
 		}
 		return
 	}
@@ -120,7 +152,7 @@ func (b *catalogBuilder) tag(registry, id string) *store.CatalogTag {
 
 func (b *catalogBuilder) add(resource catalogResource) {
 	if id, ok := catalogPathID(resource.path, "assets", "models/item"); ok {
-		b.item(id, "model", resource.source, resource.path)
+		b.models[id] = resource.path
 		return
 	}
 	if id, ok := catalogPathID(resource.path, "assets", "blockstates"); ok {
@@ -145,6 +177,14 @@ func (b *catalogBuilder) add(resource catalogResource) {
 		for key, value := range values {
 			if value != "" {
 				b.langs[locale][key] = catalogLanguage{value: value, source: resource.source}
+			}
+			// 语言键只有 item. 这一支产物品行（物品的权威来源）。
+			// block. 键在这里只当名字用：方块行由 blockstates/*.json 产生，
+			// 方块的物品形态在 finish 里按「有 blockstate + 有物品模型 + 有名字键」判定。
+			if rest, ok := strings.CutPrefix(key, "item."); ok {
+				if id := langKeyToID(rest); id != "" {
+					b.item(id, "lang", resource.source, "")
+				}
 			}
 		}
 		return
@@ -303,6 +343,21 @@ func catalogDiagnostic(tag *store.CatalogTag, message string) {
 	if tag.Status == "resolved" {
 		tag.Status = "partial"
 	}
+}
+
+// blocksWithoutItemForm 是资产齐全（blockstate + item 模型 + 名字键都有）、游戏里却没有
+// 物品形态的原版方块：注册表里没给它们登记 Item，/give 给不出、JEI 也不显示。
+// assets 层看不出「有没有 Item」，只能按实测清单钉死。
+var blocksWithoutItemForm = map[string]bool{"minecraft:air": true, "minecraft:structure_void": true, "minecraft:light": true}
+
+// hasLangKey 报告任一语言文件里出现过这个键。
+func (b *catalogBuilder) hasLangKey(key string) bool {
+	for _, values := range b.langs {
+		if _, ok := values[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *catalogBuilder) names(keys ...string) []store.CatalogName {
@@ -475,9 +530,36 @@ func (b *catalogBuilder) finish() store.Catalog {
 		}
 		catalog.Tags = append(catalog.Tags, *tag)
 	}
+	// 方块的物品形态：有 blockstate（方块行的唯一来源）、有 models/item 同名模型、
+	// 有干净的 block 语言键给名字，三者同时成立才算「能被拿在手里的方块」。
+	// 原版实测 air / structure_void / light 三条资产齐全却没有物品形态
+	// （/give 给不出、JEI 不显示），按清单排除；water、lava、fire、cave_air、
+	// void_air、moving_piston 这些同样无物品形态的方块没有 item 模型，天然落在规则外。
+	for id, block := range b.blocks {
+		if _, excluded := blocksWithoutItemForm[id]; excluded {
+			continue
+		}
+		modelPath := b.models[id]
+		dotted := strings.ReplaceAll(id, ":", ".")
+		if modelPath == "" || (!b.hasLangKey("block."+dotted) && !b.hasLangKey("block."+strings.ReplaceAll(dotted, "/", "."))) {
+			continue
+		}
+		b.item(id, "lang", block.Source, modelPath)
+	}
 	for id, item := range b.items {
 		dotted := strings.ReplaceAll(id, ":", ".")
 		item.Names = b.names("item."+dotted, "block."+dotted, "item."+strings.ReplaceAll(dotted, "/", "."), "block."+strings.ReplaceAll(dotted, "/", "."))
+		if item.ModelPath == "" {
+			// 模型只是图标的来源（0025）：物品由语言键/引用产生，路径在这里回填
+			item.ModelPath = b.models[id]
+		}
+		if item.ModelPath == "" && !b.referenced[id] {
+			// 条目资格到此收口：光有语言键不算物品。Mojang 的语言表比版本超前且从不删键
+			// （1.21.1 的 zh_cn 里有 bundle/cushion/spear、pottery_shard 旧拼写、
+			// modifiers.head、op_block_warning.line1 这类 163 个键），它们在 jar 里
+			// 既没有模型资产也没被任何配方/标签引用，游戏里给不出、JEI 不显示。
+			continue
+		}
 		if block := b.blocks[id]; block != nil {
 			block.ItemIDs = append(block.ItemIDs, id)
 		}
@@ -485,7 +567,8 @@ func (b *catalogBuilder) finish() store.Catalog {
 	}
 	for id, block := range b.blocks {
 		dotted := strings.ReplaceAll(id, ":", ".")
-		block.Names = b.names("block."+dotted, "block."+strings.ReplaceAll(dotted, "/", "."))
+		// 方块名优先取 block. 键；原版少数方块（glow_item_frame）只在 item. 键下有文案。
+		block.Names = b.names("block."+dotted, "block."+strings.ReplaceAll(dotted, "/", "."), "item."+dotted, "item."+strings.ReplaceAll(dotted, "/", "."))
 		catalog.Blocks = append(catalog.Blocks, *block)
 	}
 	for _, recipe := range b.recipes {
@@ -504,6 +587,7 @@ type CatalogItemView struct {
 	Evidence       string              `json:"evidence"`
 	ModelPath      string              `json:"modelPath"`
 	IconStatus     string              `json:"iconStatus"`
+	IconReason     string              `json:"iconReason"`
 	Names          []store.CatalogName `json:"names"`
 	Tags           []string            `json:"tags"`
 }
@@ -562,7 +646,7 @@ func catalogView(c store.Catalog, locale string) ItemCatalog {
 	locales, itemViews, blockViews := map[string]bool{}, map[string]CatalogItemView{}, map[string]CatalogBlockView{}
 	for _, item := range c.Items {
 		name, resolved := catalogName(item.Names, locale, item.ID)
-		v := CatalogItemView{ID: item.ID, DisplayName: name, ResolvedLocale: resolved, Evidence: item.Evidence, ModelPath: item.ModelPath, IconStatus: item.IconStatus, Names: item.Names, Tags: item.Tags}
+		v := CatalogItemView{ID: item.ID, DisplayName: name, ResolvedLocale: resolved, Evidence: item.Evidence, ModelPath: item.ModelPath, IconStatus: item.IconStatus, IconReason: item.IconReason, Names: item.Names, Tags: item.Tags}
 		view.Items = append(view.Items, v)
 		itemViews[item.ID] = v
 		for _, n := range item.Names {
@@ -679,7 +763,7 @@ func (a *API) RebuildItemCatalog(ctx context.Context, packID, locale, requestID 
 	}
 	resources.addContent(modResources)
 	catalog := builder.finish()
-	rendered, missing := resources.icons()
+	rendered, missingReasons := resources.icons()
 	itemIndex := map[string]int{}
 	for index, item := range catalog.Items {
 		itemIndex[item.ID] = index
@@ -696,14 +780,18 @@ func (a *API) RebuildItemCatalog(ctx context.Context, packID, locale, requestID 
 		if decodeErr != nil {
 			continue
 		}
-		catalog.Icons = append(catalog.Icons, store.CatalogIcon{ItemID: icon.Key, Mime: payload.Mime, Data: data, Width: 32, Height: 32, Source: payload.Source})
-		if index, ok := itemIndex[icon.Key]; ok {
-			catalog.Items[index].IconStatus = "ready"
+		index, exists := itemIndex[icon.Key]
+		if !exists {
+			// 模型文件不再等量于物品：给不存在的物品存图标会撞外键。
+			continue
 		}
+		catalog.Icons = append(catalog.Icons, store.CatalogIcon{ItemID: icon.Key, Mime: payload.Mime, Data: data, Width: 32, Height: 32, Source: payload.Source})
+		catalog.Items[index].IconStatus = "ready"
 	}
-	for _, id := range missing {
+	for id, reason := range missingReasons {
 		if index, ok := itemIndex[id]; ok {
 			catalog.Items[index].IconStatus = "missing"
+			catalog.Items[index].IconReason = reason
 		}
 	}
 	catalog.Revision = snapshot.Revision
@@ -715,13 +803,29 @@ func (a *API) RebuildItemCatalog(ctx context.Context, packID, locale, requestID 
 		}
 		return ItemCatalog{}, err
 	}
-	if err = a.repo.PublishCatalogGeneration(ctx, packID, generationRevision, catalog, "catalog-v2", requestID); err != nil {
+	if err = a.repo.PublishCatalogGeneration(ctx, packID, generationRevision, catalog, catalogResolverVersion, requestID); err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			return ItemCatalog{}, &DomainError{Status: 409, Code: "catalog_stale", Message: "pack changed during catalog generation; retry"}
 		}
 		return ItemCatalog{}, err
 	}
 	return catalogView(catalog, locale), nil
+}
+
+// catalogReadFailure 把目录读取的三种失败翻成可分辨的错误码；不归它管时返回 nil。
+//
+// 旧实现只认 store.ErrConflict，于是「从没构建过目录」和「目录过期」都是
+// 409 catalog_stale，包不存在也被报成 409（链路测试缺陷 O9）。
+func catalogReadFailure(err error) error {
+	switch {
+	case errors.Is(err, store.ErrCatalogNotBuilt):
+		return &DomainError{Status: 409, Code: "catalog_not_built", Message: "这个包还没有构建过物品目录，点「重建目录」开始"}
+	case errors.Is(err, store.ErrConflict):
+		return &DomainError{Status: 409, Code: "catalog_stale", Message: "包内容已变化，物品目录需要重建后才有数据"}
+	case errors.Is(err, store.ErrNotFound):
+		return NotFoundError("pack_not_found", "pack not found")
+	}
+	return nil
 }
 
 func (a *API) GetItemCatalog(ctx context.Context, packID, locale string) (ItemCatalog, error) {
@@ -733,10 +837,10 @@ func (a *API) GetItemCatalog(ctx context.Context, packID, locale string) (ItemCa
 		return ItemCatalog{}, err
 	}
 	catalog, err := a.repo.ReadCatalog(ctx, packID)
-	if errors.Is(err, store.ErrConflict) {
-		return ItemCatalog{}, &DomainError{Status: 409, Code: "catalog_stale", Message: "catalog requires rebuild"}
-	}
 	if err != nil {
+		if mapped := catalogReadFailure(err); mapped != nil {
+			return ItemCatalog{}, mapped
+		}
 		return ItemCatalog{}, err
 	}
 	return catalogView(catalog, locale), nil
@@ -773,7 +877,8 @@ func (a *API) GetCatalogItem(ctx context.Context, packID, itemID, locale string)
 			return item, nil
 		}
 	}
-	return CatalogItemView{}, store.ErrNotFound
+	// 目录里没有这个物品 ≠ 包不存在：以前裸 store.ErrNotFound 会被兜底翻译成 404 pack_not_found。
+	return CatalogItemView{}, NotFoundError("catalog_item_not_found", "目录里没有这个物品/方块条目: "+itemID)
 }
 
 func (a *API) GetCatalogTag(ctx context.Context, packID, registry, tagID, locale string) (CatalogTagView, error) {
@@ -789,7 +894,7 @@ func (a *API) GetCatalogTag(ctx context.Context, packID, registry, tagID, locale
 			return tag, nil
 		}
 	}
-	return CatalogTagView{}, store.ErrNotFound
+	return CatalogTagView{}, NotFoundError("catalog_tag_not_found", "目录里没有这个标签: "+registry+":"+tagID)
 }
 
 func (a *API) GetCatalogIcon(ctx context.Context, packID, itemID string) (store.CatalogIcon, error) {
@@ -800,8 +905,11 @@ func (a *API) GetCatalogIcon(ctx context.Context, packID, itemID string) (store.
 		return store.CatalogIcon{}, ErrInvalidArgument
 	}
 	icon, err := a.repo.ReadCatalogIcon(ctx, packID, itemID)
-	if errors.Is(err, store.ErrConflict) {
-		return store.CatalogIcon{}, &DomainError{Status: 409, Code: "catalog_stale", Message: "catalog requires rebuild"}
+	if err != nil {
+		if mapped := catalogReadFailure(err); mapped != nil {
+			return store.CatalogIcon{}, mapped
+		}
+		return store.CatalogIcon{}, err
 	}
-	return icon, err
+	return icon, nil
 }

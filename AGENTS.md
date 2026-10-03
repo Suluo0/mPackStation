@@ -1,5 +1,17 @@
 # mPackStation 项目记忆
 
+## 服务与环境铁律（2026-10-03 用户定稿，优先级高于本文件其余各节）
+
+- **唯一开发服务**：后端 `http://127.0.0.1:18872`（`-data /tmp/mpack-data`），前端 `http://127.0.0.1:5271`（`apps/web3`，代理回 18872）。
+- **禁止另开实例、禁止使用任何历史端口**：5173 / 5273 / 5274 / 5275 / 5276 / 18871 / 18880 一律不再使用；
+  需要隔离环境时先停下来问用户，不许自行起新端口或新数据目录。
+- `scripts/dev.sh` / `dev-stop.sh` 是唯一起停方式；改动会话不得绕过它手工起服务。
+- `/tmp/mpack-data` 是唯一共享开发数据目录；**对它做重启、迁移、目录重建之前，必须获得用户当轮明示**。
+- 并行会话共用此工作区时：迁移编号先 `ls apps/server/internal/store/migrations/` 再取号；
+  改任何文件前先重读（对方可能已改）；不碰对方正在跑的进程。
+- 历史背景：2026-10-03 因双会话并行 + 环境重置，/tmp/mpack-data 与 /tmp/mpack-chain 数据被清空
+  （见 `docs/tests/incident-2026-10-03-shared-env-wipe.md`）。本节即为防再发而设。
+
 ## 权威文档
 
 - 后端架构基线：`docs/architecture/backend-architecture-v7.md`

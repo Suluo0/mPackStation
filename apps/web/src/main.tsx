@@ -5,9 +5,12 @@ import {createRoot} from 'react-dom/client';
 import {BrowserRouter, Navigate, Route, Routes} from 'react-router-dom';
 import {AppShell} from './app/AppShell';
 import {DashboardPage} from './pages/DashboardPage';
-import {DependenciesPage, PackModsPage, PackWorkbenchPage, PacksPage, PublishPage, QuestEditorPage, SettingsPage} from './pages/PackPages';
+import {DependenciesPage, PackModsPage, PackWorkbenchPage, PacksPage, PublishPage, QuestEditorPage, SettingsPage, ContentEditorPage} from './pages/PackPages';
 import {LauncherPage} from './pages/LauncherPage';
 import {ModContentPage} from './pages/ModContentPage';
+import {ItemCatalogPage} from './pages/ItemCatalogPage';
+import {RecipeBrowserPage} from './pages/RecipeBrowserPage';
+import {RecipeTweakPage} from './pages/RecipeTweakPage';
 import {listPacks} from './api/packs';
 import './features/dashboard/dashboard.css';
 import './ui/workbench/workbench.css';
@@ -51,14 +54,21 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/packs" element={<PacksPage/>}/>
             <Route path="/packs/:id" element={<PackWorkbenchPage/>}/>
             <Route path="/packs/:id/mods" element={<PackModsPage/>}/>
+            <Route path="/packs/:id/items" element={<ItemCatalogPage/>}/>
+            <Route path="/packs/:id/recipes" element={<RecipeBrowserPage/>}/>
             <Route path="/packs/:id/dependencies" element={<DependenciesPage/>}/>
             <Route path="/packs/:id/content" element={<ModContentPage/>}/>
+            <Route path="/packs/:id/content-doc" element={<ContentEditorPage/>}/>
+            <Route path="/packs/:id/tweak" element={<RecipeTweakPage/>}/>
             <Route path="/packs/:id/quests" element={<QuestEditorPage/>}/>
             <Route path="/packs/:id/publish" element={<PublishPage/>}/>
             <Route path="/packs/:id/launcher" element={<LauncherPage/>}/>
             <Route path="/settings" element={<SettingsPage/>}/>
             <Route path="/mods" element={<DefaultPackRedirect suffix="/mods"/>}/>
+            <Route path="/items" element={<DefaultPackRedirect suffix="/items"/>}/>
+            <Route path="/recipes" element={<DefaultPackRedirect suffix="/recipes"/>}/>
             <Route path="/content" element={<DefaultPackRedirect suffix="/content"/>}/>
+            <Route path="/tweak" element={<DefaultPackRedirect suffix="/tweak"/>}/>
             <Route path="/quests" element={<DefaultPackRedirect suffix="/quests"/>}/>
             <Route path="/publish" element={<DefaultPackRedirect suffix="/publish"/>}/>
             <Route path="*" element={<Navigate replace to="/"/>}/>

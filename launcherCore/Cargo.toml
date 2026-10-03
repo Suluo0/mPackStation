@@ -35,11 +35,21 @@ futures-util = "0.3"
 # Minecraft 启动器核心库
 mc-launcher-core = "0.1.2"
 
+# 读取 .mrpack（zip 容器）。zip 已在依赖树里（mc-launcher-core 传递依赖 2.4.2，MIT），
+# 这里只是提升为直接依赖，不新增下载。
+zip = "2"
+
 # 凭证存储
 keyring = "3"
 
 # UUID
 uuid = { version = "1", features = ["v3", "v4"] }
+
+[target.'cfg(unix)'.dependencies]
+# 进程存活检查用 kill(pid, 0)。此前是手写 `extern "C" { fn libc_kill(...) }`，
+# 而 libc 里的符号叫 kill，不叫 libc_kill —— 二进制侥幸链得过（该函数在 bin 里
+# 未被引用会被裁掉），`cargo test` 一引就报 Undefined symbols: _libc_kill。
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

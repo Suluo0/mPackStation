@@ -5,9 +5,16 @@ import {useParams} from 'react-router-dom';
 import {WorkbenchButton, WorkbenchCard, WorkbenchSectionHeader} from '../ui/workbench/Workbench';
 import {usePack} from '../hooks/usePack';
 import {fetchTasks, type Task} from '../api/tasks';
-import {fetchTaskLog, installLauncher, launchLauncher, type TaskLogEvent} from '../api/launcher';
+import {
+  fetchTaskLog,
+  installLauncher,
+  launchLauncher,
+  listLauncherInstalls,
+  type LauncherInstall,
+  type TaskLogEvent,
+} from '../api/launcher';
 import {acknowledgeOnboarding} from '../api/onboarding';
-import {TaskStatusTag} from '../features/dashboard/signals';
+import {TaskStatusTag, relativeTime} from '../features/dashboard/signals';
 import {DirectoryPicker} from '../features/common/DirectoryPicker';
 import './pack-pages.css';
 
@@ -26,6 +33,7 @@ export function LauncherPage() {
   const [busy, setBusy] = useState(false);
   const [dirPickerOpen, setDirPickerOpen] = useState(false);
   const [javaPickerOpen, setJavaPickerOpen] = useState(false);
+  const [installs, setInstalls] = useState<LauncherInstall[]>([]);
   const busyRef = useRef(false);
 
   const refresh = useCallback(async (): Promise<boolean> => {
@@ -61,6 +69,22 @@ export function LauncherPage() {
     };
   }, [refresh]);
 
+  /* 目录里已装好的版本：启动必须用安装时落库的 versionId，而不是包上的 mcVersion。
+     见后端 launcher_installs 表（安装完成时写入）与 resolveLaunchVersion。 */
+  useEffect(() => {
+    const dir = minecraftDir.trim();
+    if (!dir) { setInstalls([]); return; }
+    let stopped = false;
+    const load = async () => {
+      try {
+        const list = await listLauncherInstalls(id, dir);
+        if (!stopped) setInstalls(list);
+      } catch { if (!stopped) setInstalls([]); }
+    };
+    void load();
+    return () => { stopped = true; };
+  }, [id, minecraftDir]);
+
   const guardBusy = () => {
     if (busyRef.current) return false;
     busyRef.current = true;
@@ -88,7 +112,12 @@ export function LauncherPage() {
       const r = await installLauncher({
         version: pack!.mcVersion,
         loader: pack!.loader,
+        // 包上记录了加载器版本就必须带上：启动器侧 --loader-version 缺省是 latest,
+        // 会让装出来的加载器和包锁定的版本不一致。
+        loaderVersion: pack!.loaderVersion ?? undefined,
         minecraftDir: minecraftDir.trim(),
+        // 归属到当前包：安装记录（versionId）按包+目录索引，换包/换目录才能找对版本。
+        packId: id,
       });
       message.success(`安装任务已入队（${r.taskId.slice(0, 8)}…）`);
       markLauncherReady();
@@ -106,9 +135,12 @@ export function LauncherPage() {
     if (!guardBusy()) return;
     try {
       const r = await launchLauncher({
-        version: pack!.mcVersion,
+        // 启动的是「这个目录里装好的那个版本」：优先用安装记录里的 versionId。
+        // 列表为空时留空，由服务端 resolveLaunchVersion 兜底解析/给出明确提示。
+        version: installs[0]?.versionId,
         username: username.trim(),
         minecraftDir: minecraftDir.trim(),
+        packId: id,
         javaPath: javaPath.trim() || undefined,
         xmxMb: xmxMb || undefined,
       });
@@ -167,6 +199,19 @@ export function LauncherPage() {
               <span>内存 (MB)</span>
               <input type="number" min={512} step={512} value={xmxMb} onChange={e => setXmxMb(Number(e.target.value) || 0)}/>
             </label>
+          </div>
+          <div className="launcher-installs">
+            {installs.length > 0 ? (
+              installs.map(i => (
+                <span className="db-muted" key={i.id}>
+                  已安装 <b>{i.versionId}</b>（{i.loader || 'vanilla'} · MC {i.mcVersion} · {relativeTime(i.installedAt)}）
+                </span>
+              ))
+            ) : (
+              <span className="db-muted">
+                {minecraftDir.trim() ? '该目录还没有安装记录，先点「安装游戏」。' : '选择游戏目录后显示该目录已安装的版本。'}
+              </span>
+            )}
           </div>
           <div className="launcher-actions">
             <WorkbenchButton onClick={onInstall} icon={<DownloadOutlined/>} loading={busy}>安装游戏</WorkbenchButton>

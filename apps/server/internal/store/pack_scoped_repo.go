@@ -18,9 +18,10 @@ import (
 )
 
 type PackScopedFile struct {
-	ID, SHA256, SHA1, MediaType, Location string
-	SizeBytes                             int64
-	Verified                              bool
+	// SHA512 只用于 .mrpack manifest（规范必填），来自下载字节实测；没有就不写进 expected_hashes。
+	ID, SHA256, SHA1, SHA512, MediaType, Location string
+	SizeBytes                                     int64
+	Verified                                      bool
 }
 
 type PackScopedInput struct {
@@ -73,7 +74,7 @@ func (r *Repository) RecordScopedParseFailure(ctx context.Context, packID, runID
 // required builtin Minecraft row. ListPackMods intentionally keeps its legacy
 // user-mod semantics for existing API clients.
 func (r *Repository) ListPackMembers(ctx context.Context, packID string) ([]PackModRecord, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,''),origin,COALESCE(mod_id,''),COALESCE(current_selection_id,'') FROM pack_mods WHERE pack_id=? AND status<>'removed' ORDER BY CASE WHEN mod_id='minecraft' THEN 0 ELSE 1 END, display_name COLLATE NOCASE,id`, packID)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,''),origin,COALESCE(mod_id,''),COALESCE(current_selection_id,''),COALESCE(category,'') FROM pack_mods WHERE pack_id=? AND status<>'removed' ORDER BY CASE WHEN mod_id='minecraft' THEN 0 ELSE 1 END, COALESCE(NULLIF(category,''),'未分类') COLLATE NOCASE, display_name COLLATE NOCASE,id`, packID)
 	if err != nil {
 		return nil, fmt.Errorf("list pack members: %w", err)
 	}
@@ -92,7 +93,7 @@ func (r *Repository) ListPackMembers(ctx context.Context, packID string) ([]Pack
 func scanPackMod(s interface{ Scan(...any) error }) (PackModRecord, error) {
 	var m PackModRecord
 	var req int
-	if err := s.Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt, &m.MirrorSource, &m.MirrorProjectID, &m.MirrorVersionID, &m.Origin, &m.ModID, &m.CurrentSelectionID); err != nil {
+	if err := s.Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt, &m.MirrorSource, &m.MirrorProjectID, &m.MirrorVersionID, &m.Origin, &m.ModID, &m.CurrentSelectionID, &m.Category); err != nil {
 		return m, err
 	}
 	m.Required = req != 0
@@ -171,7 +172,11 @@ func (r *Repository) EnsurePackSelection(ctx context.Context, s PackScopedSelect
 			}
 			if s.File != nil {
 				releaseFileID := NewGlobalID("release-file", releaseID+"\x00"+nonEmpty(s.ReleaseFileKey, s.File.ID))
-				hashes, _ := json.Marshal(map[string]string{"sha1": s.File.SHA1, "sha256": s.File.SHA256})
+				hashPayload := map[string]string{"sha1": s.File.SHA1, "sha256": s.File.SHA256}
+				if s.File.SHA512 != "" {
+					hashPayload["sha512"] = s.File.SHA512
+				}
+				hashes, _ := json.Marshal(hashPayload)
 				if _, err := r.db.ExecContext(ctx, `INSERT INTO platform_release_files(id,release_id,file_key,file_name,download_url,expected_size,expected_hashes,file_id,verification_status) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(release_id,file_key) DO UPDATE SET file_id=excluded.file_id,verification_status=excluded.verification_status`, releaseFileID, releaseID, nonEmpty(s.ReleaseFileKey, s.File.ID), s.LogicalPath, s.DownloadURL, s.File.SizeBytes, string(hashes), s.File.ID, "verified"); err != nil {
 					return fmt.Errorf("register platform release file: %w", err)
 				}

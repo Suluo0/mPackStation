@@ -251,6 +251,44 @@ func TestP7ExportDirectorySafety(t *testing.T) {
 	}
 }
 
+// TestP7ExportDirectoryReapproval 锁住 O15：同一个目录换名字再批准时，
+// 之前是 sqlite 的 absolute_path UNIQUE 报错直冲 HTTP 层变成 500。
+// 用户视角这只是「这个文件夹已经批准过了」，必须是可辨认的 409。
+func TestP7ExportDirectoryReapproval(t *testing.T) {
+	db, app, _, _ := newP7ServiceFixture(t)
+	defer db.Close()
+	dir := t.TempDir()
+	if err := app.RegisterExportDirectory(context.Background(), "exp-first", dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.RegisterExportDirectory(context.Background(), "exp-first", dir); err != nil {
+		t.Fatalf("同名同路径应幂等, got %v", err)
+	}
+	if err := app.RegisterExportDirectory(context.Background(), "exp-second", dir); !errors.Is(err, service.ErrExportDirConflict) {
+		t.Fatalf("换名重复批准 error=%v, want ErrExportDirConflict (旧行为: sqlite UNIQUE -> 500)", err)
+	}
+	other := t.TempDir()
+	if err := app.RegisterExportDirectory(context.Background(), "exp-first", other); !errors.Is(err, service.ErrExportDirConflict) {
+		t.Fatalf("同名换路径 error=%v, want ErrExportDirConflict", err)
+	}
+	// 失败的登记不能留下一行：否则 BuildPack 会把一个从没真正批准过的别名
+	// 当成已批准的导出目录。
+	var rows int
+	if err := db.QueryRow(`SELECT count(*) FROM allowed_export_dirs WHERE name='exp-second'`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("失败的登记不应入库, exp-second rows=%d", rows)
+	}
+	var bound string
+	if err := db.QueryRow(`SELECT absolute_path FROM allowed_export_dirs WHERE name='exp-first'`).Scan(&bound); err != nil {
+		t.Fatal(err)
+	}
+	if bound == "" {
+		t.Fatal("exp-first 的批准记录丢了")
+	}
+}
+
 // TestP7CurseForgeAndModrinthPublishTasksAndPolling exercises both normalized
 // provider DTO paths, durable publishing state, and remote-state polling.
 func TestP7CurseForgeAndModrinthPublishTasksAndPolling(t *testing.T) {

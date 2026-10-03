@@ -4,12 +4,18 @@ import {
   AppstoreOutlined, BookOutlined, CodeSandboxOutlined, DatabaseOutlined, DoubleLeftOutlined,
   EditOutlined, FileTextOutlined, FolderOpenOutlined, HomeOutlined, CheckCircleOutlined, RocketOutlined,
   WarningOutlined, SettingOutlined, SearchOutlined, ApartmentOutlined, PlayCircleOutlined,
+  GoldOutlined, ExperimentOutlined,
 } from '@ant-design/icons';
 import './shell.css';
+import '../features/focus/focus.css';
 import {fetchOnboarding, type Onboarding} from '../api/onboarding';
 import {listPacks} from '../api/packs';
 import {fetchDashboard, type DashboardPack} from '../api/dashboard';
 import {OnboardingChecklist} from '../features/dashboard/OnboardingChecklist';
+import {FocusProvider} from '../features/focus/FocusContext';
+import {PackCatalogProvider} from '../features/pack/PackCatalogContext';
+import {InspectorRail} from '../features/focus/InspectorRail';
+import {CommandPalette} from '../features/focus/CommandPalette';
 
 /* 应用外壳：左侧导航 + 顶栏 + 内容区，所有页面共享。 */
 
@@ -21,8 +27,11 @@ const primaryNav = [
 const packNav = [
   {suffix: '', label: '概览', icon: <HomeOutlined/>, end: true},
   {suffix: '/mods', label: '模组', icon: <SearchOutlined/>},
+  {suffix: '/items', label: '物品', icon: <GoldOutlined/>},
+  {suffix: '/recipes', label: '合成', icon: <ExperimentOutlined/>},
   {suffix: '/dependencies', label: '依赖与冲突', icon: <ApartmentOutlined/>},
-  {suffix: '/content', label: '内容编辑', icon: <EditOutlined/>},
+  {suffix: '/content', label: '模组内容', icon: <FileTextOutlined/>},
+  {suffix: '/tweak', label: '魔改', icon: <EditOutlined/>},
   {suffix: '/quests', label: '任务书', icon: <BookOutlined/>},
   {suffix: '/publish', label: '打包与发布', icon: <RocketOutlined/>},
   {suffix: '/launcher', label: '启动器', icon: <PlayCircleOutlined/>},
@@ -53,7 +62,10 @@ export function AppShell() {
   const activePack = dashPacks.find(p => p.id === activePackId) ?? null;
   const modTotal = activePack?.modCount.total ?? 0;
   const modInstalled = activePack?.modCount.installed ?? 0;
-  const alertCount = (activePack?.alerts.crashes ?? 0) + (activePack?.alerts.updatable ?? 0);
+  // 待处理冲突必须计入告警：读模型里 conflicts.pending 一直存在，但之前只算了
+  // crashes+updatable，导致包上有 5 条待处理依赖冲突时底边栏仍显示「0 个告警 / 健康状态良好」。
+  const alertCount = (activePack?.conflicts.pending ?? 0)
+    + (activePack?.alerts.crashes ?? 0) + (activePack?.alerts.updatable ?? 0);
   /* 顶栏包上下文信息迁入底边栏「索引进度」格（原索引进度内容已删除）。 */
   const path = location.pathname;
   const sectionLabel = (() => {
@@ -67,6 +79,8 @@ export function AppShell() {
     return hit?.label ?? '包工作台';
   })();
   return (
+    <FocusProvider>
+    <PackCatalogProvider key={activePackId} packId={activePackId}>
     <div className={collapsed ? 'app-shell app-shell-collapsed' : 'app-shell'}>
       <aside className="app-sider">
         <div className="app-brand">
@@ -90,18 +104,21 @@ export function AppShell() {
             </NavLink>
             ))}
           </div>
-          <div className="app-nav-group app-nav-pack-group">
+          {/* 侧栏「包工作台」分组：activePackId 未知/为空时,七个链接会全部落到 /packs,
+              于是在整合包列表页同时点亮成「全部选中」(截图实测),点进去也只是原地刷新。
+              没有包上下文时不渲染这一组,有上下文后才按分区高亮。 */}
+          {Boolean(activePackId) && <div className="app-nav-group app-nav-pack-group">
             <span className="app-nav-caption">{inPack ? '当前整合包' : '创作工具'}</span>
             <div className="app-nav-pack-name"><span className="app-nav-pack-dot" /> <span className="app-nav-label">包工作台</span></div>
             {packNav.map(item => {
-              const to = activePackId ? `/packs/${activePackId}${item.suffix}` : '/packs';
+              const to = `/packs/${activePackId}${item.suffix}`;
               return <NavLink key={item.suffix} to={to} end={item.end} title={item.label}
                 className={({isActive}) => (isActive ? 'app-nav-item app-nav-item-active' : 'app-nav-item')}>
                 <span className="app-nav-icon">{item.icon}</span>
                 <span className="app-nav-label">{item.label}</span>
               </NavLink>;
             })}
-          </div>
+          </div>}
         </nav>
         <button type="button" className="app-sider-fold" onClick={() => setCollapsed(v => !v)}>
           <DoubleLeftOutlined style={collapsed ? {transform: 'rotate(180deg)'} : undefined}/>
@@ -112,6 +129,7 @@ export function AppShell() {
         <main className="app-content">
           <Outlet/>
         </main>
+        {Boolean(activePackId) && <InspectorRail packId={activePackId}/>}
       </div>
       <OnboardingChecklist
         onboarding={onboarding}
@@ -145,7 +163,10 @@ export function AppShell() {
           <button type="button" onClick={() => navigate('/settings')}> <FolderOpenOutlined /> 输出目录</button>
         </div>
       </footer>
+      <CommandPalette packId={activePackId}/>
     </div>
+    </PackCatalogProvider>
+    </FocusProvider>
   );
 }
 

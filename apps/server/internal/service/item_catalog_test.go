@@ -23,12 +23,17 @@ func writeCatalogFixture(t *testing.T, root string) {
 	}
 	w := zip.NewWriter(f)
 	files := map[string]string{
-		"assets/minecraft/models/item/redstone.json":             `{"parent":"minecraft:item/generated"}`,
-		"assets/minecraft/models/item/cobblestone.json":          `{"parent":"minecraft:block/cobblestone"}`,
-		"assets/minecraft/models/item/iron_ingot.json":           `{"parent":"minecraft:item/generated"}`,
-		"assets/minecraft/models/item/diamond.json":              `{"parent":"minecraft:item/generated"}`,
-		"assets/minecraft/blockstates/cobblestone.json":          `{"variants":{"":{"model":"minecraft:block/cobblestone"}}}`,
-		"assets/minecraft/lang/en_us.json":                       `{"item.minecraft.redstone":"Redstone Dust","block.minecraft.cobblestone":"Cobblestone","item.minecraft.cobblestone":"Cobblestone","item.minecraft.iron_ingot":"Iron Ingot","item.minecraft.diamond":"Diamond"}`,
+		"assets/minecraft/models/item/redstone.json":    `{"parent":"minecraft:item/generated"}`,
+		"assets/minecraft/models/item/cobblestone.json": `{"parent":"minecraft:block/cobblestone"}`,
+		"assets/minecraft/models/item/iron_ingot.json":  `{"parent":"minecraft:item/generated"}`,
+		"assets/minecraft/models/item/diamond.json":     `{"parent":"minecraft:item/generated"}`,
+		// 0025 回归锁：动画帧模型没有语言键，不得成为物品条目
+		"assets/minecraft/models/item/clock_01.json":      `{"parent":"minecraft:item/generated"}`,
+		"assets/minecraft/models/item/clock_02.json":      `{"parent":"minecraft:item/generated"}`,
+		"assets/minecraft/models/item/bow_pulling_0.json": `{"parent":"minecraft:item/generated"}`,
+		"assets/minecraft/blockstates/cobblestone.json":   `{"variants":{"":{"model":"minecraft:block/cobblestone"}}}`,
+		// 语言表比版本超前/遗留的键：只有名字、既无模型也无引用，不得成为条目
+		"assets/minecraft/lang/en_us.json":                       `{"item.minecraft.redstone":"Redstone Dust","block.minecraft.cobblestone":"Cobblestone","item.minecraft.cobblestone":"Cobblestone","item.minecraft.iron_ingot":"Iron Ingot","item.minecraft.diamond":"Diamond","item.minecraft.black_bundle":"Black Bundle","item.modifiers.head":"When on Head:","item.op_block_warning.line1":"Warning"}`,
 		"data/minecraft/tags/item/stone_crafting_materials.json": `{"values":["minecraft:cobblestone"]}`,
 		"data/minecraft/tags/item/all_stone.json":                `{"values":["#minecraft:stone_crafting_materials"]}`,
 		"data/minecraft/tags/block/mineable/pickaxe.json":        `{"values":["minecraft:cobblestone"]}`,
@@ -49,7 +54,7 @@ func writeCatalogFixture(t *testing.T, root string) {
 	if err = f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(dir, "1.21.1", "lang", "zh_cn.json"), []byte(`{"item.minecraft.redstone":"红石粉","block.minecraft.cobblestone":"圆石","item.minecraft.cobblestone":"圆石","item.minecraft.iron_ingot":"铁锭","item.minecraft.diamond":"钻石"}`), 0644); err != nil {
+	if err = os.WriteFile(filepath.Join(dir, "1.21.1", "lang", "zh_cn.json"), []byte(`{"item.minecraft.redstone":"红石粉","block.minecraft.cobblestone":"圆石","item.minecraft.cobblestone":"圆石","item.minecraft.iron_ingot":"铁锭","item.minecraft.diamond":"钻石","item.minecraft.black_bundle":"黑色收纳袋"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -75,6 +80,7 @@ func TestCatalogIndexesVanillaItemsBlocksRecipesTagsAndNames(t *testing.T) {
 	for _, item := range catalog.Items {
 		items[item.ID] = item
 	}
+	itemKnown := func(id string) bool { _, ok := items[id]; return ok }
 	if items["minecraft:redstone"].DisplayName != "红石粉" || items["minecraft:iron_ingot"].DisplayName != "铁锭" || items["minecraft:diamond"].DisplayName != "钻石" {
 		t.Fatalf("localized items missing: %#v", items)
 	}
@@ -90,6 +96,25 @@ func TestCatalogIndexesVanillaItemsBlocksRecipesTagsAndNames(t *testing.T) {
 	}
 	if len(catalog.Recipes) != 1 || len(catalog.Recipes[0].Refs) != 10 {
 		t.Fatalf("recipe references = %#v", catalog.Recipes)
+	}
+	// 0025：语言键是物品权威；模型残渣（clock_01 / bow_pulling_0）不得出现
+	if itemKnown("minecraft:clock_01") || itemKnown("minecraft:bow_pulling_0") {
+		t.Fatalf("model-only junk leaked into catalog: %#v", items)
+	}
+	// v4：只有名字、既无模型资产又无配方/标签引用的遗留语言键（别的版本的内容、
+	// item.modifiers.* 这类描述键）不得成为条目
+	if itemKnown("minecraft:black_bundle") || itemKnown("modifiers:head") || itemKnown("op_block_warning:line1") {
+		t.Fatalf("name-only lang leftovers leaked into catalog: %#v", items)
+	}
+	if items["minecraft:redstone"].Evidence != "lang" {
+		t.Fatalf("localized item evidence = %q, want lang", items["minecraft:redstone"].Evidence)
+	}
+	if items["minecraft:redstone"].ModelPath != "assets/minecraft/models/item/redstone.json" {
+		t.Fatalf("model path not backfilled: %#v", items["minecraft:redstone"])
+	}
+	// iron_block 只在配方里被引用（reference 证据），没有语言键/模型——仍应存在
+	if !itemKnown("minecraft:iron_block") {
+		t.Fatalf("recipe-referenced item missing: %#v", items)
 	}
 	status, err := api.GetCatalogStatus(context.Background(), pack.ID)
 	if err != nil || status.Stale || status.Status != "succeeded" {
@@ -172,6 +197,8 @@ func TestFullVanillaCatalogCoverage(t *testing.T) {
 	}
 	for _, id := range []string{"minecraft:redstone", "minecraft:cobblestone", "minecraft:iron_ingot", "minecraft:diamond"} {
 		icon, iconErr := api.GetCatalogIcon(context.Background(), pack.ID, id)
-		if iconErr != nil || icon.Mime != "image/png" || len(icon.Data) == 0 { t.Fatalf("sample icon %s unavailable: %v", id, iconErr) }
+		if iconErr != nil || icon.Mime != "image/png" || len(icon.Data) == 0 {
+			t.Fatalf("sample icon %s unavailable: %v", id, iconErr)
+		}
 	}
 }

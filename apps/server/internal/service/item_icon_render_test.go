@@ -13,6 +13,14 @@ import (
 	"testing"
 )
 
+func pngBytes(t *testing.T, c color.NRGBA) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, solidIconTexture(c)); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
 func solidIconTexture(c color.NRGBA) image.Image {
 	im := image.NewNRGBA(image.Rect(0, 0, 16, 16))
 	for y := 0; y < 16; y++ {
@@ -211,5 +219,96 @@ func TestIconTagRepresentativesAndCycles(t *testing.T) {
 	older.addCommonTagRepresentatives("1.20.1")
 	if len(older.tags) != 0 {
 		t.Fatal("common tag seed leaked across versions")
+	}
+}
+
+/* 0025 后置 + 图标渲染器补齐方案 R1/R2（2026-10-03）：
+   - loader 不再一票否决；item_layers / separate_transforms / composite 各有通路；
+   - composite 子模型的 #变量 就地解引用，合并按 key 字典序，贴图只补缺不覆盖。 */
+func TestSeparateTransformsAndItemLayers(t *testing.T) {
+	r := newIconResources()
+	r.models["minecraft:item/generated"] = []byte(`{}`)
+	r.models["minecraft:block/block"] = []byte(`{"gui_light":"side"}`)
+	r.textures["minecraft:item/layer0"] = pngBytes(t, color.NRGBA{200, 60, 20, 255})
+	r.textures["minecraft:item/layer1"] = pngBytes(t, color.NRGBA{20, 60, 200, 255})
+	r.models["mekanism:item/portable_qio_dashboard"] = []byte(`{
+		"loader":"neoforge:separate_transforms",
+		"base":{"parent":"minecraft:item/generated","textures":{"layer0":"minecraft:item/layer0"}},
+		"textures":{"layer1":"minecraft:item/layer1"},
+		"display":{"gui":{"scale":[1.2,1.2,1.2]}}
+	}`)
+	img, source := r.icon("mekanism:item/portable_qio_dashboard")
+	if img == nil {
+		t.Fatalf("separate_transforms model rejected")
+	}
+	if source != "generated" {
+		t.Fatalf("source = %q, want generated", source)
+	}
+	// layer1 覆盖在 layer0 上：中心像素应是 layer1 的蓝
+	if got := img.At(16, 16); got != (color.RGBA{20, 60, 200, 255}) {
+		t.Fatalf("top layer pixel = %#v", got)
+	}
+
+	// item_layers：parent + layer0 直接可画
+	r2 := newIconResources()
+	r2.models["minecraft:item/generated"] = []byte(`{}`)
+	r2.textures["minecraft:item/flat"] = pngBytes(t, color.NRGBA{9, 99, 9, 255})
+	r2.models["mekanism:item/qio_panel"] = []byte(`{"loader":"neoforge:item_layers","parent":"minecraft:item/generated","textures":{"layer0":"minecraft:item/flat"}}`)
+	img2, source2 := r2.icon("mekanism:item/qio_panel")
+	if img2 == nil || source2 != "generated" {
+		t.Fatalf("item_layers rejected: img=%v source=%q", img2, source2)
+	}
+}
+
+func TestCompositeChildMerge(t *testing.T) {
+	r := newIconResources()
+	// 真实 block/block 自带标准 gui 旋转；六面齐全避免特定角度背面剔除全灭
+	r.models["minecraft:block/block"] = []byte(`{"gui_light":"side","display":{"gui":{"rotation":[30,225,0],"scale":[0.625,0.625,0.625]}}}`)
+	r.models["mekanism:block/factory/base"] = []byte(`{"elements":[{"from":[0,0,0],"to":[16,8,16],"faces":{
+		"north":{"texture":"#side","uv":[0,8,16,16]},"south":{"texture":"#side","uv":[0,8,16,16]},
+		"east":{"texture":"#side","uv":[0,8,16,16]},"west":{"texture":"#side","uv":[0,8,16,16]},
+		"up":{"texture":"#top","uv":[0,0,16,16]},"down":{"texture":"#top","uv":[0,0,16,16]}}}]}`)
+	r.models["mekanism:block/factory/front"] = []byte(`{"elements":[{"from":[4,8,4],"to":[12,14,12],"faces":{
+		"north":{"texture":"#front","uv":[0,0,8,6]},"south":{"texture":"#front","uv":[0,0,8,6]},
+		"east":{"texture":"#front","uv":[0,0,8,6]},"west":{"texture":"#front","uv":[0,0,8,6]}}}]}`)
+	r.models["mekanism:item/advanced_crushing_factory"] = []byte(`{
+		"loader":"neoforge:composite","parent":"minecraft:block/block",
+		"textures":{"side":"minecraft:block/iron","top":"minecraft:block/iron","front":"minecraft:block/gold"},
+		"children":{"base":{"parent":"mekanism:block/factory/base"},
+		            "front_led":{"parent":"mekanism:block/factory/front"}}
+	}`)
+	r.textures["minecraft:block/iron"] = pngBytes(t, color.NRGBA{120, 120, 130, 255})
+	r.textures["minecraft:block/gold"] = pngBytes(t, color.NRGBA{230, 180, 40, 255})
+
+	img, source := r.icon("mekanism:item/advanced_crushing_factory")
+	if img == nil {
+		t.Fatalf("composite model rejected (source=%q)", source)
+	}
+	if source != "elements" {
+		t.Fatalf("source = %q, want elements", source)
+	}
+	// front 子模型的金色贴图必须出现在图中（证明 #变量 已就地解引用，
+	// 否则 #front 找不到贴图会被剔除或整体 missing）
+	gold, iron, blank := 0, 0, 0
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			c := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
+			if c.A == 0 {
+				blank++
+				continue
+			}
+			// 侧面光照系数 0.65：金色 (230,180,40) 渲染后 ≈(149,117,26)，
+			// 按暖色序判（铁灰 R≈G 不命中）
+			if c.R > c.G+20 && c.G > c.B+40 {
+				gold++
+			} else if c.R < 180 && c.B >= c.R {
+				iron++
+			}
+		}
+	}
+	t.Logf("pixels gold=%d iron=%d blank=%d", gold, iron, blank)
+	if gold == 0 {
+		t.Fatalf("front (gold) texture never rendered — composite child variables not resolved")
 	}
 }

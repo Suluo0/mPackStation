@@ -16,8 +16,23 @@ var ErrNotFound = errors.New("resource not found")
 // ErrConflict indicates a state or uniqueness conflict.
 var ErrConflict = errors.New("resource conflict")
 
+// ErrCatalogNotBuilt means the pack exists but no item catalog has ever been
+// published for it. 它和 ErrConflict（目录已构建但过期）必须分开：
+// 之前两者都返回 ErrConflict，前端只看到「catalog requires rebuild」，
+// 而不是「还没构建过」，不存在的包也一样报 409（链路测试缺陷 O9）。
+var ErrCatalogNotBuilt = errors.New("catalog has never been built")
+
 // ErrInvalidArgument indicates malformed repository input.
 var ErrInvalidArgument = errors.New("invalid argument")
+
+// ErrPackHasActiveTasks keeps the "why" that a bare ErrConflict loses at the
+// HTTP boundary: deleting a pack is refused while its tasks are still in flight.
+// It wraps ErrConflict so every existing IsConflict caller keeps working.
+var ErrPackHasActiveTasks = fmt.Errorf("%w: pack has active tasks", ErrConflict)
+
+// ErrBuiltinMemberProtected protects the implicit minecraft member of a live
+// pack. Wrapping ErrConflict keeps the generic conflict mapping as a fallback.
+var ErrBuiltinMemberProtected = fmt.Errorf("%w: minecraft is a required builtin pack member", ErrConflict)
 
 // Repository is the only application-facing owner of business SQL.
 type Repository struct {
@@ -217,9 +232,9 @@ func (r *Repository) ListPacks(ctx context.Context, includeArchived bool) ([]Pac
 func (r *Repository) DashboardPacks(ctx context.Context) ([]PackSummaryRecord, error) {
 	const query = `SELECT p.id,p.name,p.mc_version,p.loader,p.loader_version,p.description,p.icon_path,p.status,p.created_at,p.updated_at,p.last_edited_at,
 		COALESCE((SELECT pv.version FROM pack_current_version pcv JOIN pack_versions pv ON pv.id=pcv.pack_version_id WHERE pcv.pack_id=p.id), '0.1.0'),
-		COALESCE((SELECT COUNT(*) FROM pack_mods pm WHERE pm.pack_id=p.id AND pm.status<>'removed'),0),
-		COALESCE((SELECT COUNT(*) FROM pack_mods pm WHERE pm.pack_id=p.id AND pm.status='installed'),0),
-		COALESCE((SELECT COUNT(*) FROM pack_mods pm WHERE pm.pack_id=p.id AND pm.status IN ('pending','installed','disabled')),0),
+		COALESCE((SELECT COUNT(*) FROM pack_mods pm WHERE pm.pack_id=p.id AND pm.status<>'removed' AND pm.origin<>'builtin'),0),
+		COALESCE((SELECT COUNT(*) FROM pack_mods pm WHERE pm.pack_id=p.id AND pm.status='installed' AND pm.origin<>'builtin'),0),
+		COALESCE((SELECT COUNT(*) FROM pack_mods pm WHERE pm.pack_id=p.id AND pm.status IN ('pending','installed','disabled') AND pm.origin<>'builtin'),0),
 		COALESCE((SELECT COUNT(*) FROM conflicts c WHERE c.pack_id=p.id AND c.status='resolved'),0),
 		COALESCE((SELECT COUNT(*) FROM conflicts c WHERE c.pack_id=p.id AND c.status='pending'),0),
 		COALESCE((SELECT COUNT(*) FROM content_documents d WHERE d.pack_id=p.id AND d.kind='recipe'),0),
@@ -278,13 +293,42 @@ func (r *Repository) SetPackStatus(ctx context.Context, id, status string, at in
 	return nil
 }
 
+// packScopedCleanup lists the generation-bookkeeping tables whose rows point at
+// catalog_entries / content_definitions through RESTRICT or NO ACTION foreign
+// keys, with no cascade path back to packs (see migration 0021). If they are
+// left behind, the deferred FK check at COMMIT reports orphans and the whole
+// pack deletion rolls back. All of them carry pack_id, so they go first.
+var packScopedCleanup = []string{
+	"catalog_tag_member_evidence",
+	"catalog_tag_members",
+	"catalog_tag_issues",
+	"catalog_item_block_links",
+	"catalog_definition_decisions",
+	"catalog_text_resolutions",
+	"catalog_icon_inputs",
+	"catalog_icons",
+	"pack_current_version",
+}
+
 func (r *Repository) DeletePack(ctx context.Context, id string) error {
 	var active int
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tasks WHERE pack_id=? AND status IN ('queued','leased','running','paused')`, id).Scan(&active); err != nil {
 		return fmt.Errorf("check active tasks: %w", err)
 	}
 	if active > 0 {
-		return fmt.Errorf("%w: pack has active tasks", ErrConflict)
+		return fmt.Errorf("%w (%d in flight)", ErrPackHasActiveTasks, active)
+	}
+	// packs -> pack_versions -> pack_locks / pack_current_version form RESTRICT
+	// edges whose cascade order SQLite rejects statement-by-statement; deferring
+	// enforcement to COMMIT lets the cascade finish. The pragma is scoped to the
+	// surrounding transaction, and DeletePack only ever runs inside WithTx.
+	if _, err := r.db.ExecContext(ctx, `PRAGMA defer_foreign_keys=ON`); err != nil {
+		return fmt.Errorf("defer foreign keys: %w", err)
+	}
+	for _, table := range packScopedCleanup {
+		if _, err := r.db.ExecContext(ctx, `DELETE FROM `+table+` WHERE pack_id=?`, id); err != nil {
+			return fmt.Errorf("delete pack rows from %s: %w", table, err)
+		}
 	}
 	result, err := r.db.ExecContext(ctx, `DELETE FROM packs WHERE id=?`, id)
 	if err != nil {
@@ -409,7 +453,9 @@ func (r *Repository) Onboarding(ctx context.Context) (OnboardingRecord, error) {
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM packs WHERE status='active'`).Scan(&packs); err != nil {
 		return o, err
 	}
-	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pack_mods WHERE status<>'removed'`).Scan(&mods); err != nil {
+	// origin<>'builtin':每个新包都自带一行内建 minecraft,算进去会让「添加第一个模组」
+	// 这一步在建包的瞬间就自动完成,清单失去意义。
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pack_mods WHERE status<>'removed' AND origin<>'builtin'`).Scan(&mods); err != nil {
 		return o, err
 	}
 	o.FirstPack = packs > 0

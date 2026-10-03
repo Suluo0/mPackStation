@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 // CatalogName is one locale-specific display name with traceable provenance.
@@ -16,6 +17,7 @@ type CatalogName struct {
 }
 type CatalogItem struct {
 	ID, Evidence, Source, ModelPath, IconStatus string
+	IconReason                                  string
 	Names                                       []CatalogName
 	Tags                                        []string
 }
@@ -167,7 +169,7 @@ func (r *Repository) ReplaceCatalog(ctx context.Context, packID string, c Catalo
 			}
 		}
 		for _, it := range c.Items {
-			if _, err := tx.db.ExecContext(ctx, `INSERT INTO pack_catalog_items VALUES(?,?,?,?,?,?)`, packID, it.ID, it.Evidence, it.Source, it.ModelPath, it.IconStatus); err != nil {
+			if _, err := tx.db.ExecContext(ctx, `INSERT INTO pack_catalog_items(pack_id,item_id,evidence,source,model_path,icon_status,icon_reason) VALUES(?,?,?,?,?,?,?)`, packID, it.ID, it.Evidence, it.Source, it.ModelPath, it.IconStatus, it.IconReason); err != nil {
 				return err
 			}
 			for _, n := range it.Names {
@@ -253,7 +255,7 @@ func (r *Repository) ReadCatalogIcon(ctx context.Context, packID, itemID string)
 		return icon, err
 	}
 	if !current {
-		return icon, ErrConflict
+		return icon, r.catalogGenerationProblem(ctx, packID)
 	}
 	var source, built int64
 	err = r.db.QueryRowContext(ctx, `SELECT s.source_revision,s.built_revision,i.item_id,i.mime,i.data,i.width,i.height,i.source FROM pack_catalog_state s JOIN pack_catalog_item_icons i ON i.pack_id=s.pack_id WHERE s.pack_id=? AND i.item_id=?`, packID, itemID).Scan(&source, &built, &icon.ItemID, &icon.Mime, &icon.Data, &icon.Width, &icon.Height, &icon.Source)
@@ -285,7 +287,7 @@ func (r *Repository) ReadCatalog(ctx context.Context, packID string) (c Catalog,
 			return e
 		}
 		if !current {
-			return ErrConflict
+			return tx.catalogGenerationProblem(ctx, packID)
 		}
 		var source int64
 		var warnings string
@@ -465,6 +467,28 @@ func (r *Repository) ReadCatalog(ctx context.Context, packID string) (c Catalog,
 		})
 	})
 	return
+}
+
+// catalogGenerationProblem 区分目录不可读的三种原因：包不存在 / 从未构建 / 构建过但已过期。
+//
+// 调用方是在 currentCatalogGeneration 返回 false 之后进来的，所以这里只负责回答
+// 「为什么不是当前代次」，把三种情况压成一个 ErrConflict 会让界面无法给出正确指引。
+func (r *Repository) catalogGenerationProblem(ctx context.Context, packID string) error {
+	var exists int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM packs WHERE id=?`, packID).Scan(&exists); err != nil {
+		return fmt.Errorf("check pack for catalog: %w", err)
+	}
+	if exists == 0 {
+		return ErrNotFound
+	}
+	var built int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pack_catalog_state WHERE pack_id=? AND built_revision>0`, packID).Scan(&built); err != nil {
+		return fmt.Errorf("check catalog build state: %w", err)
+	}
+	if built == 0 {
+		return ErrCatalogNotBuilt
+	}
+	return ErrConflict
 }
 
 func (r *Repository) currentCatalogGeneration(ctx context.Context, packID string) (bool, error) {

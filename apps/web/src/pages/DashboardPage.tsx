@@ -83,7 +83,6 @@ export function DashboardPage({forceEmpty = false}: {forceEmpty?: boolean}) {
         <OnboardingView
           onCreate={() => setCreateOpen(true)}
           onImport={() => setImportOpen(true)}
-          onDemo={() => message.info('示例包将在后续版本提供')}
         />
       ) : (
         <>

@@ -11,8 +11,12 @@ export function formatCount(n: number): string {
 }
 
 export function formatBytes(bytes: number): string {
+  // 小文件必须报出字节数：原来只有 GB/MB 两档，283 B 的空壳产物会显示成「0.0 MB」，
+  // 正好把「构建产物是空的」这件事藏掉了。
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-  return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${Math.round(bytes)} B`;
 }
 
 export function relativeTime(iso: string): string {

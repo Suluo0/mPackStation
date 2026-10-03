@@ -77,6 +77,14 @@
   color: var(--mc-primary-deep);
   font-weight: 600;
 }
+/* 一个包都没有时，包内三入口留在顶栏但不可点（hover 出原因），不是隐藏也不是假链接 */
+.tb-link.off {
+  color: var(--mc-muted);
+  cursor: not-allowed;
+}
+.tb-link.off:hover {
+  background: none;
+}
 .tb-btn {
   border: 1px solid var(--mc-line);
   background: var(--mc-fill);

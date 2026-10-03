@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"regexp"
@@ -21,10 +22,19 @@ func normalizeDeclaredModID(value string) string {
 	return value
 }
 
-func measuredArchive(content []byte) (sha1Hex, sha256Hex string) {
+func measuredArchive(content []byte) (sha1Hex, sha256Hex, sha512Hex string) {
 	one := sha1.Sum(content)
 	two := sha256.Sum256(content)
-	return hex.EncodeToString(one[:]), hex.EncodeToString(two[:])
+	five := sha512.Sum512(content)
+	return hex.EncodeToString(one[:]), hex.EncodeToString(two[:]), hex.EncodeToString(five[:])
+}
+
+// sha512Of 只从实际字节算校验值：.mrpack 的 files[].hashes.sha512 是必填项，
+// 平台字段口径不一（Modrinth 给 sha512，CurseForge 的 [{value,algo}] 里 algo 的
+// 含义本机无 key 无法核实），所以manifest 里的 sha512 一律来自下载后的字节实测。
+func sha512Of(content []byte) string {
+	sum := sha512.Sum512(content)
+	return hex.EncodeToString(sum[:])
 }
 
 func manifestHash(values ...string) string {
@@ -43,7 +53,7 @@ func nonEmptyString(value, fallback string) string {
 	return fallback
 }
 
-func verifiedPackSelection(mod store.PackModRecord, declaredVersion, sha256Hex, location string, size int64, at int64) store.PackScopedSelection {
+func verifiedPackSelection(mod store.PackModRecord, declaredVersion, sha256Hex, sha512Hex, location string, size int64, at int64) store.PackScopedSelection {
 	versionKey := mod.ModID + "\x00" + declaredVersion + "\x00" + sha256Hex
 	versionID := store.NewGlobalID("version", versionKey)
 	selectionID := store.NewScopedID("selection", mod.PackID, mod.ID+"\x00"+versionID)
@@ -57,20 +67,20 @@ func verifiedPackSelection(mod store.PackModRecord, declaredVersion, sha256Hex, 
 		ProjectDisplayName: mod.DisplayName, ExternalReleaseID: mod.VersionID,
 		ReleaseName: declaredVersion, ReleaseFileKey: mod.FileName, DownloadURL: location,
 		File: &store.PackScopedFile{
-			ID: store.NewGlobalID("file", sha256Hex), SHA256: sha256Hex, SHA1: mod.SHA1,
+			ID: store.NewGlobalID("file", sha256Hex), SHA256: sha256Hex, SHA1: mod.SHA1, SHA512: sha512Hex,
 			SizeBytes: size, MediaType: "application/java-archive", Location: location, Verified: true,
 		},
 		LogicalPath: mod.FileName, FileRole: "primary", CreatedAt: at, VersionStatus: "ready",
 	}
 }
 
-func validateMeasuredDownload(expectedSHA1, expectedSHA256 string, content []byte) (string, string, error) {
-	actualSHA1, actualSHA256 := measuredArchive(content)
+func validateMeasuredDownload(expectedSHA1, expectedSHA256 string, content []byte) (string, string, string, error) {
+	actualSHA1, actualSHA256, actualSHA512 := measuredArchive(content)
 	if expectedSHA1 != "" && !strings.EqualFold(expectedSHA1, actualSHA1) {
-		return "", "", fmt.Errorf("download sha1 mismatch")
+		return "", "", "", fmt.Errorf("download sha1 mismatch")
 	}
 	if expectedSHA256 != "" && !strings.EqualFold(expectedSHA256, actualSHA256) {
-		return "", "", fmt.Errorf("download sha256 mismatch")
+		return "", "", "", fmt.Errorf("download sha256 mismatch")
 	}
-	return actualSHA1, actualSHA256, nil
+	return actualSHA1, actualSHA256, actualSHA512, nil
 }

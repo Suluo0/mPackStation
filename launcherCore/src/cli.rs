@@ -46,9 +46,13 @@ pub enum Command {
 
 #[derive(Parser, Debug)]
 pub struct InstallArgs {
-    /// Minecraft 版本（如 1.20.1）
+    /// Minecraft 版本（如 1.20.1）；用 --mrpack 时可省略，版本由 manifest 决定
     #[arg(long)]
-    pub mc: String,
+    pub mc: Option<String>,
+
+    /// 从 .mrpack 导入整合包（mc/loader 版本与模组清单都取自包内 manifest）
+    #[arg(long)]
+    pub mrpack: Option<PathBuf>,
 
     /// 加载器类型（vanilla/fabric/forge/neoforge/quilt）
     #[arg(long, default_value = "vanilla")]

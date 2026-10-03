@@ -701,6 +701,31 @@ MC 版本候选，创建包下拉用。
 **(b) 校验** — 出参 `{"lock":Lock, "status":"resolved"}`
 **(c) 异常处理** — 400 / 401 / 404 `pack_not_found` / 422 `idempotency_conflict` / 502（可重试）/ 503
 
+**依赖冲突的语义**（写进 `conflicts`，`kind='dependency'`）：
+
+| 平台声明的依赖类型 | 目标不在包里 | 目标在包里 |
+|---|---|---|
+| `required` | error「缺少依赖模组：X 需要 Y」 | 无冲突 |
+| `optional` | **warning**「可选依赖未安装」 | 无冲突 |
+| `embedded` | 无冲突（已打进宿主 jar） | 无冲突 |
+| `incompatible` | 无冲突 | error「模组互斥：X 与 Y 不能同时安装」 |
+
+只有 error 参与构建闸门（见 `POST /build` 的 409 `build_unresolved_conflicts`），
+warning 与 `status='ignored'` 都不拦。
+
+**网络态不是包缺陷**（`kind='provider_unavailable'`，固定 `severity='warning'`）：
+`resolve` 时某个模组取不到平台适配器（本机 jar 模组、CurseForge 未配 Key）或元数据拉取
+失败，写的是「平台暂不可用，本轮未校验依赖：X」/「模组元数据拉取失败，本轮未校验依赖：X」。
+它必须留痕（这一轮确实没校验过这个模组的依赖），但**绝不拦构建**——一次 Modrinth 抖动
+把包锁成"不许构建"，用户在界面上既看不懂也修不了（缺陷 O25，schema 0024 起该 kind 才进
+CHECK 枚举；在此之前它被 `conflict()` 的白名单悄悄改写成 `dependency`，从此长得像依赖问题）。
+
+**冲突生命周期**：冲突按 `(pack_id, fingerprint)` upsert。每轮 `POST /resolve`
+重新检出后，本轮**没再检出**且此前 `pending` 的冲突自动置 `resolved` 并写
+`resolved_at`（例：按提示补上 fabric-api 后，那条"缺少依赖模组"就该消失，
+而不是永远挂着把构建闸门堵死）。用户显式 `ignore` 的记录不被覆盖，
+本轮再次检出时仍保持 `ignored`。
+
 #### `GET /api/packs/{packId}/locks`
 
 依赖锁定快照。
@@ -714,7 +739,10 @@ MC 版本候选，创建包下拉用。
 冲突列表。
 
 **(a) 请求参数** — `packId`；query `status`（可选过滤）、`limit`、`cursor`
-**(b) 校验** — 出参信封 `{items: Conflict[], ...}`，分页
+**(b) 校验** — 出参信封 `{items: Conflict[], ...}`，分页。
+  `kind ∈ dependency | version | loader | duplicate | crash | known_issue | provider_unavailable`
+  （`known_issue` 由兼容知识库写出，schema 0023 起库内 CHECK 才收下它；
+  `provider_unavailable` 是平台/元数据不可用的留痕，恒为 warning，schema 0024 起入枚举）
 **(c) 异常处理** — 400 / 404 `pack_not_found` / 503
 
 #### `GET /api/packs/{packId}/health`
@@ -835,7 +863,12 @@ MC 版本候选，创建包下拉用。
 
 **(a) 请求参数** — `packId`
 **(b) 校验** — 出参任务书图模型（章节 / 节点 / 边 / 奖励）+ 当前 revision 元信息
-**(c) 异常处理** — 404 `pack_not_found` / 503
+**(c) 异常处理** — 404 `pack_not_found` / 404 `quest_book_not_found` / 503
+
+空态语义（缺陷 O4，2026-09-30）：**包存在但还没保存过任务书**时返回 404 `quest_book_not_found`，
+`message` 提示「在任务编辑器里保存一次草稿即可创建」，不再和「找不到整合包」混成一个码——
+否则前端新包首次打开任务页只会说"整合包不存在"。同一口径也用于 `/quests/preview`、
+`/quests/validate`、`/quests/apply`。
 
 #### `PUT /api/packs/{packId}/quests/draft`
 
@@ -862,6 +895,7 @@ MC 版本候选，创建包下拉用。
 #### `POST /api/packs/{packId}/quests/rollback`
 
 回滚。body `{"revisionId":"..."}`，出参新建的 `Revision`。
+`revisionId` 不属于本包任务书 → 404 `quest_revision_not_found`；任务书本身不存在 → 404 `quest_book_not_found`。
 
 #### `GET /api/packs/{packId}/quests/history`
 
@@ -907,13 +941,38 @@ MC 版本候选，创建包下拉用。
 
 构建可复现产物。
 
-**(a) 请求参数** — `packId`；body `packVersionId`（必填）、`files`（可选）；支持 `Idempotency-Key`
+**(a) 请求参数** — `packId`；body `packVersionId`（必填）、`files`（可选）、`exportDirName`（必填）；支持 `Idempotency-Key`
 **(b) 校验**
 
 - 结构错 400
 - 存在未解决的冲突 → 422 `build_blocked`，`details` 说明阻塞原因
 - 导出目录未登记 → **403** `export_dir_not_allowed`
 - 出参（201）：`{"artifact":Artifact, "sourceFingerprint":"..."}`
+
+`files` 省略时由**服务端按包内权威清单装配**（基线 D1，2026-09-30）：
+
+- 权威链路是 `pack_mods.current_selection_id → pack_mod_selections →
+  selection_platform_pins(role='primary') → platform_release_files`，调用方传什么文件都不作数；
+- 产物是 `.mrpack`（`Artifact.kind = "mrpack"`），内含 `modrinth.index.json`。顶层字段名以
+  **真实产物为准**（2026-09-30 实测 Fabulously Optimized v15.0.0-alpha.4）：
+  `formatVersion:1 / game:"minecraft" / versionId / name / files[] / dependencies`，
+  `files[]` 为 `path / hashes{sha1,sha512} / env{client,server} / downloads[] / fileSize`。
+  `dependencies` 除 `minecraft` 外还带加载器（`fabric-loader`/`quilt-loader`/`forge`/`neoforge`），
+  缺它安装方会把整合包当原版装、模组全不加载。jar 字节不入包，由安装方按 URL 下载。
+  历史字段名 `manifestVersion`/`version` 内核仍按别名接受（`launcherCore/src/mrpack.rs`），
+  但**新产物一律写 `formatVersion`/`versionId`**——严格读方（Prism 等）只认规范名。
+- `hashes.sha512` 是规范必填项，来自**下载字节实测**（`measuredArchive`）而不是平台字段：
+  Modrinth 的 `files[].hashes` 实测给 `{sha1,sha512}`，解析器已把它接住
+  （`provider.File.SHA512`）；CurseForge 只给 sha1/sha256，那部分由实测补算。
+  2026-09-30 之前入库的旧行没有 sha512（manifest 里是空串），需要重新添加模组才有。
+- 包内有任何一个模组拿不到下载地址（只有本机 jar、或没有 ready 选中项）→ **422
+  `build_mod_source_unresolved`**，`details.mods` 列出名字，且**不产出任何 artifact 行**；
+- 一个可装配模组都没有 → **422 `build_no_mods`**。
+- 只有本机 jar、没有平台选中项的本地模组（`pack_mods.current_selection_id IS NULL`）也算「无可下载地址」：
+  取来源用 `LEFT JOIN pack_mod_selections` 而不是 `JOIN`，否则它会从装配清单里凭空消失，
+  产出"构建成功但包里没有它"的包。当前 `.mrpack` 不嵌入本地 jar 字节，所以只能阻塞；
+  把本机 jar 装进 `overrides/mods/` 是后续项。
+- 禁止静默产出"构建成功但缺模组"的包：这两条 422 是 D1 的反向保障。
 
 **(c) 异常处理**
 
@@ -923,7 +982,12 @@ MC 版本候选，创建包下拉用。
 | 401 | `unauthorized` | 缺令牌 | 否 |
 | 403 | `export_dir_not_allowed` | 导出目录未登记 | 否 |
 | 404 | `pack_version_not_found` | 版本不存在 | 否 |
-| 422 | `build_blocked` | 有未解决冲突 / 内容未应用 | 否 |
+| 409 | `build_unresolved_conflicts` | 省略 `files` 时包里还有 error 级未结案冲突，`details.conflicts` 列出摘要 | 否（先按提示补依赖，或 `conflicts/{id}/resolve`·`/ignore`） |
+| 422 | `build_blocked` | 交付检查（delivery checks）有 blocked | 否 |
+| 422 | `build_mod_source_unresolved` | 省略 `files` 时有模组无下载地址 | 否（先补齐来源） |
+| 422 | `build_no_mods` | 省略 `files` 时包内无可装配模组 | 否 |
+| 422 | `build_lock_mismatch` | 版本已绑定锁快照，请求里的 `lockSnapshot` 与它不一致（比较时对两侧做 JSON 归一化，`GET /locks` 取回的 `snapshot` 原样回传必然一致） | 否（先取回锁快照） |
+| 409 | `build_input_conflict` | 同一版本已按另一份构建输入记录在案 | 否（新建版本） |
 | 422 | `idempotency_conflict` | 同键不同输入 | 否 |
 | 503 | `not_ready` | 构建器未装配 | 是 |
 
@@ -971,9 +1035,14 @@ MC 版本候选，创建包下拉用。
 
 登记导出目录。
 
-**(a) 请求参数** — body `{"name":"...","path":"<绝对路径>"}`
-**(b) 校验** — 结构错 400；路径是根目录或未登记 → 403 `export_dir_not_allowed`；路径是符号链接 → 403 `export_dir_not_allowed`
-**(c) 异常处理** — 400 / 401 / 403 `export_dir_not_allowed` / 503
+**(a) 请求参数** — body `{"name":"...","directory":"<绝对路径>"}`
+  （实现读的是 `directory`；此前文档写成 `path`，按 `path` 提交等于提交空目录）
+**(b) 校验** — 服务端存的是 canonical 路径（macOS 上 `/tmp` → `/private/tmp`）；
+  结构错 400；路径是根目录或未登记 → 403 `export_dir_not_allowed`；路径是符号链接 → 403 `export_dir_not_allowed`；
+  出参 201 `{"name":"...","status":"ready"}`
+**(c) 异常处理** — 400 / 401 / 403 `export_dir_not_allowed` /
+  409 `export_dir_conflict`（同一绝对路径已用另一个名字批准过：`absolute_path` 上有 UNIQUE，
+  改名重登记不会新增第二条，回 409 让界面列出已批准目录给用户挑，而不是 500）/ 503
 
 ---
 
@@ -1083,4 +1152,92 @@ MC 版本候选，创建包下拉用。
 - `GET /api/packs/{packId}/catalog/tags/{tagId...}?registry=item`：返回物品或方块标签的展开成员和诊断。
 - `GET /api/packs/{packId}/catalog/icon?itemId=minecraft:iron_ingot`：返回当前目录中生成的 PNG。
 
+读取目录的错误码口径（缺陷 O9，2026-09-30，原先三种情况都报 409 `catalog_stale`）：
+
+| 状态码 | 错误码 | 触发 |
+|---|---|---|
+| 404 | `pack_not_found` | 整合包不存在 |
+| 409 | `catalog_not_built` | 包从未构建过目录（`built_revision=0`），提示点「重建目录」 |
+| 409 | `catalog_stale` | 目录建过但包内容已变化，需要重建 |
+| 404 | `catalog_item_not_found` | 目录里查无此物品 |
+| 404 | `catalog_tag_not_found` | 目录里查无此标签 |
+
 配方引用中 `kind=item` 表示精确物品，`kind=item_tag` 表示可以使用标签展开后的任一候选物品。显示名不改变这一语义。目录的 zod fixture 为 `apps/web/src/api/fixtures/item-catalog.json`。
+
+---
+
+## 8. 启动器内核接口（2026-09-30 补，基线 D6）
+
+`POST /api/launcher/*` 早已实现但契约零覆盖，前端与后端各自的字段名/终态全靠猜，本节按 `apps/server/internal/httpapi/routes_system.go`、`internal/service/launcher_task.go` 与 `launcherCore/src/cli.rs` 的实测行为补写。
+
+### 8.1 请求
+
+- `POST /api/launcher/install`：`{version?, loader?, loader_version?, mirror?, java_path?, minecraft_dir, pack_id?, artifact_id?}`。
+  `minecraft_dir` 必填；`version` 与 `artifact_id` **至少要有一个**，都缺即在**同步**阶段
+  `400 invalid_argument`（不再入队后异步失败，基线 D4 已修）。
+  `loader` 取 `vanilla|fabric|forge|neoforge|quilt`；`loader_version` 留空时启动器取 `latest`。
+- `artifact_id` = 构建产物 id（`kind='mrpack'`），走**整合包导入安装**：mc 版本、加载器与模组清单
+  全部来自包内 `modrinth.index.json`，调用方不再自报版本。只接受 id、不接受文件系统路径，
+  这样「装的是哪一次构建」落在任务载荷与 `tasks` 行里可追溯。服务端提交时（同步）与执行时（异步）
+  各校验一次：
+  - 产物不存在 → **404 `artifact_not_found`**
+  - `kind != 'mrpack'`（历史 zip 产物）→ **422 `install_artifact_not_mrpack`**
+  - `status != 'ready'` → **409 `install_artifact_not_ready`**
+  - 产物不属于请求里的 `pack_id` → **409 `install_artifact_pack_mismatch`**
+  - 产物行无路径 / 文件不在磁盘 → **422 `install_artifact_path_missing`** / **409 `install_artifact_file_missing`**
+  以上全部**不入队**（`[22] R6–R9` 断言 `tasks` 行数不变）。给了 `artifact_id` 且给了 `pack_id` 时，
+  服务端会把 `version` 回填成包的 `mcVersion`，仅用于任务标题可读性。
+  内核侧命令形如 `mpack-launcher install --mrpack <绝对路径> --dir <minecraft_dir>`。
+- `POST /api/launcher/launch`：`{version, username, minecraft_dir, java_path?, xmx_mb?, pack_id?}`。
+  `username` 必填（离线模式账号名），`xmx_mb` 为**纯数字 MB**（Go 侧不做 `2G` 这类单位换算，Rust `parse_memory_mb` 也接受裸数字）。
+  `version` 可留空：服务端在**入队前**用 `pack_id`/`minecraft_dir` 查该目录最近一次安装记录，把
+  内核实际装出来的版本目录 ID 填进任务载荷（任务因此仍可复现）。查不到 → **409
+  `launcher_not_installed`**，不入队（缺陷 O2，2026-09-30）。
+- `GET /api/launcher/installs?packId=&minecraftDir=`：返回 `{"installs":[{id,versionId,loader,mcVersion,packId,taskId,installedAt}]}`，
+  按 `installedAt` 倒序。`versionId` 是启动要用的版本目录 ID：**带加载器时是
+  `fabric-loader-<加载器版本>-<MC 版本>`**（`launcherCore/src/loader/fabric.rs:43-45`），
+  不是包的 `mcVersion`——前端拿 `mcVersion` 去猜必然 `version_not_found`，这就是 O2。
+- `pack_id` 只作发起上下文：`launcher_installs` 的唯一键是 `(minecraft_dir, version_id)`，
+  随包删除置空（`0022_launcher_installs.sql`）。
+- 两者都需要写令牌与 Host/Origin 校验，与全站一致。
+
+### 8.2 响应
+
+- `202 {taskId}`：任务入队（`kind = launcher_install` / `launcher_launch`），进度与日志走任务域 `GET /api/tasks/{id}`、任务日志端点。
+- `400 invalid_argument`：必填项缺失或版本名非法。
+- `409 duplicate_inflight`：同一 `(version, minecraft_dir)` 已有活跃安装任务，`{taskId, status, reused:true}` 带回在跑的那条。
+- `409 launcher_not_installed`：`launch` 省略 `version` 且该目录没有安装记录，`message` 指向「先执行安装」；同步拒绝、不入队。
+- `503 launcher_binary_missing`：**同步**拒绝，不当 202 骗前端。触发条件是 `MPACK_LAUNCHER_BIN`、`<data>/.tools/launcher/mpack-launcher(.exe)`、PATH 三处都找不到二进制（基线 D5 已修：原先硬编码 `.exe` 且在 macOS 上永远解析不到）。
+- 任务终态沿用任务域枚举 `queued/running/paused/success/failed/cancelled`；失败时 `error` 为启动器错误码+消息（如 `version_not_found: 没有 1.99.0`）。
+
+### 8.3 二进制 argv 契约（Go → Rust）
+
+旗标名以 `launcherCore/src/cli.rs` 的 clap 定义为准，写错即 `exit 2`：
+
+- `install --mc <version> --dir <dir> [--loader <l>] [--loader-version <v>] [--mirror <m>] [--java <path>]`
+  —— install 子命令**没有** `--version`，字段名是 `mc`（2026-09-30 修复：Go 侧此前发 `--version`，真实二进制必然被 clap 拒绝，见报告 D9）。
+- `launch --version <id> --dir <dir> --username <name> [--java <path>] [--xmx <mb>]`
+  —— 默认 detach（`detach = !args.wait`），Go 侧不传 `--wait`，因此任务在拿到 `{"pid":N}` 后即 `success`，不等游戏退出。
+
+### 8.4 事件协议（Rust → Go）
+
+`launcherCore/src/protocol.rs`：stdout 为 JSON Lines，stderr 为 tracing 日志。
+
+- `{"type":"phase","phase":<name>,"message":<str>}`，phase 取值 `preparing/resolving_version/downloading_libraries/downloading_assets/installing_loader/verifying/authenticating/await_user/authenticated/launching`；Go 侧 `phaseProgress` 把它映射成 5→100 的进度百分比，未知 phase 记 50%。
+- `{"type":"result","success":true,"data":{...}}` 或 `{"type":"result","success":false,"error":<code>,"message":<str>}`，整场只有一条 result。
+- 非 JSON 行（debug 构建里 cargo 泄漏的输出）直接跳过。
+- result 为 `success:false` 时任务判 `failed`，**即使进程退出码是 0**；取消任务返回 `mpack-launcher 已取消: <ctx.Err>`。
+
+协议硬约束：**整场只有一条 `result`**（即本节开头那句「整场只有一条 result」）。`Protocol::phase`
+可以在库函数里多发，`result` 只能由 `main.rs` 打。2026-09-30 真机验证时发现
+`install::install_vanilla` 与 `install::launch_game` 各自也打了一条 `success`，靠 Go 侧
+`scanStdout` 取最后一条才没出错——已改为库函数只发 phase。
+
+验证方式两级：
+- **协议桩**（`scripts/chain-test-run.sh` 默认）：按 `cli.rs` 的 clap 语义校验 argv、按本节形状回事件，
+  不下载文件、不起游戏。它证明「请求 → 同步校验 → 入队 → 入库 → worker → fork/exec → 终态」。
+- **真实内核**（`scripts/verify-terminal-chain.sh`，本机 cargo 可用：brew rustup，
+  toolchain `stable-aarch64-apple-darwin`，cargo 1.96；`CARGO_TARGET_DIR` 指到本地盘避开 SMB）：
+  `cargo build` 出 `mpack-launcher`，用第四套隔离环境（:18874 / `/tmp/mpack-terminal`）跑完
+  建包 → 加模组 → 锁 → 构建 `.mrpack` → `install --mrpack` → 对磁盘上每个 jar 复核 manifest 的 sha1，
+  加 `--launch` 时再真起一次 Minecraft 并确认进程存活。

@@ -1,5 +1,6 @@
 //! 游戏进程管理：spawn + detach + 等待 + 终止
 
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
 #[cfg(windows)]
@@ -80,13 +81,37 @@ impl GameProcess {
 ///
 /// Windows 上通过 CREATE_NEW_PROCESS_GROUP 实现；
 /// Unix 上通过 setsid 实现（需要额外处理，当前使用 std::process 基本 detach）。
-pub fn spawn_detached(command: &LaunchCommand, version_id: impl Into<String>) -> Result<u32> {
+pub fn spawn_detached(
+    command: &LaunchCommand,
+    version_id: impl Into<String>,
+    log_file: Option<&Path>,
+) -> Result<u32> {
     let mut cmd = Command::new(&command.executable);
     cmd.args(&command.args)
         .current_dir(&command.working_dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdin(Stdio::null());
+
+    // detach 后没人接管 stdout/stderr，全丢 null 的话「秒退型失败」就查无实据：
+    // 内核回 success+pid，界面上只有一句「启动成功」，日志里连
+    // 「找不到主类」这种决定性证据都拿不到（O16 就是这么排掉的）。
+    // 给了 --log-file 就把游戏输出追加进去；没给才丢弃。
+    if let Some(path) = log_file {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| LauncherError::Internal(format!("创建日志目录失败: {e}")))?;
+            }
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .map_err(|e| LauncherError::Internal(format!("打开游戏日志失败: {e}")))?;
+            let err_clone = file
+                .try_clone()
+                .map_err(|e| LauncherError::Internal(format!("复制日志句柄失败: {e}")))?;
+            cmd.stdout(Stdio::from(file)).stderr(Stdio::from(err_clone));
+    } else {
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    }
 
     for (key, value) in &command.env {
         cmd.env(key, value);
@@ -108,7 +133,12 @@ pub fn spawn_detached(command: &LaunchCommand, version_id: impl Into<String>) ->
     // 不等待，直接返回 PID（detach 模式）
     std::mem::forget(child);
 
-    tracing::info!("游戏已 detach 启动，PID={}, version={}", pid, version_id.into());
+    tracing::info!(
+        "游戏已 detach 启动，PID={}, version={}, log={:?}",
+        pid,
+        version_id.into(),
+        log_file
+    );
     Ok(pid)
 }
 
@@ -126,18 +156,13 @@ pub fn is_process_running(pid: u32) -> bool {
     }
     #[cfg(unix)]
     {
-        // 发送信号 0 检查进程是否存在
-        unsafe { libc_kill(pid as i32, 0) == 0 }
+        // 发送信号 0 检查进程是否存在（不产生真信号）
+        unsafe { libc::kill(pid as i32, 0) == 0 }
     }
     #[cfg(not(any(windows, unix)))]
     {
         false
     }
-}
-
-#[cfg(unix)]
-extern "C" {
-    fn libc_kill(pid: i32, sig: i32) -> i32;
 }
 
 #[cfg(test)]

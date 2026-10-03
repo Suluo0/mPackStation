@@ -30,8 +30,9 @@ async fn main() -> Result<(), LauncherError> {
         }
         Command::Install(args) => {
             match run_install(&args).await {
-                Ok(version_id) => {
-                    Protocol::success(json!({ "version_id": version_id }));
+                Ok(payload) => {
+                    // 载荷里必有 version_id；mrpack 路径额外带包名/模组数/overrides 数
+                    Protocol::success(payload);
                     Ok(())
                 }
                 Err(e) => Err(e),
@@ -49,6 +50,7 @@ async fn main() -> Result<(), LauncherError> {
                 args.java,
                 max_memory_mb,
                 detach,
+                args.log_file,
             ) {
                 Ok(pid) => {
                     Protocol::success(json!({ "pid": pid }));
@@ -186,11 +188,34 @@ async fn main() -> Result<(), LauncherError> {
 }
 
 /// 执行安装（Vanilla 或加载器）
-async fn run_install(args: &mpack_launcher::cli::InstallArgs) -> Result<String, LauncherError> {
+async fn run_install(args: &mpack_launcher::cli::InstallArgs) -> Result<serde_json::Value, LauncherError> {
     use mpack_launcher::loader::{LoaderInstaller, LoaderType};
     let mirror = Mirror::from_str(&args.mirror);
+    // .mrpack 导入：mc/loader 版本由包内 manifest 决定，--mc 此时必须省略或一致
+    if let Some(zip_path) = &args.mrpack {
+        let java_registry = JavaRegistry::detect();
+        let report = mpack_launcher::mrpack::install_from_mrpack(
+            &args.dir,
+            zip_path,
+            mirror,
+            &java_registry,
+        )
+        .await?;
+        return Ok(json!({
+            "version_id": report.version_id,
+            "pack_name": report.pack_name,
+            "pack_version": report.pack_version,
+            "mods": report.mods,
+            "overrides": report.overrides,
+        }));
+    }
+    let mc = args.mc.as_deref().ok_or_else(|| {
+        LauncherError::InvalidArgument("缺 --mc（或改用 --mrpack 从包内 manifest 取版本）".to_string())
+    })?;
     if args.loader == "vanilla" {
-        return mpack_launcher::install::install_vanilla(&args.dir, &args.mc, mirror).await;
+        let version_id =
+            mpack_launcher::install::install_vanilla(&args.dir, mc, mirror).await?;
+        return Ok(json!({ "version_id": version_id }));
     }
     let loader_type = match args.loader.as_str() {
         "fabric" => LoaderType::Fabric,
@@ -206,9 +231,8 @@ async fn run_install(args: &mpack_launcher::cli::InstallArgs) -> Result<String, 
     } else {
         Some(args.loader_version.as_str())
     };
-    installer
-        .install(&args.mc, loader_type, loader_ver, &java_registry)
-        .await
+    let version_id = installer.install(mc, loader_type, loader_ver, &java_registry).await?;
+    Ok(json!({ "version_id": version_id }))
 }
 
 /// 解析内存字符串为 MB（如 "2G" → 2048, "512M" → 512）

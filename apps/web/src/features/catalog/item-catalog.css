@@ -1,0 +1,88 @@
+/* 物品大一统：物品网格与详情抽屉。设计令牌沿用 dashboard.css 的 --mc-*，
+   不新增颜色，保证与工作台其余页面同一套视觉语法。 */
+
+.icg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.icg-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--mc-radius);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: center;
+  transition: background var(--mc-dur) var(--mc-ease),
+    border-color var(--mc-dur) var(--mc-ease),
+    transform var(--mc-dur) var(--mc-ease);
+}
+.icg-tile:hover { background: var(--mc-hover); border-color: var(--mc-line); }
+.icg-tile:active { transform: scale(.97); }
+.icg-tile.is-active { background: var(--mc-primary-bg); border-color: var(--mc-primary); }
+
+/* 图标容器：呼应 Minecraft 物品槽的凹陷感，用内阴影而非重描边。 */
+.icg-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--mc-fill) 70%, var(--mc-line));
+  box-shadow: inset 0 1px 2px rgba(64, 50, 33, .12), inset 0 -1px 0 rgba(255, 255, 255, .5);
+  overflow: hidden;
+}
+.icg-icon img { width: 40px; height: 40px; image-rendering: pixelated; object-fit: contain; }
+.icg-icon-ph { color: var(--mc-muted); font-size: 16px; font-weight: 700; }
+
+.icg-name {
+  width: 100%;
+  color: var(--mc-text);
+  font-size: 12px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+.icg-tile.is-active .icg-name { color: var(--mc-primary-deep); font-weight: 600; }
+
+.icg-empty { padding: 40px 10px; color: var(--mc-muted); text-align: center; font-size: 13px; }
+.icg-more {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--mc-line);
+  color: var(--mc-muted);
+  font-size: 12px;
+  text-align: center;
+}
+.icg-toolbar-note { margin: 10px 0 0; color: var(--mc-text-2); font-size: 12px; }
+
+/* 详情抽屉 */
+.icg-detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.icg-detail-head .icg-icon { width: 56px; height: 56px; flex: none; }
+.icg-detail-head .icg-icon img { width: 52px; height: 52px; }
+.icg-detail-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.icg-detail-title strong { font-size: 16px; }
+.icg-detail-title code { color: var(--mc-muted); font-size: 12px; word-break: break-all; }
+.icg-detail-sec { margin-top: 18px; }
+.icg-detail-sec h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--mc-muted);
+}
+.icg-detail-rows { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.icg-detail-rows > div { display: flex; gap: 10px; }
+.icg-detail-rows span { color: var(--mc-muted); min-width: 72px; flex: none; }
+.icg-names-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.icg-names-table td { padding: 5px 8px; border-top: 1px solid var(--mc-line); }
+.icg-names-table td:first-child { color: var(--mc-muted); white-space: nowrap; }

@@ -4,10 +4,12 @@ import {usePackSummary} from './PackSummaryContext';
 import {TaskPill} from './TaskPill';
 
 /* 顶栏三段（设计文档 §3 顶栏三段表）。导航标签一律来自 nav.ts，禁在这里硬编码 ——
-   两处各写一份是上一轮"导航膨胀"的根因。可点项 = 全局 2 + 包内 3 + ⚙。 */
+   两处各写一份是上一轮"导航膨胀"的根因。
+   左段 = §4 的四个页面入口（工作台 / 概览 / 内容 / 交付），常驻；
+   概览/内容/交付 在无包上下文时锚到最近编辑包（anchorPackId），一个包都没有才置灰。 */
 export function TopBar({onOpenPalette}: {onOpenPalette: () => void}) {
   const {id} = useParams();
-  const {pack} = usePackSummary();
+  const {pack, anchorPackId} = usePackSummary();
 
   return (
     <header className="app-topbar">
@@ -19,21 +21,21 @@ export function TopBar({onOpenPalette}: {onOpenPalette: () => void}) {
               {n.label}
             </NavLink>
           ))}
+          {PACK_NAV.map((n, i) => anchorPackId ? (
+            <NavLink key={n.to} to={packHref(anchorPackId, n.to)} end={i === 0}
+              className={({isActive}) => `tb-link${isActive ? ' on' : ''}`}>
+              {n.label}
+            </NavLink>
+          ) : (
+            <span key={n.to} className="tb-link off" title="还没有整合包，先去工作台建一个">{n.label}</span>
+          ))}
         </nav>
       </div>
 
-      {/* 无包上下文时整段不渲染，不是渲染成灰色 */}
+      {/* 中段只有面包屑：入口已常驻左段，不再靠"进包后才多出三个 Tab"（设计文档 §3） */}
       {id && pack && (
         <div className="tb-mid">
           <span className="tb-crumb">{pack.name} ›</span>
-          <nav className="tb-nav">
-            {PACK_NAV.map((n, i) => (
-              <NavLink key={n.to} to={packHref(id, n.to)} end={i === 0}
-                className={({isActive}) => `tb-link${isActive ? ' on' : ''}`}>
-                {n.label}
-              </NavLink>
-            ))}
-          </nav>
         </div>
       )}
 

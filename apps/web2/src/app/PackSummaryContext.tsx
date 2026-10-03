@@ -11,6 +11,9 @@ import {fetchDashboard, type DashboardPack} from '../api/dashboard';
 
 export type PackSummary = {
   packId: string | null;
+  /* 顶栏四大入口的锚点包：有包上下文就是本包，没有就用最近编辑包
+     （设计文档 §4.1「最近编辑包大卡」同一字段）。一个包都没有时为 null。 */
+  anchorPackId: string | null;
   pack: DashboardPack | null;
   health: PackHealth | null;
   locks: Lock[];
@@ -55,6 +58,7 @@ export function PackSummaryProvider({children}: {children: ReactNode}) {
   const {id} = useParams();
   const packId = id ?? null;
   const [pack, setPack] = useState<DashboardPack | null>(null);
+  const [lastEdited, setLastEdited] = useState<string | null>(null);
   const [health, setHealth] = useState<PackHealth | null>(null);
   const [locks, setLocks] = useState<Lock[]>([]);
   const [pending, setPending] = useState<Conflict[]>([]);
@@ -82,6 +86,12 @@ export function PackSummaryProvider({children}: {children: ReactNode}) {
 
   useEffect(() => { void load(); }, [load]);
 
+  /* 无包上下文时取最近编辑包，给顶栏四大入口当锚点；包内不额外发请求。 */
+  useEffect(() => {
+    if (packId) return;
+    void fetchDashboard().then(d => setLastEdited(d.lastEditedPackId)).catch(() => setLastEdited(null));
+  }, [packId]);
+
   /* 任务轮询固定 5s。放在 context 而不是页面，这样切态/切页都不会丢进度
      （设计文档 §5-6）。fetchTasks 是全局的，按 packId 过滤在消费方做。 */
   useEffect(() => {
@@ -94,11 +104,11 @@ export function PackSummaryProvider({children}: {children: ReactNode}) {
   }, []);
 
   const value = useMemo<PackSummary>(() => ({
-    packId, pack, health, locks, pendingConflicts: pending, tasks,
+    packId, anchorPackId: packId ?? lastEdited, pack, health, locks, pendingConflicts: pending, tasks,
     score: computeScore(health, pack),
     alertCount: (health?.pendingErrors ?? 0) + (pack?.alerts.crashes ?? 0),
     loading, error, refresh: () => void load(),
-  }), [packId, pack, health, locks, pending, tasks, loading, error, load]);
+  }), [packId, lastEdited, pack, health, locks, pending, tasks, loading, error, load]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

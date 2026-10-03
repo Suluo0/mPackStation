@@ -7,17 +7,19 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"time"
 
 	"mpackstation/internal/provider"
 )
 
 type ModContentIcons struct {
-	TagIcons  map[string]string `json:"tagIcons"`
-	Items     []ModContentItem  `json:"items"`
-	Missing   []string          `json:"missing"`
-	Warnings  []string          `json:"warnings"`
-	MCVersion string            `json:"mcVersion"`
+	TagIcons       map[string]string `json:"tagIcons"`
+	Items          []ModContentItem  `json:"items"`
+	Missing        []string          `json:"missing"`
+	MissingReasons map[string]string `json:"missingReasons,omitempty"`
+	Warnings       []string          `json:"warnings"`
+	MCVersion      string            `json:"mcVersion"`
 }
 
 var assetVersionPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
@@ -80,9 +82,13 @@ func (a *API) ResolveModContentIcons(ctx context.Context, packID, modID string) 
 		}
 	}
 	r.addContent(ext)
-	icons, missing := r.icons()
+	icons, missingReasons := r.icons()
 	result.TagIcons = r.tagIcons(icons)
-	result.Missing = missing
+	for id := range missingReasons {
+		result.Missing = append(result.Missing, id)
+	}
+	sort.Strings(result.Missing)
+	result.MissingReasons = missingReasons
 	for _, icon := range icons {
 		result.Items = append(result.Items, ModContentItem{ID: icon.Key, Kind: icon.Kind, Key: icon.Key, Path: icon.Path, Payload: icon.Payload})
 	}

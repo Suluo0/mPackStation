@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // PackVersionInputRecord is an immutable input captured for a build version.
@@ -167,6 +168,11 @@ func (r *Repository) ListPackVersions(ctx context.Context, packID string) ([]Pac
 func (r *Repository) CreatePackVersion(ctx context.Context, v PackVersionRecord) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO pack_versions(id,pack_id,version,channel,changelog,source,lock_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`, v.ID, v.PackID, v.Version, v.Channel, v.Changelog, v.Source, nullStringArg(v.LockID), v.CreatedAt, v.UpdatedAt)
 	if err != nil {
+		// pack_versions carries UNIQUE(pack_id,version): re-using a version number
+		// is a client-visible conflict, never an internal error (chain test D2).
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return fmt.Errorf("%w: pack version %q already exists", ErrConflict, v.Version)
+		}
 		return fmt.Errorf("create pack version: %w", err)
 	}
 	return nil
@@ -270,6 +276,17 @@ func (r *Repository) RegisterExportDir(ctx context.Context, dir ExportDirRecord)
 			return fmt.Errorf("register export directory: %w", ErrConflict)
 		}
 		return nil
+	}
+	if err != sql.ErrNoRows {
+		return fmt.Errorf("read export directory: %w", err)
+	}
+	// absolute_path 上有 UNIQUE：同一个目录被换名再批准时，直接 INSERT 会撞
+	// 约束，裸 sqlite 错误到了 HTTP 层就是 500。先查重，把「这个路径已经以
+	// 另一个名字批准过了」变成可辨认的冲突。
+	var used string
+	err = r.db.QueryRowContext(ctx, `SELECT name FROM allowed_export_dirs WHERE absolute_path=?`, dir.AbsolutePath).Scan(&used)
+	if err == nil {
+		return fmt.Errorf("register export directory: %w: path already approved as %q", ErrConflict, used)
 	}
 	if err != sql.ErrNoRows {
 		return fmt.Errorf("read export directory: %w", err)

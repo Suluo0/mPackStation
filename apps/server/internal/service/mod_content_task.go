@@ -191,7 +191,7 @@ func (a *API) parseAndPersistModContent(ctx context.Context, packID, modID, task
 		recordScopedFailure("archive_fetch_failed", err.Error())
 		return nil, &task.TaskError{Code: "archive_fetch_failed", Message: "failed to fetch content archive", Retryable: true}
 	}
-	actualSHA1, actualSHA256, verifyErr := validateMeasuredDownload(mod.SHA1, "", archiveBytes)
+	actualSHA1, actualSHA256, actualSHA512, verifyErr := validateMeasuredDownload(mod.SHA1, "", archiveBytes)
 	if verifyErr != nil {
 		a.finishModContentRun(ctx, runID, mod.PackID, mod.ID, mod.SHA1, "failed", 0, 0, 0, 0, "archive checksum mismatch", now)
 		recordScopedFailure("archive_hash_mismatch", verifyErr.Error())
@@ -225,14 +225,14 @@ func (a *API) parseAndPersistModContent(ctx context.Context, packID, modID, task
 		return nil, &task.TaskError{Code: "mod_identity_mismatch", Message: "archive mod id does not match selected mod"}
 	}
 	mod.ModID, mod.SHA1, mod.FileName, mod.Status, mod.UpdatedAt = canonicalModID, actualSHA1, nonEmptyString(mod.FileName, canonicalModID+"-"+declaredVersion+".jar"), "installed", a.now().UnixMilli()
-	selection := verifiedPackSelection(mod, declaredVersion, actualSHA256, archiveLocation, int64(len(archiveBytes)), mod.UpdatedAt)
+	selection := verifiedPackSelection(mod, declaredVersion, actualSHA256, actualSHA512, archiveLocation, int64(len(archiveBytes)), mod.UpdatedAt)
 	if canonicalModID == "minecraft" {
 		selection.Acquisition, selection.Platform = "mojang", ""
 		selection.RequestedVersion = declaredVersion
 		selection.ExternalProjectID, selection.ExternalReleaseID = "", ""
 	}
 	if len(languageBytes) > 0 {
-		langSHA1, langSHA256 := measuredArchive(languageBytes)
+		langSHA1, langSHA256, _ := measuredArchive(languageBytes)
 		selection.AdditionalFiles = append(selection.AdditionalFiles, store.PackScopedInput{File: store.PackScopedFile{ID: store.NewGlobalID("file", langSHA256), SHA256: langSHA256, SHA1: langSHA1, SizeBytes: int64(len(languageBytes)), MediaType: "application/json", Location: "mojang:asset:zh_cn:" + declaredVersion, Verified: true}, Role: "language", LogicalPath: "assets/minecraft/lang/zh_cn.json"})
 		selection.ManifestSHA256 = manifestHash(actualSHA256, langSHA256)
 		selection.VersionID = store.NewGlobalID("version", canonicalModID+"\x00"+declaredVersion+"\x00"+selection.ManifestSHA256)

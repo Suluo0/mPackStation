@@ -586,9 +586,25 @@ func (a *API) GetQuest(ctx context.Context, packID string) (QuestBook, error) {
 	}
 	b, v, c, n, e, x := a.repo.GetQuestRevision(ctx, packID)
 	if x != nil {
+		if errors.Is(x, store.ErrNotFound) {
+			return QuestBook{}, a.questBookMissing(ctx, packID, x)
+		}
 		return QuestBook{}, x
 	}
 	return questDTO(b, v, c, n, e), nil
+}
+
+// questBookMissing 区分「包不存在」和「包在、任务书还没写」。
+//
+// 之前这里直接把 store.ErrNotFound 抛给 HTTP 层，兜底翻译是 404 pack_not_found
+// 「pack not found」，于是给一个已经存在的包读任务书也会被告知「找不到整合包」
+// （链路测试缺陷 O4）。包确实没有时仍然报 pack_not_found，保持既有契约。
+func (a *API) questBookMissing(ctx context.Context, packID string, cause error) error {
+	if _, err := a.repo.GetPack(ctx, packID); err != nil {
+		return NotFoundError("pack_not_found", "pack not found")
+	}
+	return &DomainError{Status: 404, Code: "quest_book_not_found",
+		Message: "这个整合包还没有任务书，在任务编辑器里保存一次草稿即可创建", Wrapped: cause}
 }
 func (a *API) SaveQuestDraft(ctx context.Context, packID string, in QuestDraft, ifMatch int, requestID string) (QuestRevision, []ValidationIssue, error) {
 	if err := a.ready(); err != nil {
@@ -695,10 +711,16 @@ func (a *API) RollbackQuest(ctx context.Context, packID, targetRevisionID, reque
 	}
 	b, v, c, n, e, x := a.repo.GetQuestRevisionByID(ctx, packID, targetRevisionID)
 	if x != nil {
+		if errors.Is(x, store.ErrNotFound) {
+			return QuestRevision{}, NotFoundError("quest_revision_not_found", "任务修订不存在（修订 ID 拼错，或该包还没有任务书）")
+		}
 		return QuestRevision{}, x
 	}
 	_, current, _, _, _, x := a.repo.GetQuestRevision(ctx, packID)
 	if x != nil {
+		if errors.Is(x, store.ErrNotFound) {
+			return QuestRevision{}, a.questBookMissing(ctx, packID, x)
+		}
 		return QuestRevision{}, x
 	}
 	draft := questDTO(b, v, c, n, e).Revision.Draft

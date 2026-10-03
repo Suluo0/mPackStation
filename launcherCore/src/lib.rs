@@ -11,6 +11,7 @@ pub mod platform;
 pub mod protocol;
 
 pub mod download;
+pub mod mrpack;
 pub mod launch;
 pub mod java;
 pub mod auth;

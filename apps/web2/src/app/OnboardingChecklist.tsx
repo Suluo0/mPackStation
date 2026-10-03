@@ -1,21 +1,23 @@
-import {NavLink, useParams} from 'react-router-dom';
+import {NavLink} from 'react-router-dom';
 import {CHECKLIST, useOnboarding} from './OnboardingContext';
 import {packHref} from './nav';
+import {usePackSummary} from './PackSummaryContext';
 
-/* 跳转目标：键 → 路径。带 :id 的项在没有包上下文时禁用（不许跳到 /packs/undefined）。 */
+/* 跳转目标：键 → 路径。带 :id 的项在没有任何包时禁用（不许跳到 /packs/undefined）。 */
 const NEEDS_PACK = new Set(['firstMod', 'launcherReady']);
 
 export function OnboardingChecklist() {
   const {steps, loading} = useOnboarding();
-  const {id} = useParams();
+  const {anchorPackId: id} = usePackSummary();
   if (loading || !steps) return null;              // 未拉到就不渲染，禁默认打勾
   const done = CHECKLIST.filter(s => steps[s.key]).length;
   if (done === CHECKLIST.length) return null;      // 全部完成后整个胶囊消失
 
+  /* 目标页：新建/导入在「工作台」§4.1 里（顶栏整合包入口已屏蔽），所以一律先落 /。 */
   const target = (key: string): string | null => {
-    if (key === 'firstPack') return '/packs';
+    if (key === 'firstPack') return '/';
     if (key === 'curseforgeKey') return '/settings';
-    if (!id) return NEEDS_PACK.has(key) ? null : '/packs';
+    if (!id) return NEEDS_PACK.has(key) ? null : '/';
     return key === 'firstMod' ? `${packHref(id, 'content')}?rail=mods` : `${packHref(id, 'delivery')}?step=install`;
   };
 

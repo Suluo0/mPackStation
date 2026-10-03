@@ -38,24 +38,6 @@
   max-width: 220px;
 }
 
-.qb-mode-badge {
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
-
-.qb-mode-badge.edit {
-  color: #1a1408;
-  background: #f0b27a;
-}
-
-.qb-mode-badge.preview {
-  color: #061a12;
-  background: #7dcea0;
-}
-
 .qb-mode-switch {
   display: inline-flex;
   overflow: hidden;
@@ -605,3 +587,7 @@
   right: -4000px;
   height: 1px;
 }
+
+/* 物品 ID 输入 + 选择按钮：接入共享物品目录选择器 */
+.qb-item-id-row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+.qb-item-id-row .ant-input { flex: 1; min-width: 0; }

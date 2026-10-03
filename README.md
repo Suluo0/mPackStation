@@ -15,13 +15,20 @@ mPackStation 是一个本地的 Minecraft 整合包设计工作台：在网页�
 
 ## 功能现状
 
-- [x] 看板（工作台）：空态迎新流程（上手三步、四步入门）、有包态总览（继续设计卡、包列表、后台任务面板、环境状态、最近动态）
+以实测结论为准，不是设计意图的清单：上一轮基线 `docs/tests/e2e-baseline-2026-09-29.md`（`PASS=27 FAIL=3`）暴露的缺陷已在 09-30 这轮收口，全链路（前端请求 → 后端入库 → 产物落盘 → 启动器）复测见 `docs/tests/chain-test-2026-09-30.md`（173 例，`PASS 172 / FAIL 0 / SKIP 1`），缺陷逐条台账见 `docs/tests/defects-2026-09-30.md`。**流水线终局已跑通一次真的**：`scripts/verify-terminal-chain.sh --launch` 用 cargo 编译出的内核装包并启动 Minecraft（43 条断言全绿，证据 `docs/tests/evidence/terminal-run-2026-09-30.log`）。
+
+- [x] 看板（工作台）：空态迎新流程、有包态总览（继续设计卡、包列表、后台任务面板、环境状态、最近动态）
 - [x] 环境自检：CurseForge API Key 未配置、平台不可达、存储空间不足时自动横幅提示
-- [x] Go + SQLite 后端骨架：单库 schema（包/包内模组/jar 索引/任务/冲突/动态/设置/远端缓存）
-- [ ] 包工作台：搜索模组 → 加入整合包（设计中文档先行）
-- [ ] 依赖锁定与冲突自动解决
-- [ ] 内容编辑（配方/结构/矿脉/任务书）
-- [ ] 一键打包与发布（CurseForge / Modrinth）
+- [x] Go + SQLite 后端：schema 26（migrations 0001-0026，含 `0025` 目录物品证据 `lang`、`0026` 图标缺失原因），单库分域，73+ 路由，Host/Origin 白名单 + 写令牌
+- [x] 包工作台：面向包的双平台搜索 → `/mod-versions` 兼容版本 → 添加即钉版（镜像字段）→ 包内清单权威
+- [x] 依赖锁定与冲突：锁快照 + 冲突列表 + 兼容知识库自动加装补丁
+- [x] 内容编辑：包内物品/方块/配方/标签/多语言目录（含中文资源与等距投影图标）、配方查看、原版进度树画布、FTB 风格任务书（草稿/校验/应用/预览/历史）
+- [x] 启动器内核 `launcherCore/`（Rust）：Java 下载、四种加载器安装、微软 OAuth + 离线账号、错误分类。**macOS 本机真编译真运行**（`cargo` 由 brew rustup 提供，工具链在 `~/.rustup/toolchains/stable-aarch64-apple-darwin`，默认不在 PATH——之前"本机无 cargo/rustc、从未编译"是误判）
+- [x] **构建 .mrpack**（基线 D1 已修）：服务端按权威链 `pack_mods.current_selection_id → pack_mod_selections → selection_platform_pins(role='primary') → platform_release_files` 自行装配 manifest，产物是真实 `.mrpack`（终局验证里 901 字节，JEI/fabric-api/mezzconfig 三条真实 Modrinth 下载地址 + sha1/sha512）。构建不需要外网——jar 字节不入库，manifest 只记 URL 与哈希。构建前有冲突闸门（缺陷 O20）：还有 error 级未解决冲突就不许构建，否则装进游戏是 Fabric 的 "Mod resolution failed"。局限：只有本机 jar、没有平台选中项的本地模组进不了 `.mrpack`（见缺陷文档）
+- [x] **启动器后端集成**（基线 D5 已修）：二进制路径走 `MPACK_LAUNCHER_BIN` 环境变量，安装记录落 `launcher_installs`（版本 ID 契约 `fabric-loader-<loader>-<mc>`，与内核 `loader/fabric.rs` 一致），`GET /api/launcher/installs` 可查，未安装时 409 `launcher_not_installed`。**用真内核验过**：`scripts/verify-terminal-chain.sh --launch` 一路走到游戏起窗（链路测试默认那套仍用协议桩，只为每轮快跑）
+- [x] **装配产物 → 启动的最后一环**（缺陷 O14 已修）：内核 `launcherCore/src/mrpack.rs` 读 `.mrpack`（解析 manifest → 下载 `files[]` → 校验 sha1 → 落 `overrides/`），`install --mrpack <包>` 走同一条安装链路；实测 Minecraft 1.21.1 + Fabric 0.16.14 + 3 个模组装完起窗，进程存活、Fabric 横幅与渲染线程建号都在（`docs/tests/evidence/terminal-run-2026-09-30.log`）
+- [ ] 发布到 CurseForge / Modrinth：接口存在但无凭证，本轮未验证（已确认为 by-design，无凭证必须拒绝）
+- [x] 假数据残余：工作台右栏「包健康」等假展示已清理（无真实数据源的块移除或改为空态，死 CSS 一并删）
 
 ## 技术栈
 
@@ -33,24 +40,32 @@ mPackStation 是一个本地的 Minecraft 整合包设计工作台：在网页�
 
 分发形态后续再定：单 exe 本地服务、Electron、Tauri 都可以无成本接住，当前只做开发环境。
 
+关于"装配由服务器做还是本地做"：这里的"服务端"不是一个远端服务，而是跟界面一起装在用户机器上的那个 Go 进程。构建 `.mrpack` 只读本地 SQLite、写一个 zip，不需要任何网络与账号，因此同一份装配代码将来在 Electron 主进程里直接调用即可，不必搬到渲染层重写——重写反而会丢掉确定性（同一输入产出同一 zip）与迁移/事务的单一入口。
+
 ## 快速开始
 
 环境要求：Node.js 20+、Go 1.27+（仓库内 `.tools/` 可放便携版 Go，不入库）。
 
 ```bash
-# 前端（http://127.0.0.1:5273，/welcome 强制显示空态引导）
-cd apps/web
-npm install
-npx vite --port 5273
-
-# 后端（http://127.0.0.1:18871，前端 /api 已代理到此端口）
-cd apps/server
-go run ./cmd/server -data ../../data
+# 唯一标准服务（AGENTS.md 定稿）：前端 5271 + 后端 18872
+bash scripts/dev.sh
 ```
 
-一键启停：`scripts/dev.sh`（启动）与 `scripts/dev-stop.sh`（停止），同时提供 `.bat` 与 `.ps1` 版本。
+一键启停：`scripts/dev.sh`（启动）与 `scripts/dev-stop.sh`（停止）。
 
-验证后端：`curl http://127.0.0.1:18871/api/health` 应返回 `{"status":"ready","db":true,...}`；存活探针为 `/api/healthz`，就绪探针为 `/api/readyz`。
+验证后端：`curl http://127.0.0.1:18872/api/health` 应返回 `{"status":"ready","db":true,...}`；存活探针为 `/api/healthz`，就绪探针为 `/api/readyz`。
+
+两套**隔离**验证环境（各自独立端口与数据目录，绝不复用上面开发实例的 18871 与 `data/`、`/tmp/mpack-data`）：
+
+```bash
+bash scripts/chain-test-run.sh /tmp/chain-runN.log      # 前端→后端调用链路：后端 18872/18873 + /tmp/mpack-chain，启动器用协议桩
+bash scripts/verify-terminal-chain.sh --launch          # 流水线终局：后端 18874 + /tmp/mpack-terminal，cargo 真编译内核 → 构建 .mrpack → 安装 → 真起 Minecraft
+```
+
+`verify-terminal-chain.sh` 会自己找 cargo：本机 rustup 由 brew 装，工具链在
+`~/.rustup/toolchains/stable-<triplet>/bin`，默认不在 PATH（脚本里有兜底）。
+`CARGO_TARGET_DIR` 固定在本地盘 `/tmp/mpack-launcher-target`，不放 SMB 挂载上。
+`TERM_KEEP=1` 验完不杀后端与游戏进程。
 
 > 端口约定：前端 5273、后端 18871。本机 5173 / 18765 / 18766 可能被其他本地服务占用，请勿复用。
 >

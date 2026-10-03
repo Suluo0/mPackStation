@@ -12,6 +12,8 @@ export const catalogStatusSchema=z.object({sourceRevision:z.number().int(),built
 export type ItemCatalog=z.infer<typeof itemCatalogSchema>;
 export type CatalogItem=z.infer<typeof catalogItemSchema>;
 export type CatalogTag=z.infer<typeof catalogTagSchema>;
+export type CatalogRecipe=z.infer<typeof catalogRecipeSchema>;
+export type CatalogRecipeRef=z.infer<typeof recipeRefSchema>;
 
 const base=(packId:string)=>`/api/packs/${encodeURIComponent(packId)}/catalog`;
 export const getItemCatalog=(packId:string,locale='zh_cn')=>get(`${base(packId)}?locale=${encodeURIComponent(locale)}`,itemCatalogSchema);

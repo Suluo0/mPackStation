@@ -87,6 +87,27 @@ impl LoaderInstaller {
     }
 }
 
+/// 加载器 profile 只写"增量"，靠 `inheritsFrom` 指向原版版本 JSON；
+/// 原版不在位时 `load_version` 直接 io error（No such file or directory）。
+/// 上游 mc-launcher-core 0.1.2 `launcher.rs:85-130` 四种加载器都是
+/// 先 `install_vanilla_version` 再写 profile 再按合并结果下载，这里对齐。
+/// 已装过就跳过：`install_vanilla` 会把 libraries/assets 再拉一遍（几百 MB）。
+pub(crate) async fn ensure_vanilla_installed(
+    minecraft_dir: &Path,
+    mc_version: &str,
+    mirror: crate::download::Mirror,
+) -> Result<()> {
+    let json = minecraft_dir
+        .join("versions")
+        .join(mc_version)
+        .join(format!("{mc_version}.json"));
+    if json.is_file() {
+        return Ok(());
+    }
+    crate::install::install_vanilla(minecraft_dir, mc_version, mirror).await?;
+    Ok(())
+}
+
 /// 用自研下载层下载指定版本的所有文件（加载器安装后调用）
 async fn download_version_files(
     minecraft_dir: &Path,

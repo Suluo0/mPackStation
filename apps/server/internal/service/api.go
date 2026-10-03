@@ -33,6 +33,15 @@ var ErrInvalidArgument = errors.New("invalid argument")
 func IsNotFound(err error) bool { return errors.Is(err, store.ErrNotFound) }
 func IsConflict(err error) bool { return errors.Is(err, store.ErrConflict) }
 
+// IsPackHasActiveTasks reports the specific conflict the HTTP boundary must not
+// flatten into a bare "resource conflict": the pack still has queued or running
+// tasks, so deletion is refused until they finish.
+func IsPackHasActiveTasks(err error) bool { return errors.Is(err, store.ErrPackHasActiveTasks) }
+
+// IsBuiltinMemberProtected reports the refusal to drop a live pack's implicit
+// minecraft member; the HTTP boundary gives it its own stable code.
+func IsBuiltinMemberProtected(err error) bool { return errors.Is(err, store.ErrBuiltinMemberProtected) }
+
 // API is the stable application boundary consumed by httpapi.
 type API struct {
 	repo    *store.Repository
@@ -718,7 +727,10 @@ func (a *API) LaunchPrismLogin(ctx context.Context) error {
 	}
 	exe := a.prismExe()
 	if !a.prismExeExists() {
-		return fmt.Errorf("%w: prism launcher not installed", store.ErrNotFound)
+		// 这是"工具没装"的服务不可用,不是"包不存在"。以前借道 store.ErrNotFound,
+		// 到 HTTP 层被兜底翻译成 404 pack_not_found,界面只会说找不到整合包。
+		return &DomainError{Status: 503, Code: "prism_not_installed",
+			Message: "Prism Launcher 未安装,先在设置里安装外部工具"}
 	}
 	dir := a.prismDataDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

@@ -235,6 +235,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		apiError(w, r, http.StatusBadRequest, "invalid_argument", "build or publish input is invalid")
 	case errors.Is(err, service.ErrExportDirNotAllowed):
 		apiError(w, r, http.StatusForbidden, "export_dir_not_allowed", "export directory is not approved")
+	case errors.Is(err, service.ErrExportDirConflict):
+		apiError(w, r, http.StatusConflict, "export_dir_conflict", "this directory is already approved under another name")
 	case errors.Is(err, service.ErrDeliveryBlocked):
 		apiError(w, r, http.StatusUnprocessableEntity, "build_blocked", "delivery checks are blocked")
 	case errors.Is(err, service.ErrPublishFailed):
@@ -256,6 +258,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		apiError(w, r, http.StatusPreconditionFailed, "revision_conflict", "resource revision is stale")
 	case service.IsNotFound(err):
 		apiError(w, r, http.StatusNotFound, "pack_not_found", "pack not found")
+	case service.IsPackHasActiveTasks(err):
+		apiError(w, r, http.StatusConflict, "pack_has_active_tasks", "pack still has queued or running tasks; wait for them to finish before deleting")
 	case service.IsConflict(err):
 		apiError(w, r, http.StatusConflict, "conflict", "resource conflict")
 	case errors.Is(err, service.ErrInvalidArgument):
@@ -388,24 +392,44 @@ func securityMiddleware(token string, next http.Handler) http.Handler {
 			apiError(w, r, http.StatusForbidden, "invalid_origin", "request origin is not allowed")
 			return
 		}
-		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+		// GET 默认免鉴权(本机工作台),但 /api/fs/browse 是例外:它把服务器文件系统的
+		// 任意目录名列出来,进程绑在 0.0.0.0 时同网段任何人都能翻。链路测试里
+		// 不带令牌 GET /api/fs/browse?path=/etc 直接返回了 /private/etc。
+		// 目录浏览只在配置导出/启动目录时用得到,前端本来就拿得到令牌,故改需令牌。
+		isRead := r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions
+		if isRead && !tokenRequiredForRead(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// The token is resolved once at process bootstrap (MPACK_TOKEN env, or a
-		// generated random value persisted to <data>/runtime-token). Hardcoded
-		// fallbacks are forbidden by auth.md / decision D-8.
-		if token == "" {
-			apiError(w, r, http.StatusServiceUnavailable, "auth_not_configured", "write authentication is not configured")
-			return
-		}
-		provided := r.Header.Get("X-MPack-Token")
-		if len(token) != len(provided) || subtle.ConstantTimeCompare([]byte(token), []byte(provided)) != 1 {
-			apiError(w, r, http.StatusUnauthorized, "unauthorized", "write authentication failed")
+		if !writeTokenAccepted(w, r, token) {
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// writeTokenAccepted enforces the bootstrap token (MPACK_TOKEN env, or the
+// generated random value persisted to <data>/runtime-token). Hardcoded
+// fallbacks are forbidden by auth.md / decision D-8. It returns false after
+// writing the error response, so callers must stop.
+func writeTokenAccepted(w http.ResponseWriter, r *http.Request, token string) bool {
+	if token == "" {
+		apiError(w, r, http.StatusServiceUnavailable, "auth_not_configured", "write authentication is not configured")
+		return false
+	}
+	provided := r.Header.Get("X-MPack-Token")
+	if len(token) != len(provided) || subtle.ConstantTimeCompare([]byte(token), []byte(provided)) != 1 {
+		apiError(w, r, http.StatusUnauthorized, "unauthorized", "write authentication failed")
+		return false
+	}
+	return true
+}
+
+// tokenRequiredForRead lists read endpoints whose payload is sensitive enough to
+// require the token: an absolute local directory listing is not something a
+// LAN-bound workbench should hand to any unauthenticated client.
+func tokenRequiredForRead(path string) bool {
+	return path == "/api/fs/browse"
 }
 
 // Host 校验防的是 DNS rebinding:攻击者域名重绑到本机后,浏览器送来的 Host 是

@@ -98,6 +98,7 @@ async fn download_with_race(urls: &[String], item: &DownloadItem) -> Result<()> 
     let client = build_client()?;
     let mut handles = Vec::new();
 
+    let mut partials = Vec::new();
     for url in urls {
         let client = client.clone();
         let url = url.clone();
@@ -106,10 +107,18 @@ async fn download_with_race(urls: &[String], item: &DownloadItem) -> Result<()> 
         let partial_path = item
             .destination
             .with_extension(format!("partial.{}", short_hash(&url)));
+        partials.push(partial_path.clone());
         handles.push(tokio::spawn(async move {
             do_download_to(&client, &url, &partial_path, &item.label).await
         }));
     }
+
+    // 竞速语义：第一个成功且校验通过的源胜出后，落后的那些必须被取消，
+    // 它们写到一半的 .partial.<hash> 也必须删掉。之前只是 return，落败的
+    // 任务还在后台继续写，谁也不清理——实测一次 `java install --version 21`
+    // （145 个文件）在 runtime 目录里留下 141 个 .partial.*，等于白存半份 JRE。
+    let aborts: Vec<tokio::task::AbortHandle> =
+        handles.iter().map(|h| h.abort_handle()).collect();
 
     // 等待第一个成功的
     let mut last_error = None;
@@ -123,6 +132,15 @@ async fn download_with_race(urls: &[String], item: &DownloadItem) -> Result<()> 
                             fs::rename(&partial_path, &item.destination)
                                 .await
                                 .map_err(|e| LauncherError::Internal(format!("rename 失败: {}", e)))?;
+                            for a in &aborts {
+                                a.abort();
+                            }
+                            // 赢家的临时文件已经被 rename 掉了，清掉其余源的
+                            for p in &partials {
+                                if p.as_path() != partial_path.as_path() {
+                                    let _ = fs::remove_file(p).await;
+                                }
+                            }
                             return Ok(());
                         }
                         _ => {
@@ -139,6 +157,14 @@ async fn download_with_race(urls: &[String], item: &DownloadItem) -> Result<()> 
                     fs::rename(&partial_path, &item.destination)
                         .await
                         .map_err(|e| LauncherError::Internal(format!("rename 失败: {}", e)))?;
+                    for a in &aborts {
+                        a.abort();
+                    }
+                    for p in &partials {
+                        if p.as_path() != partial_path.as_path() {
+                            let _ = fs::remove_file(p).await;
+                        }
+                    }
                     return Ok(());
                 }
             }

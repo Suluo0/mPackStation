@@ -71,11 +71,9 @@ pub async fn install_vanilla(
 
     // 6. 校验完成
     Protocol::phase(protocol::phase::VERIFYING, "安装完成");
-    Protocol::success(serde_json::json!({
-        "version_id": version_id,
-        "message": "安装成功"
-    }));
-
+    // result 只由 main.rs 打一条（protocol.rs 与 docs/api/contract.md 的约定是
+    // 「整场只有一条 result」）。此前这里和 main 各打一条，Go 侧 scanStdout
+    // 恰好取最后一条才没暴露 —— 库函数只发 phase，不发 result。
     Ok(version_id.to_string())
 }
 
@@ -93,6 +91,7 @@ pub fn launch_game(
     java_path: Option<PathBuf>,
     max_memory_mb: Option<u32>,
     detach: bool,
+    log_file: Option<PathBuf>,
 ) -> Result<u32> {
     // 1. 加载版本 JSON
     Protocol::phase(protocol::phase::PREPARING, "正在准备启动");
@@ -113,14 +112,19 @@ pub fn launch_game(
             let mc_ver = version.inherits_from.as_deref().unwrap_or(version_id);
             let required_java = mc_version_to_java(mc_ver)?;
             let registry = JavaRegistry::detect();
-            match registry.find(required_java) {
-                Some(rt) => rt.executable.clone(),
-                None => {
-                    return Err(LauncherError::JavaNotFound {
-                        required: required_java,
-                    });
-                }
+            let rt = registry.find(required_java).ok_or(LauncherError::JavaNotFound {
+                required: required_java,
+            })?;
+            // registry.find 在「一个都不够格」时会回最高版本（JavaRegistry::find 的
+            // 兜底分支）。拿着 Java 17 去跑要求 21 的 1.21.1，游戏会在几毫秒内退出，
+            // 而内核这边回的是 success + pid —— 假成功。宁可在这里就报不兼容。
+            if rt.major_version < required_java {
+                return Err(LauncherError::JavaVersionIncompatible {
+                    found: format!("{} ({})", rt.version_string, rt.executable.display()),
+                    required: required_java,
+                });
             }
+            rt.executable.clone()
         }
     };
 
@@ -129,25 +133,23 @@ pub fn launch_game(
     let mut params = LaunchParams::offline(username, java_executable);
     params.max_memory_mb = max_memory_mb;
     let command = build_command(&version, minecraft_dir, &params)?;
+    // log_file 只在 detach 分支有意义（前台模式下游戏输出本来就接着终端）；
+    // 未指定时写到实例目录下的 launcher-launch.log，便于事后排查。
+    let log_file = match log_file {
+        Some(p) => Some(p),
+        None if detach => Some(minecraft_dir.join("launcher-launch.log")),
+        None => None,
+    };
 
     // 4. 启动
+    // 与 install_vanilla 同理：result 归 main.rs，这里只回 pid。
     if detach {
-        let pid = spawn_detached(&command, version_id)?;
-        Protocol::success(serde_json::json!({
-            "pid": pid,
-            "version_id": version_id,
-            "mode": "detached"
-        }));
+        let pid = spawn_detached(&command, version_id, log_file.as_deref())?;
         Ok(pid)
     } else {
         use crate::launch::GameProcess;
         let process = GameProcess::spawn(&command, version_id)?;
         let pid = process.id();
-        Protocol::success(serde_json::json!({
-            "pid": pid,
-            "version_id": version_id,
-            "mode": "foreground"
-        }));
         // 前台模式等待退出
         let status = process.wait()?;
         if !status.success() {

@@ -15,10 +15,10 @@ export function CommandPalette({open, onOpenChange}: Props) {
   const nav = useNavigate();
   const loc = useLocation();
   const [params, setParams] = useSearchParams();
-  const {packId} = usePackSummary();
+  const {packId, anchorPackId} = usePackSummary();
   const [focus, setFocus] = useFocus();
 
-  const commands = useMemo(() => pageCommands(packId), [packId]);
+  const commands = useMemo(() => pageCommands(anchorPackId), [anchorPackId]);
   const hits = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? commands.filter(c => c.label.toLowerCase().includes(q)) : commands;

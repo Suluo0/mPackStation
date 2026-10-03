@@ -1,6 +1,7 @@
 package service
 
 import (
+	"unicode"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -48,20 +49,22 @@ type UpdateModInput struct {
 	VersionID *string `json:"versionId"`
 	Status    *string `json:"status"`
 	Required  *bool   `json:"required"`
+	Category  *string `json:"category"`
 }
 type Mod struct {
 	ID                 string  `json:"id"`
 	CanonicalModID     string  `json:"canonicalModId"`
+	Category           string  `json:"category"`
 	CurrentSelectionID string  `json:"selectionId"`
-	PackID         string  `json:"packId"`
-	Source         string  `json:"source"`
-	ProjectID      *string `json:"projectId"`
-	VersionID      *string `json:"versionId"`
-	DisplayName    string  `json:"displayName"`
-	FileName       string  `json:"fileName"`
-	SHA1           *string `json:"sha1"`
-	Status         string  `json:"status"`
-	Required       bool    `json:"required"`
+	PackID             string  `json:"packId"`
+	Source             string  `json:"source"`
+	ProjectID          *string `json:"projectId"`
+	VersionID          *string `json:"versionId"`
+	DisplayName        string  `json:"displayName"`
+	FileName           string  `json:"fileName"`
+	SHA1               *string `json:"sha1"`
+	Status             string  `json:"status"`
+	Required           bool    `json:"required"`
 	// Mirror* name the pinned counterpart on the other platform (null when the
 	// mod is single-platform here). Versions are pinned at add time on both
 	// sides and never auto-updated.
@@ -81,17 +84,23 @@ type Lock struct {
 	CreatedAt      string `json:"createdAt"`
 }
 type Conflict struct {
-	ID                   string         `json:"id"`
-	PackID               string         `json:"packId"`
-	Fingerprint          string         `json:"fingerprint"`
-	Kind                 string         `json:"kind"`
-	Severity             string         `json:"severity"`
-	Status               string         `json:"status"`
-	Summary              string         `json:"summary"`
-	DetailPath           string         `json:"detailPath,omitempty"`
-	Detail               map[string]any `json:"detail,omitempty"`
-	CreatedAt, UpdatedAt string
-	ResolvedAt           *string `json:"resolvedAt,omitempty"`
+	ID          string `json:"id"`
+	PackID      string `json:"packId"`
+	Fingerprint string `json:"fingerprint"`
+	Kind        string `json:"kind"`
+	Severity    string `json:"severity"`
+	Status      string `json:"status"`
+	Summary     string `json:"summary"`
+	// detailPath / resolvedAt 不能带 omitempty：前端契约 (apps/web/src/api/mods.ts
+	// conflictSchema) 声明的是「字符串可为 null」,而 omitempty 会把空串/nil 整个键
+	// 省掉, zod 收到 undefined 直接判「接口数据结构不符合约定」, 整页依赖数据加载失败
+	// (截图实测: /packs/:id/dependencies 只有一行红色报错, 冲突列表全空)。
+	DetailPath string         `json:"detailPath"`
+	Detail     map[string]any `json:"detail,omitempty"`
+	// 时间字段必须显式打 tag：Go 默认导出 CreatedAt/UpdatedAt, 与全站 camelCase 不一致。
+	CreatedAt  string  `json:"createdAt"`
+	UpdatedAt  string  `json:"updatedAt"`
+	ResolvedAt *string `json:"resolvedAt"`
 }
 type PackHealth struct {
 	PackID          string `json:"packId"`
@@ -141,6 +150,11 @@ func (a *API) ModSearch(ctx context.Context, packID string, in ModSearchInput) (
 func (a *API) p5Adapter(name string) (provider.Adapter, error) {
 	ad, err := a.p5Registry().Get(name)
 	if err != nil {
+		// 注册表里没有这个 provider 名字 = 请求写错了,该给 400;
+		// 只有真·远端不可用才是 502。以前一律摊成 ErrProviderUnavailable。
+		if errors.Is(err, provider.ErrNotFound) {
+			return nil, ErrInvalidArgument
+		}
 		return nil, ErrProviderUnavailable
 	}
 	return ad, nil
@@ -162,7 +176,11 @@ func (a *API) ModVersions(ctx context.Context, packID, providerName, projectID s
 	if err != nil {
 		return nil, err
 	}
-	return ad.Versions(ctx, projectID)
+	v, err := ad.Versions(ctx, projectID)
+	if err != nil {
+		return nil, mapProviderError(err)
+	}
+	return v, nil
 }
 func mapProviderError(err error) error {
 	switch {
@@ -249,7 +267,12 @@ func (a *API) ModSearchAll(ctx context.Context, packID string, in ModSearchInput
 			defer wg.Done()
 			pctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 			defer cancel()
-			r, err := ad.Search(pctx, provider.SearchRequest{Query: in.Query, MCVersion: in.MCVersion, Loader: in.Loader, Cursor: in.Cursor, Limit: in.Limit})
+			// 复合排序需要足够的候选池：每平台至少取 25（同一次请求，不加请求数）
+			fetchLimit := in.Limit
+			if fetchLimit < 25 {
+				fetchLimit = 25
+			}
+			r, err := ad.Search(pctx, provider.SearchRequest{Query: in.Query, MCVersion: in.MCVersion, Loader: in.Loader, Cursor: in.Cursor, Limit: fetchLimit})
 			if err != nil {
 				slots[i].err = err
 				return
@@ -284,8 +307,32 @@ func (a *API) ModSearchAll(ctx context.Context, packID string, in ModSearchInput
 	}
 	identities = append(identities, baselineModIdentities()...)
 	out.Items = pairSearchItems(out.Items, identities)
-	// Deterministic merge: most-downloaded first, provider+name as tiebreak.
+	// slug 直取（模组搜索修复 2026-10-03）：平台相关度会埋掉 slug-only 正主
+	// （搜 ae2 出一堆附属，Applied Energistics 2 的标题不含 ae2）。
+	// 别名命中或查询本身像 slug 且结果里没有精确命中时，按 slug 直接拉一次。
+	if slug := expandModSearchAlias(in.Query); slug != "" {
+		out.Items = a.injectSlugMatch(ctx, slug, out.Items)
+	} else if candidate := strings.ToLower(strings.TrimSpace(in.Query)); candidate != "" && !strings.ContainsAny(candidate, " \t") {
+		out.Items = a.injectSlugMatch(ctx, candidate, out.Items)
+	}
+	// 复合排序：缩写/俗名优先（slug 精确 > 名称首词 > 名称分词前缀 > 名称包含 >
+	// slug 前缀 > slug 包含 > 摘要），下载量兜底，provider+name 定序。
+	// 别名注入的正主（精致存储→sophisticated-storage、aer→ae2）代表用户的
+	// 搜索意图本身，排在一切有机命中之前（95 分，仅次于 slug 精确 100）。
+	aliasSlug := expandModSearchAlias(in.Query)
 	sort.SliceStable(out.Items, func(i, j int) bool {
+		si, sj := modSearchScore(in.Query, out.Items[i].Project), modSearchScore(in.Query, out.Items[j].Project)
+		if aliasSlug != "" {
+			if strings.EqualFold(out.Items[i].Slug, aliasSlug) {
+				si = 95
+			}
+			if strings.EqualFold(out.Items[j].Slug, aliasSlug) {
+				sj = 95
+			}
+		}
+		if si != sj {
+			return si > sj
+		}
 		if out.Items[i].Downloads != out.Items[j].Downloads {
 			return out.Items[i].Downloads > out.Items[j].Downloads
 		}
@@ -296,6 +343,64 @@ func (a *API) ModSearchAll(ctx context.Context, packID string, in ModSearchInput
 	})
 	out.Total = len(out.Items)
 	return out, nil
+}
+
+/* modSearchScore：查询与一个平台项目的相关度分（大者优先）。 */
+func modSearchScore(query string, p provider.Project) int {
+	q := strings.ToLower(strings.TrimSpace(query))
+	slug := strings.ToLower(p.Slug)
+	name := strings.ToLower(p.Name)
+	switch {
+	case q == "":
+		return 50
+	case slug == q:
+		return 100
+	// slug 模糊容错（别名注入的正主常差一个字符）：aer → ae2
+	case len([]rune(q)) >= 3 && levenshtein(slug, q) <= 1:
+		return 85
+	case strings.HasPrefix(name, q):
+		return 90
+	}
+	for _, tok := range strings.FieldsFunc(name, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		if strings.HasPrefix(tok, q) {
+			return 80
+		}
+	}
+	switch {
+	case strings.HasPrefix(slug, q):
+		return 70
+	case strings.Contains(name, q):
+		return 60
+	case strings.Contains(slug, q):
+		return 50
+	case p.Summary != "" && strings.Contains(strings.ToLower(p.Summary), q):
+		return 20
+	}
+	return 10
+}
+
+/* injectSlugMatch：结果里没有 slug 精确命中时，按 slug 直取 Modrinth 项目并置顶。
+   网络失败静默放弃（搜索本身已经给出可用结果），错误不外泄。 */
+func (a *API) injectSlugMatch(ctx context.Context, slug string, items []ModSearchAllItem) []ModSearchAllItem {
+	if slug == "" {
+		return items
+	}
+	for _, it := range items {
+		if strings.EqualFold(it.Slug, slug) {
+			return items
+		}
+	}
+	ad, err := a.p5Registry().Get(string(provider.Modrinth))
+	if err != nil {
+		return items
+	}
+	pctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	p, err := ad.Project(pctx, slug)
+	if err != nil {
+		return items
+	}
+	return append([]ModSearchAllItem{{Provider: string(provider.Modrinth), Project: p}}, items...)
 }
 
 // normalizeModName folds a mod name for cross-platform comparison: case,
@@ -404,7 +509,7 @@ func modDTO(m store.PackModRecord) Mod {
 	if origin == "" {
 		origin = "manual"
 	}
-	return Mod{ID: m.ID, CanonicalModID: m.ModID, CurrentSelectionID: m.CurrentSelectionID, PackID: m.PackID, Source: m.Source, ProjectID: strPtr(m.ProjectID), VersionID: strPtr(m.VersionID), DisplayName: m.DisplayName, FileName: m.FileName, SHA1: strPtr(m.SHA1), Status: m.Status, Required: m.Required, MirrorSource: strPtr(m.MirrorSource), MirrorProjectID: strPtr(m.MirrorProjectID), Origin: origin, AddedAt: iso(m.AddedAt), UpdatedAt: iso(m.UpdatedAt)}
+	return Mod{ID: m.ID, Category: m.Category, CanonicalModID: m.ModID, CurrentSelectionID: m.CurrentSelectionID, PackID: m.PackID, Source: m.Source, ProjectID: strPtr(m.ProjectID), VersionID: strPtr(m.VersionID), DisplayName: m.DisplayName, FileName: m.FileName, SHA1: strPtr(m.SHA1), Status: m.Status, Required: m.Required, MirrorSource: strPtr(m.MirrorSource), MirrorProjectID: strPtr(m.MirrorProjectID), Origin: origin, AddedAt: iso(m.AddedAt), UpdatedAt: iso(m.UpdatedAt)}
 }
 
 // otherProviderOf names the opposite catalog platform, or "" for local mods.
@@ -541,11 +646,13 @@ func (a *API) addPackMod(ctx context.Context, packID string, in AddModInput, req
 		return Mod{}, mapProviderError(err)
 	}
 	var extracted *ExtractedContent
+	dlSHA512 := ""
 	if len(dl.Content) > 0 {
-		actualSHA1, actualSHA256, verifyErr := validateMeasuredDownload(dl.SHA1, dl.SHA256, dl.Content)
+		actualSHA1, actualSHA256, actualSHA512, verifyErr := validateMeasuredDownload(dl.SHA1, dl.SHA256, dl.Content)
 		if verifyErr != nil {
 			return Mod{}, ErrInvalidSHA1
 		}
+		dlSHA512 = actualSHA512
 		dl.SHA1, dl.SHA256, dl.Size = actualSHA1, actualSHA256, int64(len(dl.Content))
 		extracted, err = ExtractModContent(bytes.NewReader(dl.Content))
 		if err != nil {
@@ -579,7 +686,7 @@ func (a *API) addPackMod(ctx context.Context, packID string, in AddModInput, req
 			return err
 		}
 		if extracted != nil {
-			selection := verifiedPackSelection(m, extracted.Version, dl.SHA256, dl.DownloadURL, dl.Size, now)
+			selection := verifiedPackSelection(m, extracted.Version, dl.SHA256, dlSHA512, dl.DownloadURL, dl.Size, now)
 			selection.ProjectSlug = meta.Project.Slug
 			selection.ReleaseName = meta.Version.VersionNumber
 			if err := tx.EnsurePackSelection(ctx, selection); err != nil {
@@ -708,6 +815,9 @@ func (a *API) UpdatePackMod(ctx context.Context, packID, modID string, in Update
 	if !ok {
 		return Mod{}, store.ErrNotFound
 	}
+	if in.Category != nil {
+		found.Category = strings.TrimSpace(*in.Category)
+	}
 	if in.VersionID != nil {
 		if strings.TrimSpace(*in.VersionID) == "" {
 			return Mod{}, ErrInvalidArgument
@@ -727,7 +837,7 @@ func (a *API) UpdatePackMod(ctx context.Context, packID, modID string, in Update
 			}
 			var selection *store.PackScopedSelection
 			if len(dl.Content) > 0 {
-				actualSHA1, actualSHA256, verifyErr := validateMeasuredDownload(dl.SHA1, dl.SHA256, dl.Content)
+				actualSHA1, actualSHA256, actualSHA512, verifyErr := validateMeasuredDownload(dl.SHA1, dl.SHA256, dl.Content)
 				if verifyErr != nil {
 					return Mod{}, ErrInvalidSHA1
 				}
@@ -737,7 +847,7 @@ func (a *API) UpdatePackMod(ctx context.Context, packID, modID string, in Update
 				}
 				dl.SHA1, dl.SHA256, dl.Size = actualSHA1, actualSHA256, int64(len(dl.Content))
 				found.VersionID, found.SHA1, found.FileName, found.DisplayName, found.Status = *in.VersionID, actualSHA1, dl.FileName, meta.Project.Name, "installed"
-				prepared := verifiedPackSelection(found, extracted.Version, actualSHA256, dl.DownloadURL, dl.Size, time.Now().UnixMilli())
+				prepared := verifiedPackSelection(found, extracted.Version, actualSHA256, actualSHA512, dl.DownloadURL, dl.Size, time.Now().UnixMilli())
 				prepared.ProjectSlug, prepared.ReleaseName = meta.Project.Slug, meta.Version.VersionNumber
 				selection = &prepared
 			} else {
@@ -822,6 +932,11 @@ func (a *API) ResolvePack(ctx context.Context, packID, requestID string) (Lock, 
 	if err := a.ready(); err != nil {
 		return Lock{}, err
 	}
+	// Fail as 404 pack_not_found: without this the empty member list flows on and
+	// the lock insert trips the packs FK, surfacing as 500 internal_error.
+	if _, err := a.repo.GetPack(ctx, packID); err != nil {
+		return Lock{}, err
+	}
 	mods, err := a.repo.ListPackMods(ctx, packID)
 	if err != nil {
 		return Lock{}, err
@@ -830,6 +945,8 @@ func (a *API) ResolvePack(ctx context.Context, packID, requestID string) (Lock, 
 	if err != nil {
 		return Lock{}, err
 	}
+	// 缺依赖的冲突要等人话名字：循环里先收集，结束后统一解析显示名再生成（见 explainMissingDependencies）。
+	var pendingMissing []missingDependency
 	sort.Slice(mods, func(i, j int) bool { return mods[i].ID < mods[j].ID })
 	sort.Slice(members, func(i, j int) bool { return members[i].ID < members[j].ID })
 	lockID := newID("lock")
@@ -848,12 +965,22 @@ func (a *API) ResolvePack(ctx context.Context, packID, requestID string) (Lock, 
 	for _, m := range mods {
 		ad, e := a.p5Adapter(m.Source)
 		if e != nil {
-			confs = append(confs, conflict(m, "provider_unavailable", "Provider unavailable", e.Error()))
+			// 平台不可达 / 这个模组没有平台来源，是**网络与配置态**，不是包本身的缺陷。
+			// 写成 error 会让构建闸门（O20）把「Modrinth 此刻打不开」变成「这个包不许
+			// 构建」，用户在界面上既看不懂也修不了，只能反复 resolve 碰运气。因此固定
+			// warning：列表里照样留痕（本轮没校验过它的依赖），但不拦构建。
+			c := conflict(m, "provider_unavailable",
+				fmt.Sprintf("平台暂不可用，本轮未校验依赖：%s", displayOrID(m.DisplayName, m.ID)), e.Error())
+			c.Severity = "warning"
+			confs = append(confs, c)
 			continue
 		}
 		meta, e := ad.Metadata(ctx, m.ProjectID, m.VersionID)
 		if e != nil {
-			confs = append(confs, conflict(m, "dependency", "Metadata unavailable", e.Error()))
+			c := conflict(m, "provider_unavailable",
+				fmt.Sprintf("模组元数据拉取失败，本轮未校验依赖：%s", displayOrID(m.DisplayName, m.ID)), e.Error())
+			c.Severity = "warning"
+			confs = append(confs, c)
 			continue
 		}
 		for _, d := range meta.Dependencies {
@@ -861,12 +988,15 @@ func (a *API) ResolvePack(ctx context.Context, packID, requestID string) (Lock, 
 			drec := store.ModDependencyRecord{ID: dID, PackID: packID, FromPackModID: m.ID, ToProjectID: d.ProjectID, ToVersionID: d.VersionID, Type: normalizeDepType(d.Kind), Constraint: d.Constraint, Reason: d.Reason, CreatedAt: time.Now().UnixMilli()}
 			deps = append(deps, drec)
 			snap.Dependencies = append(snap.Dependencies, drec)
-			if !hasProject(mods, d.ProjectID) {
-				c := conflict(m, "dependency", "Missing dependency "+d.ProjectID, d.Reason)
-				confs = append(confs, c)
-				snap.Conflicts = append(snap.Conflicts, conflictDTO(c))
+			present := hasProject(mods, d.ProjectID)
+			if dependencyIsMissing(drec.Type, present) {
+				pendingMissing = append(pendingMissing, missingDependency{from: m, dep: drec})
 			}
 		}
+	}
+	for _, c := range a.explainMissingDependencies(ctx, mods, pendingMissing) {
+		confs = append(confs, c)
+		snap.Conflicts = append(snap.Conflicts, conflictDTO(c))
 	}
 	// 兼容知识库: 已知问题未被自动修复的(无解法或解法装不上)进冲突列表。
 	if packRec, e := a.repo.GetPack(ctx, packID); e == nil {
@@ -899,6 +1029,81 @@ func (a *API) ResolvePack(ctx context.Context, packID, requestID string) (Lock, 
 	_ = requestID
 	return Lock{ID: lock.ID, PackID: packID, SchemaVersion: 1, SnapshotJSON: lock.SnapshotJSON, SnapshotSHA256: lock.SnapshotSHA256, CreatedAt: iso(lock.CreatedAt)}, nil
 }
+
+// missingDependency 是一条「包内模组声明了依赖，但依赖目标不在包里」的待解释记录。
+type missingDependency struct {
+	from store.PackModRecord
+	dep  store.ModDependencyRecord
+}
+
+// explainMissingDependencies 把缺依赖写成用户能看懂的冲突摘要。
+//
+// 旧实现直接印 "Missing dependency lhGA9TYQ"：那是 Modrinth/CurseForge 的外部项目 ID，
+// 用户在界面上既看不懂也搜不到（链路测试缺陷 O8）。这里优先用 platform_projects 里
+// 见过的显示名；查不到名字时才保留 ID，并明确写清那是外部 ID，方便用户拿去搜索。
+// 名字解析只是给文案加分，失败不该阻塞锁定流程，因此降级为空表。
+func (a *API) explainMissingDependencies(ctx context.Context, packMods []store.PackModRecord, pending []missingDependency) []store.ConflictRecord {
+	if len(pending) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(pending))
+	for _, pm := range pending {
+		ids = append(ids, pm.dep.ToProjectID)
+	}
+	names, err := a.repo.DisplayNameForProjects(ctx, ids)
+	if err != nil {
+		names = map[string]string{}
+	}
+	out := make([]store.ConflictRecord, 0, len(pending))
+	for _, pm := range pending {
+		target := names[pm.dep.ToProjectID]
+		resolved := target != ""
+		if !resolved {
+			target = "外部 ID " + pm.dep.ToProjectID + "（本地未收录，可按该 ID 搜索）"
+		}
+		from := displayOrID(pm.from.DisplayName, pm.from.ID)
+		var c store.ConflictRecord
+		switch pm.dep.Type {
+		case "incompatible":
+			c = conflict(pm.from, "dependency", fmt.Sprintf("模组互斥：%s 与 %s 不能同时安装", from, target), pm.dep.Reason)
+		case "optional":
+			c = conflict(pm.from, "dependency", fmt.Sprintf("可选依赖未安装：%s 可配合 %s 使用", from, target), pm.dep.Reason)
+			c.Severity = "warning"
+		default:
+			c = conflict(pm.from, "dependency", fmt.Sprintf("缺少依赖模组：%s 需要 %s", from, target), pm.dep.Reason)
+		}
+		if c.Detail == nil {
+			c.Detail = map[string]any{}
+		}
+		c.Detail["missingProjectID"] = pm.dep.ToProjectID
+		c.Detail["missingResolved"] = resolved
+		c.Detail["dependencyType"] = pm.dep.Type
+		out = append(out, c)
+	}
+	return out
+}
+
+// dependencyIsMissing 决定一条依赖算不算「包里缺东西」（O24）。
+//
+//   - embedded：已经打进宿主 jar，单独再装反而是重复文件，不算缺失；
+//   - incompatible：语义相反——它在包里才是冲突，不在包里是好事；
+//   - optional / required（含空值）：不在包里才算缺失，但 optional 只出 warning，
+//     不该像 required 那样把构建闸门堵死。
+//
+// 以前四类一律「缺少依赖模组」+ severity=error：JEI 的 mezz_config 是 embedded，
+// 被当成缺失，构建闸门（assertPackBuildable）因此永远拦死，用户照着提示也补不出
+// 一个能构建的包。
+func dependencyIsMissing(depType string, presentInPack bool) bool {
+	switch depType {
+	case "embedded":
+		return false
+	case "incompatible":
+		return presentInPack
+	default:
+		return !presentInPack
+	}
+}
+
 func normalizeDepType(v string) string {
 	switch v {
 	case "optional", "incompatible", "embedded":
@@ -916,7 +1121,14 @@ func hasProject(mods []store.PackModRecord, p string) bool {
 	return false
 }
 func conflict(m store.PackModRecord, kind, summary, reason string) store.ConflictRecord {
-	if kind != "dependency" && kind != "version" && kind != "loader" && kind != "duplicate" && kind != "crash" {
+	// 白名单必须和 conflicts.kind 的 CHECK 枚举（迁移 0024）逐字对齐。
+	// 以前这里少写了 provider_unavailable/known_issue：未知 kind 被悄悄改写成
+	// 'dependency' 才落进库，于是「Modrinth 此刻打不开」在库里长得像「这个包有依赖
+	// 问题」，界面上分不清、构建闸门（O20）也照着 error 级依赖冲突一路拦死。
+	// 不在枚举里的 kind 仍然兜底成 'dependency'，但调用方不该再依赖这个兜底。
+	switch kind {
+	case "dependency", "version", "loader", "duplicate", "crash", "known_issue", "provider_unavailable":
+	default:
 		kind = "dependency"
 	}
 	return store.ConflictRecord{ID: newID("conflict"), PackID: m.PackID, Fingerprint: m.ID + ":" + kind + ":" + summary, Kind: kind, Severity: "error", Summary: summary, Detail: map[string]any{"reason": reason}, CreatedAt: time.Now().UnixMilli(), UpdatedAt: time.Now().UnixMilli()}

@@ -23,7 +23,7 @@ func TestItemCatalogSchemaRelationsAndCascade(t *testing.T) {
 		t.Fatalf("unexpected initial state %d/%d/%s", source, built, status)
 	}
 	statements := []string{
-		`INSERT INTO pack_catalog_items VALUES('p','minecraft:iron_ingot','model','minecraft:1.21.1','assets/minecraft/models/item/iron_ingot.json','ready')`,
+		`INSERT INTO pack_catalog_items(pack_id,item_id,evidence,source,model_path,icon_status,icon_reason) VALUES('p','minecraft:iron_ingot','model','minecraft:1.21.1','assets/minecraft/models/item/iron_ingot.json','ready','')`,
 		`INSERT INTO pack_catalog_item_names VALUES('p','minecraft:iron_ingot','zh_cn','铁锭','item.minecraft.iron_ingot','minecraft:1.21.1')`,
 		`INSERT INTO pack_catalog_item_icons VALUES('p','minecraft:iron_ingot','image/png',x'89504E47',32,32,'generated')`,
 		`INSERT INTO pack_catalog_blocks VALUES('p','minecraft:iron_block','blockstate','minecraft:1.21.1','assets/minecraft/blockstates/iron_block.json')`,

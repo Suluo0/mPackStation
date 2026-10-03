@@ -156,8 +156,18 @@ pub async fn download_java(
 
     tracing::info!("Java {} 下载完成，共 {} 个文件", major_version, file_count);
 
+    // Mojang 的 runtime 清单只给 URL+sha1，没有 POSIX mode。逐文件写盘后
+    // bin/ 下全是 0644（实测 bin/java 不可执行），JavaRegistry::detect_from
+    // 跑不动它就等于这个 runtime 从来没被装上。这里按 bundle 约定补执行位。
+    make_bin_executable(&component_dir)?;
+
     // 5. 返回 java 可执行文件路径
-    let java_exe = component_dir.join("bin").join(java_executable_name());
+    // 按平台布局找可执行文件：macOS 上 Mojang 的 runtime 是 .bundle，
+    // 只拼 bin/java 会「下载完 145 个文件却说找不到可执行文件」。
+    let java_exe = crate::java::detect::find_java_exec_in(&component_dir)
+        .ok_or_else(|| LauncherError::Internal(format!(
+            "Java 下载完成但未找到可执行文件: {}（在 {} 下找 bin/java、Contents/Home/bin/java、jre.bundle/Contents/Home/bin/java）",
+            java_executable_name(), component_dir.display())))?;
     if !java_exe.is_file() {
         return Err(LauncherError::Internal(format!(
             "Java 下载完成但未找到可执行文件: {}",
@@ -289,6 +299,41 @@ fn parse_java_major(version: &str) -> u32 {
             .and_then(|s| s.parse().ok())
             .unwrap_or(0)
     }
+}
+
+/// 给 runtime 的 bin/ 目录补回可执行位（仅 Unix；Windows 看的是 .exe）。
+///
+/// 只处理 bin/ 这一层，不递归全目录：lib/ 下的 .dylib/.so 不需要执行位，
+/// 给它们 chmod 反而会把签名的 bundle 改动得更多。
+fn make_bin_executable(component_dir: &Path) -> Result<()> {
+    if cfg!(windows) {
+        return Ok(());
+    }
+    use std::os::unix::fs::PermissionsExt;
+    let mut count = 0u32;
+    for base in [
+        component_dir.join("bin"),
+        component_dir.join("jre.bundle").join("Contents").join("Home").join("bin"),
+        component_dir.join("Contents").join("Home").join("bin"),
+    ] {
+        let Ok(entries) = std::fs::read_dir(&base) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let mode = std::fs::metadata(&path)?.permissions().mode() & 0o777;
+            let want = mode | 0o111;
+            if want != mode {
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(want))?;
+                count += 1;
+            }
+        }
+    }
+    tracing::info!("给 {} 个 Java 可执行文件补了执行位", count);
+    Ok(())
 }
 
 /// 当前平台的 runtime 清单 key

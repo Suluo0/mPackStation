@@ -1,7 +1,9 @@
-import {ArrowRightOutlined, CompassOutlined, ExperimentOutlined, ImportOutlined, PlusOutlined, RocketOutlined, ThunderboltOutlined} from '@ant-design/icons';
+import {ArrowRightOutlined, ExperimentOutlined, ImportOutlined, PlusOutlined, RocketOutlined, ThunderboltOutlined} from '@ant-design/icons';
 import {WorkbenchCard, WorkbenchButton} from '../../ui/workbench/Workbench';
 
-/* 空态 · 迎新布局：Hero + 三入口卡 + 四步流程条 + 上手清单。 */
+/* 空态 · 迎新布局：Hero + 入口卡 + 四步流程条 + 上手清单。
+   入口只保留后端真实支持的两种（新建 / 导入）；曾有的「浏览示例包」只会弹一句
+   「后续版本提供」，是假 affordance，已删。 */
 
 const starterPacks = [
   {icon: <ThunderboltOutlined/>, tone: 'ember', title: '轻量生存', desc: '从探索、建造和 QoL 模组开始', tags: ['低门槛', '1.20.1']},
@@ -9,10 +11,9 @@ const starterPacks = [
   {icon: <RocketOutlined/>, tone: 'ochre', title: '冒险与任务', desc: '用结构、战斗和任务书组织旅程', tags: ['任务驱动', 'Fabric']},
 ];
 
-export function OnboardingView({onCreate, onImport, onDemo}: {
+export function OnboardingView({onCreate, onImport}: {
   onCreate: () => void;
   onImport: () => void;
-  onDemo: () => void;
 }) {
   return (
     <div className="db-welcome-regions">
@@ -24,27 +25,27 @@ export function OnboardingView({onCreate, onImport, onDemo}: {
           <p className="db-hero-sub">搜索模组、锁定版本、编排内容，再一键打包。所有设计都在这里完成，不必反复启动游戏验证。</p>
           <div className="db-hero-actions">
             <WorkbenchButton tone="primary" size="large" icon={<PlusOutlined/>} onClick={onCreate}>新建第一个整合包</WorkbenchButton>
-            <button className="db-hero-text-action" onClick={onDemo}>先看看示例 <ArrowRightOutlined /></button>
+            <button className="db-hero-text-action" onClick={onImport}>导入现有整合包 <ArrowRightOutlined /></button>
           </div>
           <div className="db-hero-proof"><span>✦</span> 依赖自动锁定&nbsp;&nbsp;·&nbsp;&nbsp;冲突实时提示&nbsp;&nbsp;·&nbsp;&nbsp;内容在线编辑</div>
           </div>
           <div className="db-hero-art" aria-label="整合包工作台预览">
           <div className="db-art-glow" />
           <div className="db-art-window">
-            <div className="db-art-window-top"><span /><span /><span /><b>新整合包 / 工作台</b></div>
+            <div className="db-art-window-top"><span /><span /><span /><b>界面示意 · 工作台</b></div>
             <div className="db-art-window-body">
               <div className="db-art-cover"><div className="db-art-cover-sun" /><div className="db-art-cover-mountain" /><strong>WILD<br />FRONTIER</strong><small>1.20.1 · Fabric</small></div>
               <div className="db-art-panel">
                 <span className="db-art-kicker">正在设计</span>
                 <strong>轻量生存</strong>
                 <div className="db-art-bar"><i /></div>
-                <small>已选择 24 个模组</small>
+                <small>模组清单编辑中</small>
                 <div className="db-art-chips"><em>探索</em><em>建造</em><em>QoL</em></div>
               </div>
             </div>
           </div>
-          <div className="db-art-float db-art-float-top"><span>✓</span> 依赖已锁定</div>
-          <div className="db-art-float db-art-float-bottom"><span>24</span> 个模组正在设计</div>
+          <div className="db-art-float db-art-float-top"><span>✓</span> 依赖锁定</div>
+          <div className="db-art-float db-art-float-bottom"><span>≡</span> 模组清单</div>
           </div>
         </div>
       </section>
@@ -62,12 +63,6 @@ export function OnboardingView({onCreate, onImport, onDemo}: {
             <span className="db-h2">导入现有整合包</span>
             <span className="db-muted">从 CurseForge、Modrinth 或本地 zip 接着改。</span>
             <WorkbenchButton tone="secondary" className="mc-btn-blue">导入 <ArrowRightOutlined/></WorkbenchButton>
-          </WorkbenchCard>
-          <WorkbenchCard className="db-entry-card db-entry-card-compact" onClick={onDemo}>
-            <span className="db-entry-icon db-entry-icon-demo"><CompassOutlined/></span>
-            <span className="db-h2">浏览示例包</span>
-            <span className="db-muted">看看一个设计完成的整合包如何组织。</span>
-            <WorkbenchButton tone="quiet" className="mc-btn-green">查看 <ArrowRightOutlined/></WorkbenchButton>
           </WorkbenchCard>
         </div>
       </div>
@@ -89,7 +84,6 @@ export function OnboardingView({onCreate, onImport, onDemo}: {
                 <p>{pack.desc}</p>
                 <div className="db-starter-tags">{pack.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
               </div>
-              <ArrowRightOutlined className="db-starter-arrow" />
             </article>
           ))}
         </div>

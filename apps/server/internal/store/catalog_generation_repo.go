@@ -155,7 +155,7 @@ func (r *Repository) PublishCatalogGeneration(ctx context.Context, packID string
 			if err := tx.registerScopedFile(ctx, PackScopedFile{ID: fileID, SHA256: shaHex, SizeBytes: int64(len(icon.Data)), MediaType: icon.Mime, Verified: true}, catalog.BuiltAt); err != nil {
 				return err
 			}
-			if _, err := tx.db.ExecContext(ctx, `INSERT INTO catalog_icons(pack_id,generation_id,key_id,view_kind,status,file_id,width,height,mime,source_kind,renderer_version,input_sha256) VALUES(?,?,?,'inventory','ready',?,?,?,?,?,'item-icon-v2',?)`, packID, generationID, keyID, fileID, icon.Width, icon.Height, icon.Mime, icon.Source, shaHex); err != nil {
+			if _, err := tx.db.ExecContext(ctx, `INSERT INTO catalog_icons(pack_id,generation_id,key_id,view_kind,status,file_id,width,height,mime,source_kind,renderer_version,input_sha256) VALUES(?,?,?,'inventory','ready',?,?,?,?,?,'item-icon-v3',?)`, packID, generationID, keyID, fileID, icon.Width, icon.Height, icon.Mime, icon.Source, shaHex); err != nil {
 				return err
 			}
 			var definitionID string

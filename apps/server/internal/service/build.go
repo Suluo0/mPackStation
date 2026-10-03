@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,6 +24,9 @@ var (
 	// ErrExportDirNotAllowed indicates that the destination was not explicitly
 	// registered as an approved export directory.
 	ErrExportDirNotAllowed = errors.New("export directory is not allowed")
+	// ErrExportDirConflict means this directory is already approved under
+	// another name; the caller must reuse that name or pick another folder.
+	ErrExportDirConflict = errors.New("export directory already approved under another name")
 	// ErrDeliveryBlocked means at least one persisted delivery gate is blocked.
 	ErrDeliveryBlocked = errors.New("delivery check blocked")
 	// ErrArtifactMissing indicates a database artifact whose file disappeared.
@@ -169,7 +173,13 @@ func (a *API) RegisterExportDirectory(ctx context.Context, name, directory strin
 		return ErrExportDirNotAllowed
 	}
 	now := time.Now().UnixMilli()
-	return a.repo.RegisterExportDir(ctx, store.ExportDirRecord{Name: name, AbsolutePath: abs, MarkerVerifiedAt: now, CreatedAt: now})
+	err = a.repo.RegisterExportDir(ctx, store.ExportDirRecord{Name: name, AbsolutePath: abs, MarkerVerifiedAt: now, CreatedAt: now})
+	if err != nil && IsConflict(err) {
+		// 名字不同但路径已被批准（或同名换路径）：这是可预期的用户错误，
+		// 不能像之前那样让 sqlite 的 UNIQUE 报错冒成 500。
+		return fmt.Errorf("%w: %s", ErrExportDirConflict, err)
+	}
+	return err
 }
 
 // ListDeliveryChecks returns persisted checks for a pack version.
@@ -280,9 +290,22 @@ func (a *API) BuildPack(ctx context.Context, in BuildInput) (BuildResult, error)
 			return BuildResult{}, nerr
 		}
 		providedHash := hashJSON(provided)
-		canonicalLockHash := hashJSON([]byte(lock.SnapshotJSON))
-		if providedHash != lock.SnapshotSHA256 && providedHash != canonicalLockHash {
-			return BuildResult{}, ErrInvalidBuildInput
+		// 两侧都要归一化再比。存量的 SnapshotJSON 是结构体声明顺序
+		// （schemaVersion/packId/mods/dependencies/conflicts），而调用方按提示
+		// 先 GET /locks 再把 snapshot 原样 POST 回来时，服务端会把它当 map 重排成
+		// 键序，字节不同 → 哈希不同 → 判「快照不一致」。结果是版本一旦绑上锁就
+		// 永远构建不出去。归一化后比对，同时保留与原始字节/入库 SHA256 的兼容比较。
+		canonicalStored := []byte(lock.SnapshotJSON)
+		if normalized, serr := normalizeSnapshot(canonicalStored); serr == nil {
+			canonicalStored = normalized
+		}
+		canonicalLockHash := hashJSON(canonicalStored)
+		if providedHash != canonicalLockHash && providedHash != lock.SnapshotSHA256 {
+			// 以前这里塌成裸 400 invalid_argument，调用方看不出是"版本绑定的锁快照没带上/不一致"。
+			return BuildResult{}, &DomainError{Status: 422, Code: "build_lock_mismatch",
+				Message: "该版本已绑定锁快照 " + version.LockID.String +
+					"，构建必须带一致的 lockSnapshot（先 GET /api/packs/{packId}/locks 取回再原样提交）",
+				Details: map[string]any{"lockId": version.LockID.String, "providedHash": providedHash}}
 		}
 	}
 	dir, err := a.repo.GetExportDir(ctx, in.ExportDirName)
@@ -291,6 +314,29 @@ func (a *API) BuildPack(ctx context.Context, in BuildInput) (BuildResult, error)
 	}
 	if err := verifyRegisteredExportDir(dir.AbsolutePath); err != nil {
 		return BuildResult{}, ErrExportDirNotAllowed
+	}
+
+	// 调用方没有自带 files[] 时，由包的权威清单装配出真正的 .mrpack。
+	artifactKind := "zip"
+	artifactExt := ".zip"
+	if len(in.Files) == 0 {
+		if err := a.assertPackBuildable(ctx, in.PackID); err != nil {
+			return BuildResult{}, err
+		}
+		pack, perr := a.repo.GetPack(ctx, in.PackID)
+		if perr != nil {
+			if IsNotFound(perr) {
+				return BuildResult{}, NotFoundError("pack_not_found", "pack not found")
+			}
+			return BuildResult{}, perr
+		}
+		assembled, aerr := a.assembleFromPackAuthority(ctx, pack, version)
+		if aerr != nil {
+			return BuildResult{}, aerr
+		}
+		in.Files = assembled
+		artifactKind = "mrpack"
+		artifactExt = ".mrpack"
 	}
 
 	normalized, fingerprint, inputRows, checks, err := buildManifest(in, a.nowMillis())
@@ -311,7 +357,7 @@ func (a *API) BuildPack(ctx context.Context, in BuildInput) (BuildResult, error)
 			return BuildResult{}, ErrDeliveryBlocked
 		}
 	}
-	if old, err := a.repo.GetArtifactByFingerprint(ctx, in.PackID, in.PackVersionID, "zip", fingerprint); err == nil {
+	if old, err := a.repo.GetArtifactByFingerprint(ctx, in.PackID, in.PackVersionID, artifactKind, fingerprint); err == nil {
 		if old.Status != "ready" {
 			return BuildResult{}, ErrArtifactMissing
 		}
@@ -327,9 +373,17 @@ func (a *API) BuildPack(ctx context.Context, in BuildInput) (BuildResult, error)
 	// artifact row exists until the rename succeeds, and it makes a failed run
 	// diagnosable after restart.
 	if err := a.repo.RecordBuildInputs(ctx, in.PackID, in.PackVersionID, inputRows, checks); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			// 同一版本已经用另一份输入构建过。塌成裸 409 "resource conflict" 时，
+			// 前端只能显示"资源冲突"，用户不知道要改哪一个快照。
+			return BuildResult{}, &DomainError{Status: 409, Code: "build_input_conflict",
+				Message: "该版本已按另一份构建输入记录在案，构建输入不可静默变更：请新建版本或提交与首次一致的快照",
+				Details: map[string]any{"packVersionId": in.PackVersionID},
+				Wrapped: err}
+		}
 		return BuildResult{}, err
 	}
-	fileName := safeVersionName(version.Version) + "-" + fingerprint[:16] + ".zip"
+	fileName := safeVersionName(version.Version) + "-" + fingerprint[:16] + artifactExt
 	tmp, err := os.CreateTemp(dir.AbsolutePath, ".mpackstation-build-*.tmp")
 	if err != nil {
 		return BuildResult{}, ErrExportDirNotAllowed
@@ -357,7 +411,7 @@ func (a *API) BuildPack(ctx context.Context, in BuildInput) (BuildResult, error)
 	finalPath := filepath.Join(dir.AbsolutePath, fileName)
 	if err := os.Rename(tmpName, finalPath); err != nil {
 		// Another builder may have committed the same deterministic artifact.
-		if existing, eerr := a.repo.GetArtifactByFingerprint(ctx, in.PackID, in.PackVersionID, "zip", fingerprint); eerr == nil {
+		if existing, eerr := a.repo.GetArtifactByFingerprint(ctx, in.PackID, in.PackVersionID, artifactKind, fingerprint); eerr == nil {
 			if verr := verifyArtifactFile(existing.Path, existing.SHA256, existing.SizeBytes); verr == nil {
 				return BuildResult{Artifact: artifactDTO(existing), SourceFingerprint: fingerprint}, nil
 			}
@@ -370,7 +424,7 @@ func (a *API) BuildPack(ctx context.Context, in BuildInput) (BuildResult, error)
 		_ = os.Remove(finalPath)
 		return BuildResult{}, ErrExportDirNotAllowed
 	}
-	row := store.ArtifactRecord{ID: newID("artifact"), PackID: in.PackID, PackVersionID: in.PackVersionID, TaskID: in.TaskID, Path: finalPath, FileName: fileName, SHA256: sha, SizeBytes: size, SourceFingerprint: fingerprint, Status: "ready", Kind: "zip", CreatedAt: a.nowMillis()}
+	row := store.ArtifactRecord{ID: newID("artifact"), PackID: in.PackID, PackVersionID: in.PackVersionID, TaskID: in.TaskID, Path: finalPath, FileName: fileName, SHA256: sha, SizeBytes: size, SourceFingerprint: fingerprint, Status: "ready", Kind: artifactKind, CreatedAt: a.nowMillis()}
 	registered, err := a.repo.RegisterArtifact(ctx, row)
 	if err != nil {
 		_ = os.Remove(finalPath)
@@ -403,7 +457,10 @@ type normalizedBuildFile struct {
 }
 
 func validateBuildInput(in BuildInput) error {
-	if strings.TrimSpace(in.PackID) == "" || strings.TrimSpace(in.PackVersionID) == "" || strings.TrimSpace(in.ExportDirName) == "" || len(in.Files) == 0 {
+	// files 可以为空：为空时由 BuildPack 走包内权威清单装配（见 build_mrpack.go）。
+	// 这里曾经要求 len(in.Files) > 0，等于把「谁来决定包里有什么」推给调用方，
+	// 产物因此是一个由前端临时拼出来的 283 字节空壳（基线 D1）。
+	if strings.TrimSpace(in.PackID) == "" || strings.TrimSpace(in.PackVersionID) == "" || strings.TrimSpace(in.ExportDirName) == "" {
 		return ErrInvalidBuildInput
 	}
 	seen := make(map[string]struct{}, len(in.Files))

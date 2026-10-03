@@ -1,0 +1,129 @@
+/* 面板级微调（公共小件在 frame.css）。 */
+
+/* 冲突行两行动文 */
+.p-row .stack { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.p-row .stack .sub { white-space: normal; }
+
+/* 添加模组：版本列表缩进 */
+.tp-body .p-section .p-section { border-left: 2px solid var(--mc-line); padding-left: 8px; }
+
+/* ── 上下文字形/清除按钮（编辑区头复用） ─────────────────── */
+.ctx-glyph { color: var(--mc-primary-deep); font-size: 13px; flex: none; }
+.ctx-clear {
+  border: none;
+  background: none;
+  color: var(--mc-primary-deep);
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 0 2px;
+  flex: none;
+}
+.ctx-clear:hover { opacity: 1; }
+
+/* ── 面板顶栏动作（SVG 图标按钮，右对齐）+ 顶栏内联输入 ──── */
+.tp-top { position: relative; flex: none; }
+/* 搜索框容器：把 ✕/🔍/＋ 包进同一个框；收起时只剩两个图标按钮 */
+.head-field {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  border: 1px solid transparent;
+  border-radius: var(--mc-radius);
+  padding: 1px 2px;
+  transition: border-color var(--mc-dur) var(--mc-ease), background var(--mc-dur) var(--mc-ease);
+}
+.head-field.open {
+  border-color: var(--mc-primary);
+  background: var(--mc-fill);
+}
+.head-field.open:focus-within { box-shadow: 0 0 0 1px var(--mc-primary); }
+.head-input {
+  width: 150px;
+  border: none;
+  background: transparent;
+  padding: 2px 2px 2px 6px;
+  min-width: 0;
+  color: var(--mc-text);
+  animation: growW 140ms var(--mc-ease);
+}
+.head-input:focus { outline: none; }
+.head-clear {
+  border: none;
+  background: none;
+  color: var(--mc-muted);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 11px;
+  line-height: 1;
+  flex: none;
+}
+.head-clear:hover { color: var(--mc-text); }
+@keyframes growW {
+  from { width: 0; opacity: 0; }
+  to { width: 170px; opacity: 1; }
+}
+.head-dd {
+  position: absolute;
+  top: 100%;
+  left: 6px;
+  right: 6px;
+  z-index: 50;
+  background: var(--mc-fill);
+  border: 1px solid var(--mc-line-strong);
+  border-radius: var(--mc-radius-panel);
+  box-shadow: var(--mc-shadow-lg);
+  max-height: min(420px, 60vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform-origin: top right;
+  animation: ddIn 130ms var(--mc-ease);
+}
+@keyframes ddIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: none; }
+}
+.tp-head .tp-actions { margin-left: auto; display: flex; gap: 2px; }
+.tp-icon-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--mc-text-2);
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--mc-radius);
+  padding: 0;
+}
+.tp-icon-btn:hover { background: var(--mc-hover); color: var(--mc-text); }
+.tp-icon-btn.on { background: var(--mc-primary-bg); color: var(--mc-primary-deep); }
+
+/* ── 侧栏页脚 · 最近动态 ────────────────────────────────── */
+.ctx-activity {
+  flex: none;
+  border-top: 1px solid var(--mc-line);
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--mc-fill-2);
+  max-height: 84px;
+  overflow: hidden;
+}
+
+/* ── 来源树：模组展开行 ─────────────────────────────────── */
+.src-chevron {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--mc-muted);
+  width: 14px;
+  flex: none;
+  padding: 0;
+  text-align: center;
+}
+.mod-kinds { display: flex; flex-direction: column; }
+.mod-kinds .p-row { padding-left: 26px; }
+.run-stats { color: var(--mc-muted); font-size: 12px; padding: 0 6px 2px 26px; display: flex; gap: 8px; }

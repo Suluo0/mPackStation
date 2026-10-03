@@ -115,6 +115,16 @@ func registerSystemRoutes(mux *http.ServeMux, app *service.API, version string) 
 		}
 		WriteJSON(w, http.StatusAccepted, map[string]any{"taskId": t.ID})
 	})
+	// 已安装版本查询：启动要用内核实际装出来的版本目录 ID，前端必须先能看到它，
+	// 否则只能拿包的 mc_version 去猜（缺陷 O2）。
+	mux.HandleFunc("GET /api/launcher/installs", func(w http.ResponseWriter, r *http.Request) {
+		list, err := app.ListLauncherInstalls(r.Context(), r.URL.Query().Get("packId"), r.URL.Query().Get("minecraftDir"))
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"installs": list})
+	})
 	mux.HandleFunc("GET /api/meta/mc-versions", func(w http.ResponseWriter, r *http.Request) {
 		v, err := app.MCVersions(r.Context())
 		if err != nil {

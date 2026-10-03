@@ -22,7 +22,8 @@ type PackModRecord struct {
 	Required                                                                             bool
 	AddedAt, UpdatedAt                                                                   int64
 	// Origin: manual = 用户手动添加; compat-fix = 兼容知识库自动加装的补丁。
-	Origin string
+	Origin   string
+	Category string // 用户自定义分类（"优化"/"科技"…），空串 = 未分类（0027）
 }
 type JarIndexRecord struct {
 	SHA1, SHA256, FilePath, RawMetaPath string
@@ -48,7 +49,7 @@ type LockRecord struct {
 }
 
 func (r *Repository) ListPackMods(ctx context.Context, packID string) ([]PackModRecord, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,''),origin,COALESCE(mod_id,''),COALESCE(current_selection_id,'') FROM pack_mods WHERE pack_id=? AND status<>'removed' AND origin<>'builtin' ORDER BY display_name COLLATE NOCASE,id`, packID)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,''),origin,COALESCE(mod_id,''),COALESCE(current_selection_id,''),COALESCE(category,'') FROM pack_mods WHERE pack_id=? AND status<>'removed' AND origin<>'builtin' ORDER BY COALESCE(NULLIF(category,''),'未分类') COLLATE NOCASE,display_name COLLATE NOCASE,id`, packID)
 	if err != nil {
 		return nil, fmt.Errorf("list pack mods: %w", err)
 	}
@@ -57,7 +58,7 @@ func (r *Repository) ListPackMods(ctx context.Context, packID string) ([]PackMod
 	for rows.Next() {
 		var m PackModRecord
 		var req int
-		if err := rows.Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt, &m.MirrorSource, &m.MirrorProjectID, &m.MirrorVersionID, &m.Origin, &m.ModID, &m.CurrentSelectionID); err != nil {
+		if err := rows.Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt, &m.MirrorSource, &m.MirrorProjectID, &m.MirrorVersionID, &m.Origin, &m.ModID, &m.CurrentSelectionID, &m.Category); err != nil {
 			return nil, err
 		}
 		m.Required = req != 0
@@ -165,7 +166,7 @@ func (r *Repository) ListModIdentities(ctx context.Context) ([]ModIdentityRecord
 }
 
 func (r *Repository) UpdatePackMod(ctx context.Context, m PackModRecord) error {
-	res, err := r.db.ExecContext(ctx, `UPDATE pack_mods SET version_id=?,display_name=?,file_name=?,sha1=?,status=?,required=?,updated_at=?,mirror_source=?,mirror_project_id=?,mirror_version_id=? WHERE pack_id=? AND id=? AND status<>'removed'`, nullString(m.VersionID), m.DisplayName, m.FileName, nullString(m.SHA1), m.Status, boolInt(m.Required), m.UpdatedAt, m.MirrorSource, nullString(m.MirrorProjectID), nullString(m.MirrorVersionID), m.PackID, m.ID)
+	res, err := r.db.ExecContext(ctx, `UPDATE pack_mods SET version_id=?,display_name=?,file_name=?,sha1=?,status=?,required=?,updated_at=?,mirror_source=?,mirror_project_id=?,mirror_version_id=?,category=? WHERE pack_id=? AND id=? AND status<>'removed'`, nullString(m.VersionID), m.DisplayName, m.FileName, nullString(m.SHA1), m.Status, boolInt(m.Required), m.UpdatedAt, m.MirrorSource, nullString(m.MirrorProjectID), nullString(m.MirrorVersionID), m.Category, m.PackID, m.ID)
 	if err != nil {
 		return fmt.Errorf("update pack mod: %w", err)
 	}
@@ -176,6 +177,15 @@ func (r *Repository) UpdatePackMod(ctx context.Context, m PackModRecord) error {
 	return nil
 }
 func (r *Repository) RemovePackMod(ctx context.Context, packID, modID string, at int64) error {
+	// 内置 minecraft 成员由 0016 的 UPDATE 守卫兜底,但守卫抛的是 sqlite 文本,
+	// 到了 HTTP 层只剩 500 internal_error。这里先认出来,给调用方一个 409 语义。
+	var builtin int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pack_mods WHERE pack_id=? AND id=? AND mod_id='minecraft'`, packID, modID).Scan(&builtin); err != nil {
+		return fmt.Errorf("check builtin pack member: %w", err)
+	}
+	if builtin > 0 {
+		return ErrBuiltinMemberProtected
+	}
 	res, err := r.db.ExecContext(ctx, `UPDATE pack_mods SET status='removed',updated_at=? WHERE pack_id=? AND id=? AND status<>'removed'`, at, packID, modID)
 	if err != nil {
 		return err
@@ -252,6 +262,42 @@ func (r *Repository) CreateLock(ctx context.Context, lock LockRecord, deps []Mod
 			_, err := tx.db.ExecContext(ctx, `INSERT INTO conflicts(id,pack_id,fingerprint,kind,severity,status,summary,detail,detail_path,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(pack_id,fingerprint) WHERE fingerprint <> '' DO UPDATE SET kind=excluded.kind,severity=excluded.severity,summary=excluded.summary,detail=excluded.detail,detail_path=excluded.detail_path,updated_at=excluded.updated_at,status=CASE WHEN conflicts.status='ignored' THEN 'ignored' ELSE 'pending' END,resolved_at=NULL`, c.ID, lock.PackID, c.Fingerprint, c.Kind, c.Severity, "pending", c.Summary, string(detail), c.DetailPath, c.CreatedAt, c.UpdatedAt)
 			if err != nil {
 				return fmt.Errorf("upsert conflict: %w", err)
+			}
+		}
+		// 本轮没再检出的 pending 冲突自动结案。
+		//
+		// 冲突表以前只 upsert 不失效：用户按提示补上 fabric-api 再 resolve，
+		// "缺少依赖模组：JEI 需要 fabric-api" 那条红条永远挂在 pending，
+		// 界面看不出包到底修好了没有；构建前的冲突闸门（见 assertPackBuildable）
+		// 也会被这种过期记录一直拦死。判定以本轮实际检出为准。
+		present := make(map[string]bool, len(conflicts))
+		for _, c := range conflicts {
+			present[c.Fingerprint] = true
+		}
+		stale, err := tx.db.QueryContext(ctx, `SELECT id,fingerprint FROM conflicts WHERE pack_id=? AND status='pending'`, lock.PackID)
+		if err != nil {
+			return fmt.Errorf("list conflicts to prune: %w", err)
+		}
+		var staleIDs []string
+		for stale.Next() {
+			var id, fp string
+			if err := stale.Scan(&id, &fp); err != nil {
+				stale.Close()
+				return fmt.Errorf("scan conflicts to prune: %w", err)
+			}
+			if !present[fp] {
+				staleIDs = append(staleIDs, id)
+			}
+		}
+		if err := stale.Err(); err != nil {
+			stale.Close()
+			return fmt.Errorf("read conflicts to prune: %w", err)
+		}
+		stale.Close()
+		for _, id := range staleIDs {
+			if _, err := tx.db.ExecContext(ctx, `UPDATE conflicts SET status='resolved',resolved_at=?,updated_at=? WHERE pack_id=? AND id=?`,
+				lock.CreatedAt, lock.CreatedAt, lock.PackID, id); err != nil {
+				return fmt.Errorf("resolve stale conflict: %w", err)
 			}
 		}
 		if err := tx.AddActivity(ctx, ActivityRecord{ID: lock.ID + "-activity", PackID: lock.PackID, Kind: "mod", Action: "resolve", Text: "Resolved pack dependencies", At: lock.CreatedAt}, map[string]any{"lock_id": lock.ID}, requestID); err != nil {
@@ -333,10 +379,12 @@ func (r *Repository) PackHealth(ctx context.Context, packID string) (pending, wa
 	if err != nil {
 		return
 	}
-	err = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pack_mods WHERE pack_id=? AND status<>'removed'`, packID).Scan(&mods)
+	// 计数口径必须与 ListPackMods 一致：内建的 minecraft 行是游戏本体，不是模组。
+	// 之前这里把它算进去，导致概览卡「模组总数 3 / 已安装 3」而模组页只有 2 条(截图实测)。
+	err = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pack_mods WHERE pack_id=? AND status<>'removed' AND origin<>'builtin'`, packID).Scan(&mods)
 	if err != nil {
 		return
 	}
-	err = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pack_mods WHERE pack_id=? AND status='installed'`, packID).Scan(&installed)
+	err = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pack_mods WHERE pack_id=? AND status='installed' AND origin<>'builtin'`, packID).Scan(&installed)
 	return
 }

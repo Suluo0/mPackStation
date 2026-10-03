@@ -20,6 +20,10 @@ pub async fn install_neoforge(
     mirror: Mirror,
     java_registry: &JavaRegistry,
 ) -> Result<String> {
+    // 0. 原版版本 JSON 必须先在位，否则加载器 profile 的 inheritsFrom
+    //    指向不存在的文件，后面的 load_version/下载层直接崩。
+    super::ensure_vanilla_installed(minecraft_dir, mc_version, mirror).await?;
+
     // 1. 确定 NeoForge 版本
     let neoforge_ver = match loader_version {
         Some(v) => v.to_string(),

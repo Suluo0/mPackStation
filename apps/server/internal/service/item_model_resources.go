@@ -136,7 +136,16 @@ type iconModel struct {
 	Display   map[string]modelTransform `json:"display"`
 	Loader    string                    `json:"loader"`
 	GUILight  string                    `json:"gui_light"`
+	Children  map[string]modelChildRef  `json:"children"`
+	Base      *modelChildRef            `json:"base"`
 	generated bool
+}
+
+/* neoforge:composite 的命名子模型引用 / neoforge:separate_transforms 的 base。 */
+type modelChildRef struct {
+	Parent   string            `json:"parent"`
+	Loader   string            `json:"loader"`
+	Textures map[string]string `json:"textures"`
 }
 
 func (r *iconResources) model(id string, seen map[string]bool) (iconModel, bool) {
@@ -164,8 +173,40 @@ func (r *iconResources) model(id string, seen map[string]bool) (iconModel, bool)
 		return iconModel{}, false
 	}
 	var child iconModel
-	if json.Unmarshal(raw, &child) != nil || child.Loader != "" {
+	if json.Unmarshal(raw, &child) != nil {
 		return iconModel{}, false
+	}
+	// 0025 后置：loader 不再一票否决，按 loader 分派（图标渲染器补齐方案 R1/R2）。
+	if child.Loader != "" {
+		switch child.Loader {
+		case "neoforge:item_layers", "mekanism:data_based":
+			// 可画内容就在本 JSON（parent/layer0…），loader 只影响发光与光照，图标忽略
+		case "neoforge:separate_transforms":
+			if child.Base == nil || child.Base.Parent == "" {
+				return iconModel{}, false
+			}
+			base, baseOK := r.model(child.Base.Parent, seen)
+			if !baseOK {
+				return iconModel{}, false
+			}
+			for k, v := range child.Base.Textures {
+				base.Textures[k] = v
+			}
+			for k, v := range child.Textures {
+				base.Textures[k] = v
+			}
+			if child.Elements != nil {
+				base.Elements = child.Elements
+			}
+			if child.GUILight != "" {
+				base.GUILight = child.GUILight
+			}
+			return base, true
+		case "neoforge:composite":
+			return r.composite(child, seen)
+		default:
+			return iconModel{}, false
+		}
 	}
 	result := iconModel{Textures: map[string]string{}, Display: map[string]modelTransform{}}
 	if child.Parent != "" {
@@ -195,6 +236,82 @@ func (r *iconResources) model(id string, seen map[string]bool) (iconModel, bool)
 	}
 	return result, true
 }
+/* composite（R2）：命名子模型求并。子模型的 #变量 先就地解成本模型贴图
+   （否则子模型间同名变量互相踩），按 key 字典序遍历保证确定性；
+   合并结果只补缺不覆盖外层贴图。 */
+func (r *iconResources) composite(child iconModel, seen map[string]bool) (iconModel, bool) {
+	result := iconModel{Textures: map[string]string{}, Display: map[string]modelTransform{}}
+	if child.Parent != "" {
+		parent, ok := r.model(child.Parent, seen)
+		if !ok {
+			return iconModel{}, false
+		}
+		result = parent
+		if result.Textures == nil {
+			result.Textures = map[string]string{}
+		}
+		if result.Display == nil {
+			result.Display = map[string]modelTransform{}
+		}
+	}
+	for k, v := range child.Textures {
+		result.Textures[k] = v
+	}
+	for k, v := range child.Display {
+		result.Display[k] = v
+	}
+	keys := make([]string, 0, len(child.Children))
+	for k := range child.Children {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		ref := child.Children[k]
+		if ref.Parent == "" {
+			continue
+		}
+		sub, ok := r.model(ref.Parent, map[string]bool{})
+		if !ok {
+			continue
+		}
+		for kk, vv := range ref.Textures {
+			sub.Textures[kk] = vv
+		}
+		sub = inlineVars(sub)
+		result.Elements = append(result.Elements, sub.Elements...)
+	}
+	if len(result.Elements) == 0 {
+		return iconModel{}, false
+	}
+	return result, true
+}
+
+func inlineVars(m iconModel) iconModel {
+	for i, el := range m.Elements {
+		for dir, f := range el.Faces {
+			f.Texture = lookupVar(f.Texture, m.Textures)
+			m.Elements[i].Faces[dir] = f
+		}
+	}
+	return m
+}
+
+func lookupVar(ref string, variables map[string]string) string {
+	seen := map[string]bool{}
+	for strings.HasPrefix(ref, "#") {
+		if seen[ref] || len(seen) > 16 {
+			return ref
+		}
+		seen[ref] = true
+		next, ok := variables[strings.TrimPrefix(ref, "#")]
+		if !ok {
+			return ref
+		}
+		ref = next
+	}
+	return ref
+}
+
 func (r *iconResources) texture(ref string, variables map[string]string) image.Image {
 	seen := map[string]bool{}
 	for strings.HasPrefix(ref, "#") {
@@ -267,7 +384,7 @@ func encodeItemIcon(img image.Image, id, source string) ContentItem {
 	payload, _ := json.Marshal(map[string]any{"mime": "image/png", "data": base64.StdEncoding.EncodeToString(buf.Bytes()), "size": buf.Len(), "source": source})
 	return ContentItem{Kind: "item_icon", Key: id, Path: "generated://item_icon/" + id, Payload: payload}
 }
-func (r *iconResources) icons() ([]ContentItem, []string) {
+func (r *iconResources) icons() ([]ContentItem, map[string]string) {
 	keys := []string{}
 	for key := range r.models {
 		if strings.Contains(key, ":item/") {
@@ -276,15 +393,15 @@ func (r *iconResources) icons() ([]ContentItem, []string) {
 	}
 	sort.Strings(keys)
 	icons := []ContentItem{}
-	missing := []string{}
+	missingReasons := map[string]string{}
 	for _, key := range keys {
 		id := strings.Replace(key, ":item/", ":", 1)
-		img, source := r.icon(key)
+		img, reason := r.icon(key)
 		if img == nil {
-			missing = append(missing, id)
+			missingReasons[id] = reason
 			continue
 		}
-		icons = append(icons, encodeItemIcon(img, id, source))
+		icons = append(icons, encodeItemIcon(img, id, reason))
 	}
-	return icons, missing
+	return icons, missingReasons
 }
