@@ -67,7 +67,9 @@ bash scripts/verify-terminal-chain.sh --launch          # 流水线终局：后�
 `CARGO_TARGET_DIR` 固定在本地盘 `/tmp/mpack-launcher-target`，不放 SMB 挂载上。
 `TERM_KEEP=1` 验完不杀后端与游戏进程。
 
-> 端口约定（2026-10-03 定稿，权威文本见仓库根 `AGENTS.md`「服务与环境铁律」）：**前端 5271、后端 18872**，数据目录 `/tmp/mpack-data`。5173 / 5273 / 5274 / 5275 / 5276 / 18871 / 18873 / 18874 / 18880 一律作废，禁止另开实例；起停只用 `scripts/dev.sh` / `scripts/dev-stop.sh`。
+> 端口约定（2026-10-03 定稿，权威文本见仓库根 `AGENTS.md`「服务与环境铁律」）：**开发前端 5271、开发后端 18872**，数据目录 `/tmp/mpack-data`；5173 / 5273 / 5274 / 5275 / 5276 / 18871 / 18880 一律作废，禁止另开实例。起停只用 `scripts/dev.sh` / `scripts/dev-stop.sh`。
+>
+> ⚠ **跑链路测试前必须先 `scripts/dev-stop.sh`**：`scripts/chain-test-run.sh` 的默认后端端口就是 **18872**（`CHAIN_PORT` 可改），与唯一开发实例同口。不停开发实例时，chain 自己的后端绑不上端口，而脚本的健康探活会被**开发后端**答 200，于是 173 个用例（含建包/删包）直接打在 `/tmp/mpack-data` 上。`verify-terminal-chain.sh` 用 18874、chain 的无启动器第二实例用 18873，这两个不撞。两个脚本都**按设计重置各自的隔离数据目录**（`/tmp/mpack-chain`、`/tmp/mpack-terminal`），那不是事故。
 >
 > 跨机访问：dev 前端绑 `0.0.0.0`，另一台设备用 `http://<本机局域网 IP>:5271` 打开即可，接口经 vite 代理回本机后端（后端只绑回环，不直接对外）。若要用 mDNS 主机名而非 IP 访问，需同时给两端加白名单：vite 的 `server.allowedHosts` 与后端的 `MPACK_ALLOWED_HOSTS`。
 

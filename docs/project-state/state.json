@@ -6,19 +6,19 @@
     "goal_source": "user"
   },
   "checkpoint": {
-    "id": "cp-2026-09-07-m6-mod-content-parse",
-    "context_completeness": "full",
-    "created_at": "2026-09-07T02:00:00Z",
-    "note": "M6模组内容解析完成: lang/recipe/ammo_definition/texture/item_icon 五种内容类型 + migrations 0009-0012 + 等距投影渲染器 + JEI风格配方展示 + 启动台菜单。已知缺陷: 329物品无icon(复杂模型)、内容页排版、服务稳定性、动态配方无法解析。服务需前台PowerShell窗口运行。"
+    "id": "cp-2026-10-03-zcode-session",
+    "context_completeness": "partial",
+    "created_at": "2026-10-03T16:50:00+08:00",
+    "note": "Z Code 会话（10-02 11:16 → 10-03 16:08）收尾。本轮落：图标渲染器 R1+R2+R0、模组搜索别名/复合排序、包内模组自定义分类 0027、目录 catalog-v4 清空后复跑闭环、唯一开发服务口径入 AGENTS.md。context_completeness=partial：会话文本层（52 条用户消息 + 全部助手文本）已读，590 条工具调用结果未逐条复核；仓库现状全部以实测为准。本轮新暴露：store 包回归测试 TestPackModCategoryAcrossReads 红（夹具自犯 CHECK），README schema/端口口径过期（已于 65cf1e5 修），日常库清空成因未定。链路引擎 P0 零代码落地。工作区 126 处未提交（75 改 + 51 新），HEAD fe7c4ea。 Git 交付：积压代码提交 6c0aa5d（190 文件 = 117 新增 + 73 修改，19742 插入 / 940 删除，含本轮修复的红夹具）、README 口径同步 65cf1e5，两者已推送 origin/DEV_2610-WK1（首推，远端 tip 65cf1e5）；checkpoint 文档随后单独提交；本轮改动全部经 18872/5271 唯一服务实测。"
   },
   "repository": {
-    "path": "D:\\workIn\\mPackStation",
+    "path": "/Volumes/Evo/code/mPackStation",
     "is_git": true,
     "initial_commit": "0c6edbe",
     "remote": "https://github.com/Suluo0/mPackStation.git",
-    "structure": "monorepo:apps/web(React19+TS+Vite7+antd6+zod4)、apps/server(Go+SQLite)、launcherCore(Rust+mc-launcher-core)、docs/、data/(运行期,gitignore)",
-    "branch": "DEV_2609-VK2",
-    "head": "working-tree-uncommitted",
+    "structure": "monorepo:apps/web(web1)、apps/web2(IA v2.1 外壳)、apps/web3(当前唯一开发前端,IDE 外壳,端口 5271)、apps/server(Go+SQLite,当前 schema 27)、launcherCore(Rust+mc-launcher-core)、docs/、data/(运行期,gitignore)",
+    "branch": "DEV_2610-WK1",
+    "head": "65cf1e5",
     "working_tree_clean": false
   },
   "tasks": [
@@ -608,7 +608,8 @@
         }
       ],
       "kind": "task",
-      "updated_at": "2026-09-07T07:24:33.351626+00:00"
+      "updated_at": "2026-09-07T07:24:33.351626+00:00",
+      "note": "Go 侧集成完成并用协议桩验证（MPACK_LAUNCHER_BIN + launcher_installs + installs 查询）；当时剩余断点为 O14。2026-09-30 补充：真实内核已用本机 cargo 编译并跑通 install --mrpack → launch，见 task-terminal-chain-20260930"
     },
     {
       "id": "task-mod-content-parse-m6",
@@ -723,6 +724,368 @@
         }
       ],
       "updated_at": "2026-09-07T09:56:00Z"
+    },
+    {
+      "id": "task-e2e-baseline-20260929",
+      "kind": "task",
+      "title": "端到端能力基线脚本与真实能力摸底",
+      "status": "verified",
+      "summary": "新增 scripts/e2e-baseline.sh：建包→面向包搜索→版本解析→添加模组→锁依赖→目录重建→模组解析→任务书闭环→注册导出目录→构建→launcher install 逐段 curl 断言，可重放。首轮实测 PASS=27 FAIL=3，结论是设计与内容段真实可用，但构建产物只是调用方自带文件的 zip 归档（283 字节，无 jar、非 .mrpack），launcher install 在 macOS 上因二进制路径硬编码 .exe 结构性不可用。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "documentation": "complete",
+      "delivery": "working_tree",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "scripts/e2e-baseline.sh",
+        "docs/tests/e2e-baseline-2026-09-29.md",
+        "docs/project-state/history/e2e-baseline-20260929.log"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "PASS=27 FAIL=3 SKIP=0，packId=pack-22fe30cd9493c34b94684724，隔离后端 127.0.0.1:18899 -data /tmp/mpack-e2e。",
+          "source": "e2e-baseline-20260929.log 汇总段"
+        },
+        {
+          "type": "runtime",
+          "level": "observed",
+          "claim": "产物 /tmp/mpack-e2e/export/0.1.222046-bfedf896b1f765a4.zip 共 283 字节，unzip -l 只有 1 个 160 字节 modrinth.index.json。",
+          "source": "unzip -l / unzip -p 实测"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "任务终态枚举按契约 :50 是 success（不是 succeeded）；catalog 状态与 mod_content run 状态才用 succeeded。",
+          "source": "docs/api/contract.md:50 + 轮询实测"
+        }
+      ],
+      "updated_at": "2026-09-29T14:30:00Z"
+    },
+    {
+      "id": "task-chain-test-20260930",
+      "kind": "task",
+      "title": "前端→后端全链路调用测试（每功能正/反用例，DB 入库为准）+ 缺陷修复",
+      "status": "verified",
+      "summary": "scripts/chain-test.py 173 例隔离环境跑通（run15）；构建产出真实 .mrpack；O1/O1b/O2/O4/O8/O9/O10/O13/O25 修复并加守护用例。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run15:173 例 PASS 172 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/chain-run15-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z"
+    },
+    {
+      "id": "task-terminal-chain-20260930",
+      "kind": "task",
+      "title": "真内核终局链路：构建 .mrpack → cargo 编译的 mpack-launcher 安装 → 启动 Minecraft",
+      "status": "verified",
+      "summary": "scripts/verify-terminal-chain.sh --launch（后端 18874 / 数据 /tmp/mpack-terminal / MPACK_LAUNCHER_BIN 指向 cargo 产物）用 HTTP 一路走到 Minecraft 1.21.1 + Fabric 0.16.14 起窗；真机验证暴露并修掉 O14-O25。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "终局链路 43 条断言 PASS 43 / FAIL 0，最后一条为游戏真起窗（Fabric 横幅 + 渲染线程建号）",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/terminal-run-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z"
+    },
+    {
+      "id": "task-catalog-v4-20261002",
+      "kind": "task",
+      "title": "物品目录条目资格收口（catalog-v4：语言键权威 + 配方/标签引用）",
+      "status": "verified",
+      "summary": "目录曾把「模型文件清单」当物品（v2 1754），改语言键后又漏进官方语言表超前键（v3 1493）。v4 判据 = 有名字键 ∧（有 models/item 资产 ∨ 被配方/标签引用），migration 0025 给 evidence 加 lang。2026-10-03 共享库被清空后重建测试包复跑：1754 → 1330 条真实物品、无名 0、全部 evidence=lang、图标路径保留；18 个疑似残渣经核对是真·纹饰锻造模板官方物品。本条为补登记：判据与 1330 基线在 HANDOFF 2026-10-02 条目已成文，但 state.json 此前停在 09-30，未收录该任务。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go test ./... -count=1：internal/service 包 ok（含 catalog 回归锁 clock_01/bow_pulling_0 不得出现）",
+          "source": "checkpoint 2026-10-03 复跑",
+          "locator": "apps/server/internal/service/item_catalog_test.go"
+        },
+        {
+          "type": "document",
+          "level": "corroborated",
+          "claim": "1330/1062/1257/1290/331 基线与逐条核查",
+          "source": "docs/project-state/HANDOFF.md 2026-10-02 条目",
+          "locator": "docs/design/web3-ide-shell-v3.md"
+        },
+        {
+          "type": "artifact",
+          "level": "reported",
+          "claim": "10-03 清空后重建：1754→1330、无名 0、evidence 全 lang",
+          "source": "zcode sess_0c49f511 (2026-10-02 11:16 → 2026-10-03 16:08)",
+          "locator": "docs/tests/incident-2026-10-03-shared-env-wipe.md"
+        }
+      ],
+      "updated_at": "2026-10-03T16:50:00+08:00",
+      "priority": "high",
+      "related_files": [
+        "apps/server/internal/service/item_catalog.go",
+        "apps/server/internal/store/migrations/0025_catalog_item_evidence_lang.sql"
+      ],
+      "verification": {
+        "status": "passed",
+        "bound_to": "sha256:a795433e455031778428ac5df350fe0c30be54861ebbb21a80b1aa01d9b7ef53",
+        "note": "复跑结果来自会话内真接口，未留机器可读日志"
+      },
+      "acceptance": {
+        "status": "accepted",
+        "note": "用户 2026-10-02 16:15 批准「目录构建器修复立刻做」"
+      },
+      "delivery": {
+        "status": "remote_verified",
+        "commit": "6c0aa5d",
+        "note": "本次提交包含提交前实测：go test ./... -count=1 全绿 + go vet 干净 + web3 build 通过；随后 已推送 origin/DEV_2610-WK1（该分支首推，upstream 已建立；远端 tip 65cf1e5，`git ls-remote` 实测）。README 口径同步在同分支 65cf1e5",
+        "pushed_at": "2026-10-03T16:50:00+08:00"
+      }
+    },
+    {
+      "id": "task-icon-renderer-r0r2-20261003",
+      "kind": "task",
+      "title": "图标渲染器第一批 R1+R2+R0（loader 放行 + composite 变量解引用 + 缺图原因落库）",
+      "status": "implemented",
+      "summary": "R1：loader 不再一票否决，item_layers/separate_transforms/composite 各有通路；R2：composite 子模型 #变量就地解引用、按 key 字典序合并；R0：migration 0026 加 icon_reason 列并全链透传前端，无图标物品悬停可见原因（如 runtime_generated_model）。渲染器版本 v2 → v3。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go test ./internal/service -count=1 ok（含两个新增合成夹具测试：金色 90 像素 + 铁 352 像素，证实变量解引用与层叠）",
+          "source": "checkpoint 2026-10-03 16:2x 复跑",
+          "locator": "apps/server/internal/service/item_icon_render_test.go"
+        },
+        {
+          "type": "document",
+          "level": "observed",
+          "claim": "工单 R0-R6 定义与收益预估（R3 明确不做，R4 OBJ +22 / R5 tint +15 / R6 化学桶 +18 未动）",
+          "source": "plan 2026-10-03",
+          "locator": "docs/design/item-icon-renderer-plan-2026-10-03.md"
+        }
+      ],
+      "updated_at": "2026-10-03T16:50:00+08:00",
+      "priority": "high",
+      "related_files": [
+        "apps/server/internal/service/item_model_resources.go",
+        "apps/server/internal/service/mod_content_icons.go",
+        "apps/server/internal/store/migrations/0026_catalog_item_icon_reason.sql"
+      ],
+      "acceptance_criteria": [
+        "loader 白名单外模型不再整体拒绝（R1）",
+        "composite #变量解引用正确合并（R2）",
+        "缺图原因随目录条目落库并在前端可见（R0）"
+      ],
+      "verification": {
+        "status": "passed",
+        "bound_to": "sha256:a795433e455031778428ac5df350fe0c30be54861ebbb21a80b1aa01d9b7ef53",
+        "note": "R4/R5/R6 未实施，覆盖缺口见 issue-item-icon-coverage-gap"
+      },
+      "acceptance": {
+        "status": "pending",
+        "note": "用户批准「继续推进」，未见对 R1/R2/R0 的逐项验收表态"
+      },
+      "delivery": {
+        "status": "remote_verified",
+        "commit": "6c0aa5d",
+        "note": "本次提交包含提交前实测：go test ./... -count=1 全绿 + go vet 干净 + web3 build 通过；随后 已推送 origin/DEV_2610-WK1（该分支首推，upstream 已建立；远端 tip 65cf1e5，`git ls-remote` 实测）。README 口径同步在同分支 65cf1e5",
+        "pushed_at": "2026-10-03T16:50:00+08:00"
+      }
+    },
+    {
+      "id": "task-mod-search-alias-20261003",
+      "kind": "task",
+      "title": "模组搜索修复：别名表 + 复合排序 + slug 直取/容错 + 前端防抖",
+      "status": "implemented",
+      "summary": "病因：平台相关度埋掉 slug-only 正主 + 后端按下载量重排。修法：别名表展开（modsearch_alias.go）、复合排序（slug 精确 100 > 别名命中 95 > 编辑距离≤1 容错 85 > 分词前缀 80）、slug 直取，前端搜索防抖。会话内真机实测：aer / 精致存储 / ae2 三案例首命中正主（Applied Energistics 2 / refinedstorage）。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go test ./internal/service -run \"Alias|Search\" -count=1 -v：TestExpandModSearchAlias PASS、TestModSearchScoreOrdering PASS、TestP5ModChainSearchAddResolveAndHealth PASS",
+          "source": "checkpoint 2026-10-03 16:2x 复跑",
+          "locator": "apps/server/internal/service/modsearch_alias_test.go"
+        },
+        {
+          "type": "artifact",
+          "level": "reported",
+          "claim": "aer → Applied Energistics 2 排第一；三案例全部命中正主（经 127.0.0.1:18872 真接口）",
+          "source": "zcode sess_0c49f511 (2026-10-02 11:16 → 2026-10-03 16:08)",
+          "locator": "docs/design/web3-ide-shell-v3.md"
+        }
+      ],
+      "updated_at": "2026-10-03T16:50:00+08:00",
+      "priority": "high",
+      "related_files": [
+        "apps/server/internal/service/modsearch_alias.go",
+        "apps/server/internal/service/mods.go",
+        "apps/web3/src/panels/SourcesPanel.tsx"
+      ],
+      "verification": {
+        "status": "passed",
+        "bound_to": "sha256:a795433e455031778428ac5df350fe0c30be54861ebbb21a80b1aa01d9b7ef53",
+        "note": "真机三案例为会话内实测陈述，未留可重放脚本"
+      },
+      "acceptance": {
+        "status": "pending",
+        "note": "缺陷由用户 10-02 报出，修复后用户未逐项表态"
+      },
+      "delivery": {
+        "status": "remote_verified",
+        "commit": "6c0aa5d",
+        "note": "本次提交包含提交前实测：go test ./... -count=1 全绿 + go vet 干净 + web3 build 通过；随后 已推送 origin/DEV_2610-WK1（该分支首推，upstream 已建立；远端 tip 65cf1e5，`git ls-remote` 实测）。README 口径同步在同分支 65cf1e5",
+        "pushed_at": "2026-10-03T16:50:00+08:00"
+      }
+    },
+    {
+      "id": "task-pack-mod-category-20261003",
+      "kind": "task",
+      "title": "包内模组自定义分类（migration 0027 + PATCH 链路 + 来源树分组 UI）",
+      "status": "verified",
+      "summary": "用户旧需求：来源树里给模组打自定义类目（「优化」/「科技」）。落法：pack_mods 加 category 列（0027）、PATCH 透传（service/mods.go:818）、两条读取路径都带出 category。本轮真实缺陷修在读取侧：前端走 includeBuiltin=true → ListPackMembers 是另一条 SELECT，未查 category 列（含 scanPackMod 共用扫描），补列后浏览器验收通过：来源树显示「Minecraft 原版」+「📁 优化 1」分组下 JEI。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go test ./internal/store -run TestPackModCategoryAcrossReads -count=1 → FAIL（夹具自犯 CHECK，见 issue-category-testfixture-check）；功能链路本身经 API 回读 + 浏览器验收通过",
+          "source": "checkpoint 2026-10-03 16:2x 实测",
+          "locator": "apps/server/internal/store/category_test.go:23"
+        },
+        {
+          "type": "artifact",
+          "level": "reported",
+          "claim": "分类 PATCH 回读 JEI → 「优化」；来源树分组头出现（浏览器实测）",
+          "source": "zcode sess_0c49f511 (2026-10-02 11:16 → 2026-10-03 16:08)",
+          "locator": "apps/web3/src/panels/SourcesPanel.tsx"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go test ./internal/store -count=1 ok（TestPackModCategoryAcrossReads 通过）",
+          "source": "checkpoint 2026-10-03 复跑",
+          "locator": "apps/server/internal/store/category_test.go"
+        }
+      ],
+      "updated_at": "2026-10-03T16:50:00+08:00",
+      "priority": "medium",
+      "related_files": [
+        "apps/server/internal/store/migrations/0027_pack_mod_category.sql",
+        "apps/server/internal/store/mod_repo.go",
+        "apps/server/internal/store/pack_scoped_repo.go",
+        "apps/server/internal/service/mods.go"
+      ],
+      "acceptance_criteria": [
+        "分类可写可读（PATCH + 两条读取路径一致）",
+        "来源树按分类分组，空值归「未分类」"
+      ],
+      "verification": {
+        "status": "passed",
+        "note": "自带回归测试的红项已修（夹具数据），随 6c0aa5d 入库后 go test 全绿；浏览器分组验收见会话记录"
+      },
+      "acceptance": {
+        "status": "pending"
+      },
+      "delivery": {
+        "status": "remote_verified",
+        "commit": "6c0aa5d",
+        "note": "本次提交包含提交前实测：go test ./... -count=1 全绿 + go vet 干净 + web3 build 通过；随后 已推送 origin/DEV_2610-WK1（该分支首推，upstream 已建立；远端 tip 65cf1e5，`git ls-remote` 实测）。README 口径同步在同分支 65cf1e5",
+        "pushed_at": "2026-10-03T16:50:00+08:00"
+      }
+    },
+    {
+      "id": "task-dev-service-lockdown-20261003",
+      "kind": "task",
+      "title": "唯一开发服务口径落规（后端 18872 / 前端 5271，禁历史端口与新实例）",
+      "status": "delivered",
+      "summary": "共享 /tmp 数据被双会话清空后，用户 13:36 定死口径：全停 → 后端 18872 + 前端 5271 → 写进项目必读约束文件。落地为 AGENTS.md 顶部「服务与环境铁律」一节（含禁止 5173/5273/5274/5275/5276/18871/18880、/tmp/mpack-data 为唯一数据目录、动它须当轮明示、迁移编号先 ls 再取号、并行会话改文件前先重读）；scripts/dev.sh 与 dev-stop.sh 按新标准重写（原 Windows/PowerShell 版退役），README 快速开始同步。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "observed",
+          "claim": "用户原话：「所有的服务全部停掉，然后重启新的服务」「后端指定到 18872，前端用 5271。这个定下来不要再改了」「在项目里面新建一个 agents.markdown，约束一下」",
+          "source": "user 2026-10-03 13:36",
+          "locator": "zcode sess_0c49f511 (2026-10-02 11:16 → 2026-10-03 16:08)"
+        },
+        {
+          "type": "artifact",
+          "level": "observed",
+          "claim": "AGENTS.md 顶部「服务与环境铁律」成文；dev.sh 第 13-29 行硬绑 18872/5271 并做端口占用检查",
+          "source": "checkpoint 2026-10-03",
+          "locator": "AGENTS.md"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "ps 实测在跑：vite --port 5271（apps/web3）+ /tmp/mpackstation-server -addr 127.0.0.1:18872 -data /tmp/mpack-data",
+          "source": "checkpoint 2026-10-03 16:22"
+        }
+      ],
+      "updated_at": "2026-10-03T16:50:00+08:00",
+      "priority": "high",
+      "verification": {
+        "status": "not_required"
+      },
+      "acceptance": {
+        "status": "accepted",
+        "note": "用户当轮明示「定下来不要再改了」"
+      },
+      "delivery": {
+        "status": "remote_verified",
+        "commit": "6c0aa5d",
+        "note": "本次提交包含提交前实测：go test ./... -count=1 全绿 + go vet 干净 + web3 build 通过；随后 已推送 origin/DEV_2610-WK1（该分支首推，upstream 已建立；远端 tip 65cf1e5，`git ls-remote` 实测）。README 口径同步在同分支 65cf1e5",
+        "pushed_at": "2026-10-03T16:50:00+08:00"
+      }
+    },
+    {
+      "id": "task-chain-engine-p0-20261003",
+      "kind": "task",
+      "title": "逆向链路引擎 P0（纯前端 5 文件 + 3 处挂载，≈350 行）",
+      "status": "planned",
+      "summary": "入参 = 终极物品 id + 数量，出参 = 递归到原版采集的完整链路，每节点带数量、每边带「机器·时长·时长出处」，取不到处显式标断点。规格已齐（模块划分、键名并集词表、时长四层降级、BFS+环检测、非物品输入建模），后端零改动。状态：代码零落地——实测 `apps/web3/src/` 下无 chain 目录、grep -ri chain apps/web3/src 零命中（2026-10-03 16:2x）。会话在 14:55 宣布进入该项后被打断（15:43 转去做 checkpoint），未开工。",
+      "evidence": [
+        {
+          "type": "document",
+          "level": "observed",
+          "claim": "P0 工单表：interpret.ts / ticks.ts / expand.ts / chainRules.json / ChainView.tsx + url.ts、EditorArea.tsx 挂载",
+          "source": "plan 2026-10-03",
+          "locator": "docs/design/craft-chain-engine-plan-2026-10-03.md"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "grep -rli chain apps/web3/src → 零命中；apps/web3/src 下仅 api/app/dock/editor/panels/styles",
+          "source": "checkpoint 2026-10-03"
+        }
+      ],
+      "updated_at": "2026-10-03T16:30:00+08:00",
+      "priority": "high",
+      "related_files": [
+        "docs/design/craft-chain-engine-plan-2026-10-03.md",
+        "apps/web3/src/app/url.ts",
+        "apps/web3/src/editor/EditorArea.tsx"
+      ],
+      "acceptance_criteria": [
+        "节点数量可递归到原版采集",
+        "每条边带机器·时长且时长必填出处与置信度",
+        "能量/热力等非物品输入进 totals 并标注，不被物品图吞掉",
+        "断点显式成列（cycle/no-recipe/unresolved/cap）"
+      ],
+      "verification": {
+        "status": "not_run"
+      },
+      "acceptance": {
+        "status": "not_requested"
+      },
+      "delivery": {
+        "status": "not_applicable"
+      }
     }
   ],
   "issues": [
@@ -816,15 +1179,22 @@
           "claim": "全量 Go test/vet、前端构建、真实 MC 1.21.1/AE2 资源和高级卡配方 UI 验证通过；349 AE2 图标，29 item 模型未生成（含辅助模型）。",
           "source": "docs/project-state/history/2026-09-07-item-icons-fix.md",
           "locator": "sha256:d411445bb155afc452d82d9218576165cd699c1a64524eed52b102567fd456f8"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "2026-10-03 R1+R2 已放行 item_layers/separate_transforms/composite（loader 一票否决取消），缺口相应收窄；未做：R4 OBJ 网格(+22)、R5 tint 近似(+15)、R6 化学桶(+18)；R3 builtin/entity 明确「不做，只说清」",
+          "source": "checkpoint 2026-10-03 / docs/design/item-icon-renderer-plan-2026-10-03.md §3-§4"
         }
       ],
-      "updated_at": "2026-09-07T07:18:34.448011+00:00"
+      "updated_at": "2026-10-03T16:30:00+08:00",
+      "note": "O12 部分缓解：loader 拒绝类已放行，剩 OBJ/tint/化学桶三类渲染能力（R4-R6）与 wall_banner 无语言键"
     },
     {
       "id": "issue-content-page-layout",
       "kind": "issue",
       "title": "内容编辑页面排版问题: 列表/详情布局需优化",
-      "status": "open",
+      "status": "resolved",
       "summary": "用户反馈内容编辑页面排版不对。当前ModContentPage的列表展示和详情弹窗布局需要优化,特别是配方展示(JEI网格)和物品列表的间距/对齐/响应式。",
       "evidence": [
         {
@@ -834,13 +1204,14 @@
           "source": "user 2026-09-07"
         }
       ],
-      "updated_at": "2026-09-07T02:00:00Z"
+      "updated_at": "2026-09-07T02:00:00Z",
+      "resolution": "本轮逐页截图复核后已修，残余见 defects-2026-09-30.md"
     },
     {
       "id": "issue-service-stability",
       "kind": "issue",
       "title": "前后端服务稳定性: 经常挂掉,需前台PowerShell窗口运行",
-      "status": "open",
+      "status": "resolved",
       "summary": "后端server.exe和前端vite dev server在后台运行时经常挂掉(进程被回收/端口释放)。用户明确要求必须用前台PowerShell窗口运行(-NoExit),不要后台运行。当前每次会话需要手动重启服务。需要调查根因(是OOM/句柄泄漏/还是PowerShell后台进程管理问题)并提供稳定的启动方案。",
       "evidence": [
         {
@@ -848,9 +1219,17 @@
           "level": "reported",
           "claim": "用户:'服务又挂了'、'你直接在我电脑上搞个窗口出来,把这个服务挂在那个窗口里,也就是前台启动那个脚本'、'不要每次都是后台运行,动不动就挂掉了'",
           "source": "user 2026-09-07"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "2026-09-30 macOS 复核：本会话期间 18871 后端与 5273 vite 全程存活（curl /api/health 返回 ready、两个 LISTEN 都在），且同一后端进程撑完了 15 轮链路测试与终局真下载。Windows 时代的前台窗口方案随仓库迁移到 macOS 已不适用",
+          "source": "session 2026-09-30",
+          "locator": "curl http://127.0.0.1:18871/api/health; lsof -nP -iTCP:18871 -iTCP:5273 -sTCP:LISTEN"
         }
       ],
-      "updated_at": "2026-09-07T02:00:00Z"
+      "updated_at": "2026-09-30T13:00:00Z",
+      "resolution": "根因是 Windows 侧后台 PowerShell 进程管理，仓库迁移到 macOS 后该形态不再存在，开发实例（scripts/dev.sh）本轮全程未重启。macOS 上的同类风险只剩一条且已有规避：把 -data 放在 Evo(SMB) 挂载上会让进程卡成 UN，因此数据目录固定用本地盘 /tmp/mpack-data（见 HANDOFF「环境」条）。"
     },
     {
       "id": "issue-dynamic-recipe-parse",
@@ -864,15 +1243,22 @@
           "level": "reported",
           "claim": "用户问'A12线缆伪装版可以和任意东西伪装合成,这个东西的配方是怎么实现的?这块的动态代码能解析吗?'",
           "source": "user 2026-09-07"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "2026-09-19 部分缓解：parseRecipeFile 把 minecraft:crafting_special_*、decorated_pot 以及 recipe 路径下无 ingredients/result 的 JSON 标为 IsDynamic，前端 RecipeViewer 增「特殊/动态」列分支——动态配方不再被静默丢弃或误判为坏数据，但仍不产出真实配方内容（需运行时 dump）。需 force 重解析后生效",
+          "source": "session 2026-09-19 / docs/project-state/HANDOFF.md",
+          "locator": "apps/server/internal/service/mod_content_extract.go:278-316 parseRecipeFile / IsDynamic"
         }
       ],
-      "updated_at": "2026-09-07T02:00:00Z"
+      "updated_at": "2026-09-19T00:00:00Z"
     },
     {
       "id": "issue-bottombar-mock-data",
       "kind": "issue",
       "title": "底边栏使用mock数据: 未接入真实数据源",
-      "status": "open",
+      "status": "resolved",
       "summary": "用户要求底边栏用真实数据源替代mock。当前底边栏的状态信息(包数量/模组数量/任务状态等)可能还是硬编码或mock数据,需要接入后端真实API。用户说'先把底边栏的mock解决掉吧,用真实数据源'。",
       "evidence": [
         {
@@ -882,7 +1268,380 @@
           "source": "user 2026-09-07"
         }
       ],
-      "updated_at": "2026-09-07T02:00:00Z"
+      "updated_at": "2026-09-07T02:00:00Z",
+      "resolution": "假数据残余清理：无真实数据源的块改为空态或移除，死 CSS 一并删（2026-09-30）"
+    },
+    {
+      "id": "issue-mrpack-not-assembled",
+      "kind": "issue",
+      "title": "[D1 阻塞终局] 构建不装配整合包：只把调用方传入的 files 压成 zip，产物无 jar、非 .mrpack",
+      "status": "resolved",
+      "summary": "阻塞终局。service/build.go:405 validateBuildInput 要求 len(Files)>0，契约 docs/api/contract.md:910 却写 files 可选——按契约调用必 400。build.go:332 文件名 <version>-<fp16>.zip、Kind=zip；全仓 Go 无 mrpack/manifestVersion 字样。前端 PackPages.tsx:440 自行拼占位 manifest 上传，实测产物 283 字节只含 1 个 160 字节 modrinth.index.json。契约里的 422 build_blocked 与 403 export_dir_not_allowed 两条分支从未执行过（包内有 4 条未解决冲突仍直接进构建）。",
+      "evidence": [
+        {
+          "type": "file",
+          "level": "observed",
+          "claim": "assembly_repo.go LEFT JOIN + build.go 装配；单测 TestBuildDoesNotSilentlyDropModWithoutSelection",
+          "source": "session 2026-09-30",
+          "locator": "apps/server/internal/service/build_input_codes_test.go",
+          "note": "2026-10-03 checkpoint 归一：原值 verified 不是合法证据等级（state-model 枚举为 observed/corroborated/reported/inferred/unknown），该条证据实为命令/产物级实测，改标 observed，内容未动。"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "服务端按权威链 pack_mods.current_selection_id→pack_mod_selections→selection_platform_pins(role=primary)→platform_release_files 自行装配真实 .mrpack（隔离环境产物 539 字节，manifest 含 JEI 真实 Modrinth URL + sha1/sha512）。装配只读 SQLite+写 zip，不需要网络。见 docs/tests/defects-2026-09-30.md O1"
+    },
+    {
+      "id": "issue-pack-version-conflict-500",
+      "kind": "issue",
+      "title": "[D2 阻塞级] POST /packs/{id}/versions 版本号冲突返回 500 而非 409/422",
+      "status": "resolved",
+      "summary": "建包时服务端已自动写入 0.1.0/draft 行，对刚建好的包正常发起的第一个动作就撞唯一约束 → 500 internal_error。实测 0.2.0→201、重复 0.1.0→500，基线脚本有 \"duplicate version (期望 409)\" 探针稳定复现。次生不一致：自动行 ID 前缀 packver-，手动创建前缀 version-。同类复发参考已 resolved 的 issue-670c4eeb。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "显式错误码：build_lock_mismatch(422,带 lockId 与取回路径)、build_input_conflict(409)；不再依赖 httpapi.go 兜底映射"
+    },
+    {
+      "id": "issue-quest-get-error-label",
+      "kind": "issue",
+      "title": "[D3 契约语义] GET /packs/{id}/quests 把「包存在但还没有任务书」报成 404 pack_not_found",
+      "status": "resolved",
+      "summary": "store/content_repo.go:371-375 无 quest_books 行时抛裸 ErrNotFound，httpapi.go 统一映射 pack_not_found；同一包 catalog/status=200 可排除包真不存在。契约 :838 写的就是这个码，属于契约把两种语义挤进一个码，调用方只能靠 If-Match:0 猜着建档（写侧正常）。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "quest_book_not_found / quest_revision_not_found 分离，空态有专门段落写进 docs/api/contract.md §3.6"
+    },
+    {
+      "id": "issue-launcher-install-no-sync-validation",
+      "kind": "issue",
+      "title": "[D4] launcher install 受理残缺 payload，必填项到异步任务才报错",
+      "status": "resolved",
+      "summary": "LauncherInstallPayload 字段是 version/minecraft_dir（launcher_task.go:14-19），没有 packId；传 {\"packId\":...} 得 202+taskId，任务随即 failed: version and minecraft_dir are required。同步可判的必填校验放到异步，错误只能查任务才看得见。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "R1/R2/R3 同步侧校验：缺 minecraft_dir/username 直接 400/422 且不入队；chain 用例断言 tasks 表计数不变"
+    },
+    {
+      "id": "issue-launcher-binary-path-windows-only",
+      "kind": "issue",
+      "title": "[D5 结构性，阻塞终局] 启动内核二进制路径在 macOS 上永远解析不到（硬编码 .exe + 拼错根目录 + 无 PATH 兜底）",
+      "status": "resolved",
+      "summary": "service/launcher/launcher.go:37-39 固定 filepath.Join(workbenchRoot, \".tools/launcher\", \"mpack-launcher.exe\")；实参 workbenchRoot 是 -data 数据根目录（报错路径 /private/tmp/.tools/launcher/... 即 /tmp/mpack-e2e 拼出来的），与注释「next to the server executable」不符；注释还声称「or on PATH」，但代码没有 exec.LookPath 兜底。launcherCore 在本机从未编译（无 target/）。失败把 Go fork/exec 原文当 error 透出，没有归一错误码。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "MPACK_LAUNCHER_BIN 环境变量注入；安装记录落 launcher_installs(migration 0022)，版本 ID 契约 fabric-loader-<loader>-<mc> 对齐 launcherCore/src/loader/fabric.rs:43-45；GET /api/launcher/installs 可查并按已装 ID 启动；未安装 409 launcher_not_installed。2026-09-30 更正：本机 cargo 一直可用（brew rustup，只是不在默认 PATH），已用真编译内核跑通终局，见 task-terminal-chain-20260930"
+    },
+    {
+      "id": "issue-launcher-api-undocumented",
+      "kind": "issue",
+      "title": "[D6 文档缺口] 启动器接口完全没进 API 契约",
+      "status": "resolved",
+      "summary": "docs/api/contract.md 全文 launcher 出现 0 次，而 POST /api/launcher/install（routes_system.go:92）已实现且 202 语义正确。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "docs/api/contract.md §8.1/§8.2 补齐 pack_id、installs 端点、version_id 契约与错误码"
+    },
+    {
+      "id": "issue-catalog-no-recipe-lookup",
+      "kind": "issue",
+      "title": "[D7 覆盖缺口] 包目录域没有「按物品反查配方」的端点",
+      "status": "resolved",
+      "summary": "GET /catalog/items/{id} 实测字段 displayName/evidence/iconStatus/id/modelPath/names/resolvedLocale/tags，无 recipes/usages；catalog 路由全集只有 icon/status/rebuild/(list)/items/{id}/tags/{id}。配方目前只能从 mods/{modId}/content 按模组取。契约与 ADR 均未定义该端点，属设计留白，但「点物品看配方」这条 JEI 核心体验在包目录域无 API。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "读未构建包目录返回 catalog_not_built(409)，错误码表进契约；O9/O10 语义与入口收敛"
+    },
+    {
+      "id": "issue-launcher-no-mrpack-reader",
+      "kind": "issue",
+      "title": "[O14 曾阻塞终局] launcherCore 无 .mrpack 读取能力",
+      "status": "resolved",
+      "summary": "全仓 grep mrpack|manifestVersion|modrinth.index|overrides 命中 0：构建产物已真实，但启动内核无法消费，流水线最后一环仍断。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "grep 0 命中",
+          "source": "session 2026-09-30",
+          "locator": "launcherCore/src",
+          "note": "2026-10-03 checkpoint 归一：原值 verified 不是合法证据等级（state-model 枚举为 observed/corroborated/reported/inferred/unknown），该条证据实为命令/产物级实测，改标 observed，内容未动。"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "终局链路 43 条断言 PASS 43 / FAIL 0，真内核按 artifact_id 安装 .mrpack 并拉起 Minecraft 1.21.1 / Fabric 0.16.14",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/terminal-run-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T13:00:00Z",
+      "resolution": "launcherCore/src/mrpack.rs 解析 modrinth.index.json（manifest/files/overrides），CLI 新增 install --mrpack <file> --dir <mc>；Go 侧只传 artifact_id，版本 ID 取自 manifest。曾写在本条上的「本机无 cargo，自研不可验证，需用户拍板 Prism 兜底」是误判，已作废"
+    },
+    {
+      "id": "issue-terminal-defects-o15-o25",
+      "kind": "issue",
+      "title": "[O15-O25] 真机终局跑通时一次性暴露的 11 个缺陷",
+      "status": "resolved",
+      "summary": "O15 导出目录换名重登记返回裸 500；O16 加载器 url-only 库漏装（装上后 ClassNotFoundException: KnotClient）；O17 macOS Java runtime 布局未探测（runtime/<component>/jre.bundle/Contents/Home/bin/java）；O18 下载 runtime 缺执行位；O19 竞速下载残留 partial 文件；O20 致命冲突不拦构建（装上就崩）；O21 本轮未再检出的过期冲突不结案；O22 原样回传锁快照仍被判 build_lock_mismatch；O23 conflicts.kind CHECK 不收 known_issue；O24 依赖类型（required/optional/embedded/incompatible）不分级；O25 平台不可用被写成 error 级 dependency 冲突，把构建闸门堵死。逐条出处见 docs/tests/defects-2026-09-30.md §1。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "真内核终局链路 43 条断言全绿；chain run14 曾 8 条 FAIL 全指向 O25，修后 run15 PASS 172 / FAIL 0 / SKIP 1；go test ./... -count=1 退出 0",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/terminal-run-2026-09-30.log, docs/tests/evidence/chain-run15-2026-09-30.log"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "回归断言：test_plan_downloads_url_only_libraries、TestBuildBlockedByUnresolvedFatalConflict、TestBuildAcceptsSnapshotResentVerbatim、TestTransientProviderConflictIsWarningAndDoesNotBlockBuild、TestConflictWhitelistKeepsKnownKinds、chain [13] P3b",
+          "source": "session 2026-09-30",
+          "locator": "apps/server/internal/service/conflict_transient_test.go, apps/server/internal/service/build_conflict_gate_test.go",
+          "note": "2026-10-03 checkpoint 归一：原值 verified 不是合法证据等级（state-model 枚举为 observed/corroborated/reported/inferred/unknown），该条证据实为命令/产物级实测，改标 observed，内容未动。"
+        }
+      ],
+      "updated_at": "2026-09-30T13:00:00Z",
+      "resolution": "O16-O19 在 launcherCore（url-only 库走 MavenCoordinate、macOS runtime 布局探测、补执行位、清理竞速 partial）；O20/O21/O22 在 apps/server/internal/service/build.go 的 assertPackBuildable 与冲突生命周期；O23/O24/O25 在 mods.go 冲突白名单 + 迁移 0023/0024（provider_unavailable 独立 kind，网络态只出 warning）。schema 现为 24。残余：O16 后半/O17/O18/O19 尚无专属 Rust 单测，只由终局实跑覆盖。"
+    },
+    {
+      "id": "issue-pack-delete-slow",
+      "kind": "issue",
+      "title": "[O5] 删除空包同步耗时 ≈9.6-9.8s",
+      "status": "open",
+      "summary": "实测 9.61/9.79/9.82 秒（257MB 库，疑缺 FK 覆盖索引）。未改行为，属 UX 决策：入队异步+任务进度 vs 建索引。chain-test [29] 已把耗时写入 note。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z"
+    },
+    {
+      "id": "issue-local-jar-not-in-mrpack",
+      "kind": "issue",
+      "title": "[O1 残余] 只有本机 jar 的本地模组进不了 .mrpack",
+      "status": "open",
+      "summary": ".mrpack 规范要求 files[] 带 downloads URL；本地 jar 无 URL，只能进 overrides/。当前 LEFT JOIN 保证它不被静默丢弃，但未真正落 overrides。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z"
+    },
+    {
+      "id": "issue-category-testfixture-check",
+      "kind": "issue",
+      "title": "回归测试夹具自犯 pack_mods CHECK 约束，导致 go test ./... 红一项",
+      "status": "resolved",
+      "summary": "category_test.go:23 插入 source='modrinth' 且 project_id=NULL，直接违反建表 CHECK (source='local' AND project_id IS NULL) OR (source IN ('curseforge','modrinth') AND project_id NOT NULL)，测试在 ExecContext 处即失败。复现：cd apps/server && go test ./internal/store -run TestPackModCategoryAcrossReads -count=1（确定性，非环境抖动）。影响：仓库当前 `go test ./...` 不为全绿（10 包 ok / 1 包 FAIL），与 AGENTS.md「固定验证」要求冲突，提交前必修。修法（一行）：夹具改 project_id 给真值，或把 source 换成 'local'。功能本身无缺陷（API 回读与浏览器验收均通过）。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "--- FAIL: TestPackModCategoryAcrossReads (0.12s) category_test.go:24: constraint failed: CHECK constraint failed: ... (275)；同轮 go vet ./... 干净",
+          "source": "checkpoint 2026-10-03 16:22 实测 -count=1",
+          "locator": "apps/server/internal/store/category_test.go:23"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "修复后复跑 cd apps/server && go test ./... -count=1 → 10 包全 ok（含 internal/store 的 TestPackModCategoryAcrossReads），go vet ./... 干净；修复 = 夹具 project_id 由 NULL 改给真值（source=modrinth 须非空）",
+          "source": "checkpoint 2026-10-03 16:4x 实测",
+          "locator": "6c0aa5d^..6c0aa5d apps/server/internal/store/category_test.go"
+        }
+      ],
+      "updated_at": "2026-10-03T16:45:00+08:00",
+      "severity": "medium",
+      "resolution": "已修：夹具 project_id 给真值，随 6c0aa5d 入库",
+      "verification": {
+        "status": "failed",
+        "bound_to": "sha256:a795433e455031778428ac5df350fe0c30be54861ebbb21a80b1aa01d9b7ef53"
+      }
+    },
+    {
+      "id": "issue-daily-db-wipe-cause-unknown",
+      "kind": "issue",
+      "title": "共享开发库 /tmp/mpack-data 被清空，成因未定（真实数据丢失）",
+      "status": "suspected",
+      "summary": "2026-10-03 13:20 起：/tmp/mpack-data(18871/18872) 与 /tmp/mpack-chain 的 packs/pack_mods/mod_content 全 0 行。链路库已判定为 chain-test-run.sh 的设计内重置（脚本每次运行重置隔离环境），不算事故；日常库是真实数据丢失（readd-test 的任务书/目录/魔改记录），成因未定——本会话动作可证无关（0025/0026 迁移只动目录四表），但无日志不能指认并行会话。恢复尝试已穷尽：sqlite .recover 只捞出 9 月旧孤儿数据（pack-06344b…）；APFS 快照不覆盖 /tmp；幸存副本仅仓库 data/ 下的 09-19 快照（schema 16，3 个旧链路测试包）。防再发已入 AGENTS.md 铁律（动共享数据目录须当轮明示）。",
+      "evidence": [
+        {
+          "type": "document",
+          "level": "observed",
+          "claim": "事实、恢复尝试与判定全文",
+          "source": "docs/tests/incident-2026-10-03-shared-env-wipe.md",
+          "locator": "docs/tests/incident-2026-10-03-shared-env-wipe.md"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "13:2x 两库三表 COUNT=0；18880 clean 实例（幸存 264MB / 2 包）完好",
+          "source": "zcode sess_0c49f511 (2026-10-02 11:16 → 2026-10-03 16:08)"
+        }
+      ],
+      "updated_at": "2026-10-03T16:30:00+08:00",
+      "severity": "high",
+      "resolution": "链路库部分结案（脚本设计内重置）；日常库保留 suspected，除非有新的日志/时间线证据",
+      "verification": {
+        "status": "not_applicable"
+      }
+    },
+    {
+      "id": "issue-readme-schema-port-stale",
+      "kind": "issue",
+      "title": "README 的 schema 版本与端口口径双双过期",
+      "status": "resolved",
+      "summary": "README.md:22 写「schema 26（migrations 0001-0026）」，实际 apps/server/internal/store/store.go:41 CurrentSchemaVersion = 27（0027_pack_mod_category.sql 已在）。README.md:70-72 仍写「端口约定：前端 5273、后端 18871」与 5273 跨机访问示例，与 AGENTS.md 铁律（5271/18872，且明令禁止 5273/18871）冲突。README.md:58 也还引用 18871 作为「不要复用」的历史端口说明。属文档缺陷，会误导下一个会话。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "grep 实测：README.md:22 schema 26 / README.md:70 端口 5273+18871 vs store.go:41 = 27 vs AGENTS.md:5-7",
+          "source": "checkpoint 2026-10-03 16:2x",
+          "locator": "README.md"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "README:22 现写 schema 27；:70 现写前端 5271/后端 18872；`grep -n 18871 README.md` 仅命中作废清单行",
+          "source": "apps/server/internal/store/store.go:41 = 27；git show 65cf1e5 --stat",
+          "locator": "README.md:22,58,70-72"
+        }
+      ],
+      "updated_at": "2026-10-03T16:50:00+08:00",
+      "severity": "low",
+      "resolution": "已修：README:22 schema 26→27（补 0027 说明）、端口段改 5271/18872 并列作废端口，提交 65cf1e5",
+      "verification": {
+        "status": "not_applicable"
+      }
+    },
+    {
+      "id": "issue-evidence-logs-untracked",
+      "kind": "issue",
+      "title": "docs/tests/evidence/*.log 被 .gitignore 的 *.log 规则排除，报告引用的证据不在版本控制里",
+      "status": "confirmed",
+      "summary": "HANDOFF 与 README 多处把绿灯结论指向 docs/tests/evidence/chain-run15-2026-09-30.log、terminal-run-2026-09-30.log，但仓库根 .gitignore:6 有 `*.log`，这些文件从未入库（git check-ignore 实测命中）。后果：别人从 GitHub 拉下来只看得到「173 例 PASS 172」这类断言，拿不到原始日志，无法复核。修法二选一：给 .gitignore 加 `!docs/tests/evidence/*.log` 例外并把日志入库，或改为在报告里贴关键片段而不引用文件。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "git check-ignore -v docs/tests/evidence/chain-run15-2026-09-30.log → .gitignore:6:*.log；ls 该目录有 chain-run8/10/12/13/15 等多个日志",
+          "source": "checkpoint 2026-10-03 16:4x",
+          "locator": ".gitignore"
+        }
+      ],
+      "severity": "medium",
+      "verification": {
+        "status": "not_applicable"
+      },
+      "updated_at": "2026-10-03T16:45:00+08:00"
+    },
+    {
+      "id": "issue-chain-test-port-collision",
+      "kind": "issue",
+      "title": "chain-test-run.sh 默认端口 18872 = 唯一开发后端端口：不停开发实例就跑链路测试会把用例打在 /tmp/mpack-data 上",
+      "status": "confirmed",
+      "severity": "high",
+      "summary": "10-03 铁律把开发后端从 18871 迁到 18872，而 scripts/chain-test-run.sh 的默认端口一直是 18872（CHAIN_PORT 可改）。撞口时链路测试自己的后端 bind 失败，但脚本的 wait_up 只看 http://127.0.0.1:18872/api/health 是否 200 —— 开发后端会答这个 200，于是脚本继续对着开发实例跑 173 个用例（含建包、删包、清目录），数据目录是 /tmp/mpack-data。这与 10-03 日常库被洗空的现象同型，是当前最容易复发的自伤路径。",
+      "resolution": null,
+      "acceptance_criteria": "跑 chain-test-run.sh 时若 18872 已被非 chain 实例占用，脚本必须硬失败退出（不是继续跑）；建议做法：起服务前探测 /api/health 的响应体（带上数据目录或实例标记）而不是只看 200，或把默认端口改成不与开发实例重合的值。",
+      "related_files": [
+        "scripts/chain-test-run.sh",
+        "scripts/dev.sh",
+        "AGENTS.md",
+        "README.md"
+      ],
+      "verification": {
+        "status": "not_run",
+        "note": "未实跑：跑一次就会污染唯一开发库"
+      },
+      "evidence": [
+        {
+          "type": "code",
+          "level": "observed",
+          "claim": "chain-test-run.sh:8 `PORT=${CHAIN_PORT:-18872}`；:29-30 的 pkill 只匹配 `mpack-chain-server -addr`，杀不掉 dev.sh 起的 `go run ./cmd/server`；:20-26 wait_up 仅以 /api/health 的 200 判定存活",
+          "source": "读 scripts/chain-test-run.sh 全文",
+          "locator": "scripts/chain-test-run.sh:8,20-30"
+        },
+        {
+          "type": "code",
+          "level": "observed",
+          "claim": "dev.sh 用同一端口 18872 且数据目录为 /tmp/mpack-data；dev.sh 自己有 port_busy 保护，chain 脚本没有",
+          "source": "读 scripts/dev.sh",
+          "locator": "scripts/dev.sh:12-18"
+        },
+        {
+          "type": "analysis",
+          "level": "inferred",
+          "claim": "撞口后果（用例写到开发库）由上述代码路径推出，本轮未实跑验证；未实跑是因为实跑一次就会重置/污染唯一开发库，而 AGENTS.md 规定动它须用户当轮明示",
+          "source": "代码路径推理",
+          "locator": "scripts/chain-test-run.sh:32-34,159-181"
+        }
+      ],
+      "updated_at": "2026-10-03T16:58:00+08:00"
     }
   ],
   "ideas": [
@@ -1152,8 +1911,8 @@
       "id": "decision-6dc4d5e6",
       "kind": "decision",
       "title": "端口分配:前端 5273、后端 18871",
-      "status": "active",
-      "summary": "5173=旧 mc_dev 前端、18765=本地 LLM、18766=旧 mc_dev 后端,均不动。18766 占用是实测踩坑后改的。",
+      "status": "superseded",
+      "summary": "5173=旧 mc_dev 前端、18765=本地 LLM、18766=旧 mc_dev 后端,均不动。18766 占用是实测踩坑后改的。（2026-10-03 由 decision-dev-service-singleton 取代：开发口径改前端 5271 / 后端 18872，历史端口一律禁用）",
       "evidence": [
         {
           "type": "command",
@@ -1162,7 +1921,7 @@
           "source": "session"
         }
       ],
-      "updated_at": "2026-08-27T00:00:00Z"
+      "updated_at": "2026-10-03T16:30:00+08:00"
     },
     {
       "id": "decision-7ed5e6f7",
@@ -1204,17 +1963,57 @@
         }
       ],
       "updated_at": "2026-08-28T00:00:00Z"
+    },
+    {
+      "id": "decision-dev-service-singleton",
+      "kind": "decision",
+      "title": "唯一开发服务：后端 18872 + 前端 5271，/tmp/mpack-data 为唯一数据目录，禁止新开实例",
+      "status": "active",
+      "summary": "2026-10-03 双会话共用工作区 + 环境重置导致共享库清空后定稿。口径：5173/5273/5274/5275/5276/18871/18880 一律不再使用；scripts/dev.sh / dev-stop.sh 是唯一起停方式，改动会话不得绕过它手工起服务；对 /tmp/mpack-data 做重启/迁移/目录重建前必须获得用户当轮明示；迁移编号先 ls apps/server/internal/store/migrations/ 再取号；并行会话改任何文件前先重读。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "observed",
+          "claim": "用户 13:36：「后端指定到 18872，前端用 5271。这个定下来不要再改了」「约束一下：只允许使用这个服务进行开发和测试，不允许开新实例」",
+          "source": "user 2026-10-03"
+        },
+        {
+          "type": "artifact",
+          "level": "observed",
+          "claim": "成文于 AGENTS.md 顶部「服务与环境铁律（2026-10-03 用户定稿，优先级高于本文件其余各节）」",
+          "source": "AGENTS.md",
+          "locator": "AGENTS.md"
+        }
+      ],
+      "updated_at": "2026-10-03T16:30:00+08:00",
+      "alternatives": [
+        "各会话各建隔离 -data 与独立端口（被否决：端口与数据目录漂移正是本次事故根因）",
+        "继续用 18871/5273 旧口径（被否决：历史端口混杂，无法判断谁在写共享库）"
+      ],
+      "scope": "开发环境与服务启停；不影响生产部署口径",
+      "reconsider_when": "需要真正隔离的验收环境时，先向用户申请，不自行开端口"
     }
   ],
   "next_session": {
-    "recommended_item": "issue-item-icon-coverage-gap",
+    "recommended_item": "issue-chain-test-port-collision",
     "read_first": [
+      "AGENTS.md",
       "docs/project-state/HANDOFF.md",
-      "docs/project-state/state.json",
-      "apps/server/internal/service/item_icon_render.go",
-      "apps/server/internal/service/mod_content_extract.go",
-      "apps/web/src/pages/ModContentPage.tsx"
+      "docs/project-state/history/2026-10-03-session-summary.md",
+      "docs/tests/incident-2026-10-03-shared-env-wipe.md",
+      "docs/design/craft-chain-engine-plan-2026-10-03.md",
+      "docs/design/item-icon-renderer-plan-2026-10-03.md",
+      "docs/project-state/state.json"
     ],
-    "first_action": "优先修复内容编辑页面排版(issue-content-page-layout),然后扩展item_icon渲染器支持更多模型类型(issue-item-icon-coverage-gap)。服务必须前台PowerShell窗口运行。"
+    "first_action": "先过撞口安全闸（HANDOFF「下一步」4 / issue-chain-test-port-collision）：跑 scripts/chain-test-run.sh 之前必须先 scripts/dev-stop.sh，它默认端口就是唯一开发后端的 18872，不停会把 173 个用例打在 /tmp/mpack-data 上。修好后再在 schema 27 上重跑两套终局脚本（chain 173 例 + verify-terminal-chain --launch 43 断言），然后开链路引擎 P0（task-chain-engine-p0-20261003，规格齐全、零代码）。",
+    "queue": [
+      "【安全闸】撞口未修前，跑 `scripts/chain-test-run.sh` 之前必须先 `scripts/dev-stop.sh`（它默认端口就是开发后端的 18872，见 issue-chain-test-port-collision）；修法是让脚本探测实例身份而不是只看 /api/health 200。",
+      "确认远端：`git fetch && git log --oneline origin/DEV_2610-WK1 -3` 应含 6c0aa5d（代码）与 65cf1e5（README），checkpoint 文档在其后一条。",
+      "重跑两套终局脚本以对齐 schema 27：`scripts/chain-test-run.sh`（注意它按设计重置 /tmp/mpack-chain，且默认端口 18872 与唯一开发实例同口——先 scripts/dev-stop.sh）+ `scripts/verify-terminal-chain.sh --launch`。",
+      "链路引擎 P0（task-chain-engine-p0-20261003，规格齐全、零代码落地）。",
+      "图标渲染器第二批 R4/R5/R6 + 73 个 iconStatus=missing 收口（issue-item-icon-coverage-gap）。",
+      "决定 docs/tests/evidence/*.log 是否改名入库（issue-evidence-logs-untracked）：现在报告引用的证据远端拉不到。",
+      "日常库清空成因（issue-daily-db-wipe-cause-unknown）仍为 suspected，无新证据不再排查。"
+    ]
   }
 }
