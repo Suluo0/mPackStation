@@ -19,7 +19,7 @@ mPackStation 是一个本地的 Minecraft 整合包设计工作台：在网页�
 
 - [x] 看板（工作台）：空态迎新流程、有包态总览（继续设计卡、包列表、后台任务面板、环境状态、最近动态）
 - [x] 环境自检：CurseForge API Key 未配置、平台不可达、存储空间不足时自动横幅提示
-- [x] Go + SQLite 后端：schema 26（migrations 0001-0026，含 `0025` 目录物品证据 `lang`、`0026` 图标缺失原因），单库分域，73+ 路由，Host/Origin 白名单 + 写令牌
+- [x] Go + SQLite 后端：schema 27（migrations 0001-0027，含 `0025` 目录物品证据 `lang`、`0026` 图标缺失原因、`0027` 包内模组自定义分类），单库分域，73+ 路由，Host/Origin 白名单 + 写令牌
 - [x] 包工作台：面向包的双平台搜索 → `/mod-versions` 兼容版本 → 添加即钉版（镜像字段）→ 包内清单权威
 - [x] 依赖锁定与冲突：锁快照 + 冲突列表 + 兼容知识库自动加装补丁
 - [x] 内容编辑：包内物品/方块/配方/标签/多语言目录（含中文资源与等距投影图标）、配方查看、原版进度树画布、FTB 风格任务书（草稿/校验/应用/预览/历史）
@@ -55,7 +55,7 @@ bash scripts/dev.sh
 
 验证后端：`curl http://127.0.0.1:18872/api/health` 应返回 `{"status":"ready","db":true,...}`；存活探针为 `/api/healthz`，就绪探针为 `/api/readyz`。
 
-两套**隔离**验证环境（各自独立端口与数据目录，绝不复用上面开发实例的 18871 与 `data/`、`/tmp/mpack-data`）：
+两套**隔离**验证环境（各自独立端口与数据目录，绝不复用上面开发实例（18872/5271）与 `data/`、`/tmp/mpack-data`）：
 
 ```bash
 bash scripts/chain-test-run.sh /tmp/chain-runN.log      # 前端→后端调用链路：后端 18872/18873 + /tmp/mpack-chain，启动器用协议桩
@@ -67,9 +67,9 @@ bash scripts/verify-terminal-chain.sh --launch          # 流水线终局：后�
 `CARGO_TARGET_DIR` 固定在本地盘 `/tmp/mpack-launcher-target`，不放 SMB 挂载上。
 `TERM_KEEP=1` 验完不杀后端与游戏进程。
 
-> 端口约定：前端 5273、后端 18871。本机 5173 / 18765 / 18766 可能被其他本地服务占用，请勿复用。
+> 端口约定（2026-10-03 定稿，权威文本见仓库根 `AGENTS.md`「服务与环境铁律」）：**前端 5271、后端 18872**，数据目录 `/tmp/mpack-data`。5173 / 5273 / 5274 / 5275 / 5276 / 18871 / 18873 / 18874 / 18880 一律作废，禁止另开实例；起停只用 `scripts/dev.sh` / `scripts/dev-stop.sh`。
 >
-> 跨机访问：dev 前端绑 `0.0.0.0`，另一台设备用 `http://<本机局域网 IP>:5273` 打开即可，接口经 vite 代理回本机后端（后端只绑回环，不直接对外）。若要用 mDNS 主机名而非 IP 访问，需同时给两端加白名单：vite 的 `server.allowedHosts` 与后端的 `MPACK_ALLOWED_HOSTS`。
+> 跨机访问：dev 前端绑 `0.0.0.0`，另一台设备用 `http://<本机局域网 IP>:5271` 打开即可，接口经 vite 代理回本机后端（后端只绑回环，不直接对外）。若要用 mDNS 主机名而非 IP 访问，需同时给两端加白名单：vite 的 `server.allowedHosts` 与后端的 `MPACK_ALLOWED_HOSTS`。
 
 ### 写操作令牌
 
