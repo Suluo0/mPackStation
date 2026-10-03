@@ -64,9 +64,9 @@
 |---|---|---|
 | `6c0aa5de0608b09e91c91aed7a6667839c842f5c` | 10-02/10-03 两轮改造积压：**190 路径 = 117 新增 + 73 修改，19742 插入 / 940 删除**（`apps/web3/` 整目录、迁移 0021-0027、`launcherCore`、catalog-v4 判据、图标 R0-R2、搜索别名排序、包内分类，含提交前修好的红夹具） | 已推送 |
 | `65cf1e589891d366897fba6579c57e857ff2b758` | README 口径同步（schema 27 + 5271/18872 + 撞口警告） | 已推送 |
-| 本次提交（`git log -1 --format=%H -- docs/project-state`） | checkpoint 三件套：`state.json` + `HANDOFF.md` + 本文件 | 随后推送 |
+| `d738ec93195499d29116e9df99cf0eb8e4d17a21` | checkpoint 三件套：`state.json` + `HANDOFF.md` + 本文件 + README 撞口警告 | 已推送（远端 tip 实测 = 此哈希） |
 
-- 分支 `DEV_2610-WK1` **此前从未推送**：`git ls-remote` 实测远端无该分支、本地无 `origin/DEV_2610-WK1` 引用。首推用 `git push --set-upstream origin DEV_2610-WK1`，结果是 `[new branch]`，远端 tip 实测 `65cf1e5`。
+- 分支 `DEV_2610-WK1` **此前从未推送**（`6c0aa5d`/`65cf1e5`/`d738ec9` 三条一起上去；本表最后一行的哈希写在本提交内，故另有一条只改这句话的回填提交）：`git ls-remote` 实测远端无该分支、本地无 `origin/DEV_2610-WK1` 引用。首推用 `git push --set-upstream origin DEV_2610-WK1`，结果是 `[new branch]`，远端 tip 实测 `65cf1e5`。
 - 提交前实测（`-count=1`，16:45）：`go test ./...` = **10 包 ok / 0 FAIL**、`go vet ./...` 干净。
 - 暂存方式：从 `git status --porcelain -uall` 生成清单后 `xargs -0 git add --`，**未用 `git add .`/`-A`**；排除 `docs/.DS_Store`（本机 Finder 产物，且 `.gitignore` 没有忽略它，会一直脏）。
 
