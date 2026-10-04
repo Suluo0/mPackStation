@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,28 @@ type Config struct {
 // Default returns safe loopback defaults.
 func Default() Config {
 	return Config{ListenAddr: "127.0.0.1:18871", DataDir: "data", FrontendOrigin: "http://127.0.0.1:5273", ReadOnlySideEffectQPS: 4, DownloadConcurrency: 4, TaskRecoverInterval: 30 * time.Second, HTTPReadHeaderTimeout: 5 * time.Second, HTTPReadTimeout: 30 * time.Second, HTTPWriteTimeout: 60 * time.Second}
+}
+
+// DefaultPath returns the conventional per-user config file location, aligned
+// with each OS's application-settings convention (调研结论见
+// docs/user_check/排查确认记录.md #4：应用默认配置放 Roaming，不放 Documents）：
+//
+//	Windows: %APPDATA%\mPackStation\config.toml   (AppData\Roaming)
+//	macOS:   ~/Library/Application Support/mPackStation/config.toml
+//	Linux:   ~/.config/mpackstation/config.toml   (XDG_CONFIG_HOME)
+//
+// The file may not exist at all — that is normal. The path is only where Load
+// looks by default; a missing file means "use built-in defaults".
+func DefaultPath() string {
+	base, err := os.UserConfigDir()
+	if err != nil || strings.TrimSpace(base) == "" {
+		return "" // 无用户配置目录的极端环境：退化为「没有默认配置文件」
+	}
+	dir := "mPackStation"
+	if runtime.GOOS == "linux" {
+		dir = "mpackstation" // XDG 惯例用小写
+	}
+	return filepath.Join(base, dir, "config.toml")
 }
 
 // Load applies a minimal TOML-like key/value file followed by MPACK_* overrides.

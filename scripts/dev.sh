@@ -13,20 +13,31 @@ port_busy() { lsof -t -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 if port_busy 18872; then echo "[dev] 18872 已占用，先 scripts/dev-stop.sh"; exit 1; fi
 if port_busy 5271;  then echo "[dev] 5271 已占用，先 scripts/dev-stop.sh"; exit 1; fi
 
-# ── 代理透传 ────────────────────────────────────────────────────────────
+# ── 代理透传（带存活检测） ──────────────────────────────────────────────
 # 后端要访问 Modrinth / CurseForge 才能搜索、解析依赖。曾经后端进程环境里
 # 没有任何 proxy 变量（脚本没透传），结果两个平台全不可达 → 搜索一律返回
 # total=0、降级区也没了，看着像「代码改坏了」，实际是出不了网。
 # 这里显式透传系统代理，并保证回环地址不走代理。
+#
+# 反过来也一样坑（2026-10-04 排查确认）：shell 里挂着一个已经死掉的代理
+# （端口没人监听），Go 的 HTTP transport 默认遵循代理 env，于是所有平台请求
+# 经由死代理全部失败 —— 症状与「完全断网」一模一样。所以透传前先探测代理
+# 是否真的活着，死代理一律剥离并提示。
 sys_proxy="${HTTPS_PROXY:-${https_proxy:-${HTTP_PROXY:-${http_proxy:-}}}}"
 if [ -n "$sys_proxy" ]; then
-  export HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-$sys_proxy}}"
-  export HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-$sys_proxy}}"
-  export http_proxy="${http_proxy:-$HTTP_PROXY}"
-  export https_proxy="${https_proxy:-$HTTPS_PROXY}"
-  export NO_PROXY="${NO_PROXY:-127.0.0.1,localhost}"
-  export no_proxy="${no_proxy:-$NO_PROXY}"
-  echo "[dev] proxy: $HTTPS_PROXY  (NO_PROXY=$NO_PROXY)"
+  if curl -s -m 3 -o /dev/null -x "$sys_proxy" https://api.modrinth.com 2>/dev/null; then
+    export HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-$sys_proxy}}"
+    export HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-$sys_proxy}}"
+    export http_proxy="${http_proxy:-$HTTP_PROXY}"
+    export https_proxy="${https_proxy:-$HTTPS_PROXY}"
+    export NO_PROXY="${NO_PROXY:-127.0.0.1,localhost}"
+    export no_proxy="${no_proxy:-$NO_PROXY}"
+    echo "[dev] proxy: $HTTPS_PROXY  (NO_PROXY=$NO_PROXY)"
+  else
+    unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
+    echo "[dev] WARNING: 检测到代理 $sys_proxy 但它没有响应，已剥离代理环境变量再启动后端" \
+         "（直连平台；如果你确实需要走代理，请先把代理拉起来）"
+  fi
 fi
 
 echo "[dev] starting backend  (go run, 127.0.0.1:18872, data $DATA)"

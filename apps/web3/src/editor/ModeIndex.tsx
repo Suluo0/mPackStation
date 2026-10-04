@@ -1,7 +1,7 @@
 import {useEffect, useMemo, useState} from 'react';
 import {listModContent, type ModContentItem} from '../api/modContent';
 import {useCatalog} from '../app/CatalogContext';
-import {applyFilter, matchNamespace, parseFilterSpec, textMatchItem, tagMatchItem} from '../app/catalogSearch';
+import {applyFilter, matchNamespace, parseFilterSpec, textMatchItem, tagMatchItem, typeBucket} from '../app/catalogSearch';
 import {FilterBuilder} from './FilterBuilder';
 import {useFocus, useUrlPatch, useUrlState} from '../app/url';
 import {ItemGrid, ItemQuickView} from './ItemGrid';
@@ -82,9 +82,12 @@ function CatalogTable({q, ns, view}: {q: string; ns: string | null; view: 'grid'
       else if (raw.startsWith('@')) all = all.filter(it => (it.id.split(':')[0] ?? '').toLowerCase().startsWith(raw.slice(1).toLowerCase()));
       else all = all.filter(it => textMatchItem(it, raw));
     }
-    /* 排序：默认排序 = 目录原序（正序）；按名称/按 ID 可再切升序/降序 */
+    /* 排序：默认排序 = 目录原序（正序）；按名称/按 ID 可再切升序/降序；
+       按类型 = 刷怪蛋（*_spawn_egg）聚在最前、其余按 ID —— 目录没有创造栏
+       分组数据（0025/0027 都不含），ID 形态推导是第一版最稳的一类。 */
     if (sort === 'name') all = [...all].sort((a, b) => a.displayName.localeCompare(b.displayName, 'zh'));
     if (sort === 'id') all = [...all].sort((a, b) => a.id.localeCompare(b.id));
+    if (sort === 'type') all = [...all].sort((a, b) => typeBucket(a) - typeBucket(b) || a.id.localeCompare(b.id));
     if (dir === 'desc') all = [...all].reverse();
     return all;
   }, [catalog, f, fmode, ns, q, sort, dir]);
@@ -143,13 +146,18 @@ function CatalogTable({q, ns, view}: {q: string; ns: string | null; view: 'grid'
           <option value="def">默认排序</option>
           <option value="name">按名称</option>
           <option value="id">按 ID</option>
+          <option value="type">按类型</option>
         </select>
-        {/* 方向切换：一个标准按钮，左半↓=降序、右半↑=升序，哪个方向亮哪一半 */}
+        {/* 方向切换：只显示一个箭头，升/降序切换时旧箭头滑出、新箭头滑入（.dir-arrow 动效），
+            当前显示的箭头本身就是排序状态。两个 icon 都保留在 DOM 里，靠 data-dir 决定谁在位。 */}
         <button type="button" className="dir-btn"
           title={dir === 'asc' ? '当前：升序，点击切到降序' : '当前：降序，点击切到升序'}
+          aria-label={dir === 'asc' ? '当前升序，点击切到降序' : '当前降序，点击切到升序'}
           onClick={() => patch({dir: dir === 'asc' ? 'desc' : null})}>
-          <span className={dir === 'desc' ? 'on' : ''}><Icon name="sortdown" size={13}/></span>
-          <span className={dir === 'asc' ? 'on' : ''}><Icon name="sortup" size={13}/></span>
+          <span className="dir-arrow" data-dir={dir}>
+            <span className="dir-a dir-down"><Icon name="sortdown" size={13}/></span>
+            <span className="dir-a dir-up"><Icon name="sortup" size={13}/></span>
+          </span>
         </button>
         <span className="grow"/>
         {/* 计数口径写全：1330 是目录里的**全部**物品（原矿、方块、掉落这些不可合成的都在里面），

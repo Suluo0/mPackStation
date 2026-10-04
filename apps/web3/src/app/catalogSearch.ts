@@ -1,4 +1,5 @@
 import type {CatalogItem} from '../api/catalog';
+import {pinyin} from 'pinyin-pro';
 
 /* 目录搜索（纯函数，多语言 + 命名空间 + 相关度排序）。
    玩家不会记全名：搜 "ae" / "ae2" 要能命中 ae2 命名空间，搜英文要能命中 en_us 名。
@@ -7,6 +8,71 @@ import type {CatalogItem} from '../api/catalog';
      3 任意语言名包含（en_us "Applied Energistics 2"）  4 ID 包含  5 当前语言名包含
    同分按 ID 字典序。无查询时保持目录原序（注册表序）。 */
 export type ItemMatch = {item: CatalogItem; score: number};
+
+/* ── 拼音搜索（2026-10-04 需求：全拼 / 首字母 / 两者混合）────────
+   刷怪蛋：shuaguaidan（全拼）、sgd（首字母）、sgdan（首字母+全拼混合）都能命中。
+   只对纯 ASCII 字母查询启用 —— 中文原文、# 标签、@ 来源走原有通道。
+   每个名字的拼音形态算一次就缓存（1330 个物品名，换页不重算）；
+   混合匹配是逐音节 DP：每个汉字的音节可以被「整个吃掉」也可以只吃首字母。 */
+type PinyinForms = {syllables: string[]; full: string; initials: string};
+const pinyinMemo = new Map<string, PinyinForms | null>();
+
+function pinyinForms(text: string): PinyinForms | null {
+  const hit = pinyinMemo.get(text);
+  if (hit !== undefined) return hit;
+  const han = [...text].filter(r => r >= '\u4e00' && r <= '\u9fff');
+  if (han.length === 0) {
+    pinyinMemo.set(text, null);
+    return null;
+  }
+  const syllables = pinyin(han.join(''), {toneType: 'none', type: 'array'}).map(s => s.toLowerCase());
+  const forms: PinyinForms = {syllables, full: syllables.join(''), initials: syllables.map(s => s[0] ?? '').join('')};
+  pinyinMemo.set(text, forms);
+  return forms;
+}
+
+/** 逐音节 DP：查询的每一段要么等于一个音节（全拼），要么等于它的首字母。
+    允许从任意音节开始 —— 物品名往往是多词的（悦灵刷怪蛋 =
+    yueling·shuaguai·dan），「shuaguaidan」是它的中缀不是前缀。 */
+function matchSyllables(q: string, forms: PinyinForms): boolean {
+  const n = forms.syllables.length;
+  const seen = new Set<string>();
+  const dfs = (i: number, j: number): boolean => {
+    if (j === q.length) return true;
+    if (i >= n) return false;
+    const key = `${i}:${j}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    const sy = forms.syllables[i] ?? '';
+    if (sy && q.startsWith(sy, j) && dfs(i + 1, j + sy.length)) return true;
+    if (q[j] === sy[0] && dfs(i + 1, j + 1)) return true;
+    return false;
+  };
+  for (let start = 0; start < n; start++) {
+    if (dfs(start, 0)) return true;
+  }
+  return false;
+}
+
+/** 拼音命中：对 displayName 与全部译名试全拼 / 首字母 / 混合 DP（中缀即可命中）。 */
+export function pinyinMatchName(item: CatalogItem, needle: string): boolean {
+  const q = needle.trim().toLowerCase();
+  if (!/^[a-z]+$/.test(q)) return false;
+  for (const text of [item.displayName, ...(item.names ?? []).map(n => n.name)]) {
+    const forms = pinyinForms(text);
+    if (!forms) continue;
+    if (forms.full.includes(q) || forms.initials.includes(q)) return true;
+    if (q.length >= 2 && matchSyllables(q, forms)) return true;
+  }
+  return false;
+}
+
+/* ── 类型分组（需求：按类型排序，刷怪蛋像创造栏一样聚在一起）────────
+   目录数据里没有创造模式物品栏的分组字段（0025/0027 都不含），所以第一版
+   用 ID 形态推导最稳的一类：`*_spawn_egg` = 刷怪蛋。其余物品跟在后面按 ID 序。 */
+export function typeBucket(item: CatalogItem): number {
+  return item.id.toLowerCase().endsWith('_spawn_egg') ? 0 : 1;
+}
 
 export function searchCatalogItems(items: CatalogItem[], needle: string, ns: string | null): ItemMatch[] {
   const q = needle.trim().toLowerCase();
@@ -31,6 +97,7 @@ export function searchCatalogItems(items: CatalogItem[], needle: string, ns: str
     else if ((item.names ?? []).some(n => n.name.toLowerCase().includes(q))) score = 3;
     else if (id.includes(q)) score = 4;
     else if (dn.includes(q)) score = 5;
+    else if (pinyinMatchName(item, q)) score = 6; // 拼音命中排在本名命中之后
     if (score >= 0) out.push({item, score});
   }
   return out.sort((a, b) => a.score - b.score || a.item.id.localeCompare(b.item.id));
@@ -187,7 +254,8 @@ export function textMatchItem(item: CatalogItem, q: string): boolean {
   }
   return item.id.toLowerCase().includes(needle)
     || item.displayName.toLowerCase().includes(needle)
-    || (item.names ?? []).some(n => n.name.toLowerCase().includes(needle));
+    || (item.names ?? []).some(n => n.name.toLowerCase().includes(needle))
+    || pinyinMatchName(item, needle);
 }
 
 /** 标签谓词：概念表展开（含容错）或标签 ID 匹配。概念展开按查询词记忆，避免逐物品重算。 */

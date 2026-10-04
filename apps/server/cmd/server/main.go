@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"mpackstation/internal/config"
 	"mpackstation/internal/httpapi"
 	"mpackstation/internal/instlock"
 	"mpackstation/internal/provider"
@@ -56,22 +57,46 @@ func providerRegistry(db *sql.DB) *provider.Registry {
 func main() {
 	addr := flag.String("addr", "127.0.0.1:18871", "listen address")
 	dataDir := flag.String("data", "../../data", "data directory (db, cache, jars)")
+	configPath := flag.String("config", "", "config file path (default: the per-OS user config dir, see config.DefaultPath)")
 	flag.Parse()
-	if v := os.Getenv("MPACK_DATA"); v != "" {
-		*dataDir = v
+
+	// 默认配置文件放在用户目录的 OS 约定位置（Windows %APPDATA%\mPackStation、
+	// macOS ~/Library/Application Support/mPackStation、Linux ~/.config/mpackstation，
+	// 见 config.DefaultPath），不存在的文件/键一律忽略。优先级：
+	// 显式 flag > MPACK_* 环境变量 > 配置文件 > 内置默认。
+	path := *configPath
+	if path == "" {
+		path = config.DefaultPath()
 	}
-	if abs, err := filepath.Abs(*dataDir); err == nil {
-		*dataDir = abs
+	cfg, err := config.Load(path)
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+	// 只有显式传的 flag 才覆盖配置文件 —— flag 变量自带默认值，直接覆盖会把
+	// 配置文件里的设定静默冲掉。
+	explicit := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+	if explicit["addr"] {
+		cfg.ListenAddr = *addr
+	}
+	if explicit["data"] {
+		cfg.DataDir = *dataDir
+	}
+	if v := os.Getenv("MPACK_DATA"); v != "" {
+		cfg.DataDir = v
+	}
+	if abs, err := filepath.Abs(cfg.DataDir); err == nil {
+		cfg.DataDir = abs
 	} else {
 		log.Fatalf("resolve data directory: %v", err)
 	}
 
-	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		log.Fatalf("create data dir: %v", err)
 	}
 
 	// 单实例锁：避免两个进程同时写同一个 SQLite 数据库。
-	lock, err := instlock.Acquire(*dataDir)
+	lock, err := instlock.Acquire(cfg.DataDir)
 	if err != nil {
 		log.Fatalf("acquire instance lock: %v", err)
 	}
@@ -81,7 +106,7 @@ func main() {
 		}
 	}()
 
-	db, err := store.Open(filepath.Join(*dataDir, "mpackstation.db"))
+	db, err := store.Open(filepath.Join(cfg.DataDir, "mpackstation.db"))
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
@@ -121,9 +146,9 @@ func main() {
 		probe.ProbeProviderStatus(pctx)
 	}()
 
-	log.Printf("mpackstation server listening on http://%s (data: %s)", *addr, *dataDir)
+	log.Printf("mpackstation server listening on http://%s (data: %s)", cfg.ListenAddr, cfg.DataDir)
 	server := &http.Server{
-		Addr: *addr, Handler: httpapi.NewRouterWithProviders(db, version, registry, queue),
+		Addr: cfg.ListenAddr, Handler: httpapi.NewRouterWithProviders(db, version, registry, queue),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second,
 	}

@@ -18,7 +18,7 @@ import {ContextMenu, type MenuItem} from '../ui/ContextMenu';
 export function GlobalContextMenu({onOpenPalette}: {onOpenPalette: () => void}) {
   const {packId, mode, view} = useUrlState();
   const patch = useUrlPatch();
-  const [at, setAt] = useState<{x: number; y: number} | null>(null);
+  const [at, setAt] = useState<{x: number; y: number; inEditor: boolean} | null>(null);
 
   useEffect(() => {
     const onCtx = (e: MouseEvent) => {
@@ -31,7 +31,10 @@ export function GlobalContextMenu({onOpenPalette}: {onOpenPalette: () => void}) 
       /* 已经有更贴切的菜单了 */
       if (e.defaultPrevented) return;
       e.preventDefault();
-      setAt({x: e.clientX, y: e.clientY});
+      /* 记下落点在不在主编辑区：视图切换是编辑区的动作，不该跟着兜底菜单
+         出现在侧边栏/图标轨上（2026-10-04 用户反馈：左侧边栏右键不该出现
+         「切换表格视图」）。 */
+      setAt({x: e.clientX, y: e.clientY, inEditor: !!el.closest('main.editor')});
     };
     document.addEventListener('contextmenu', onCtx);
     return () => document.removeEventListener('contextmenu', onCtx);
@@ -39,10 +42,11 @@ export function GlobalContextMenu({onOpenPalette}: {onOpenPalette: () => void}) 
 
   if (!at) return null;
 
-  /* 兜底菜单只放「跟光标下对象无关」的动作 —— 任何位置都成立，不猜用户点到了什么。
-     带对象的动作由各自的界面在自己的 onContextMenu 里给。 */
+  /* 兜底菜单只放「跟光标下对象无关」的动作 —— 带对象的动作由各自的界面在自己的
+     onContextMenu 里给。视图切换只属于主编辑区（mode=index 且点在 main.editor 里），
+     其余位置（图标轨、项目管理、任务书面板…）不出现。 */
   const items: MenuItem[] = [];
-  if (mode === 'index') {
+  if (mode === 'index' && at.inEditor) {
     items.push({
       label: view === 'grid' ? '切到表格视图' : '切到网格视图',
       action: () => patch({view: view === 'grid' ? 'table' : 'grid'}),

@@ -668,7 +668,8 @@ details.rg-block > summary:hover { color: var(--mc-text); }
 .dir-half:hover { background: var(--mc-hover); color: var(--mc-text); }
 .dir-half.on { background: var(--mc-primary-bg); color: var(--mc-primary-deep); }
 
-/* ── 排序方向：一个标准按钮，左半↓（降序）/右半↑（升序），亮哪半=当前方向 ── */
+/* ── 排序方向：一个按钮只显示一个箭头，升/降序切换时旧箭头滑出、新箭头滑入 ──
+   两个 icon 都常驻 DOM，靠 data-dir 决定谁在位；当前显示的箭头即排序状态。 */
 .dir-btn {
   border: 1px solid var(--mc-line);
   background: var(--mc-fill);
@@ -679,12 +680,24 @@ details.rg-block > summary:hover { color: var(--mc-text); }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 1px;
   padding: 0 4px;
 }
 .dir-btn:hover { background: var(--mc-hover); }
-.dir-btn span { display: inline-flex; color: var(--mc-muted); }
-.dir-btn span.on { color: var(--mc-primary-deep); }
+.dir-arrow { position: relative; width: 13px; height: 13px; display: inline-block; }
+.dir-arrow .dir-a {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mc-primary-deep);
+  transition: transform .16s ease, opacity .16s ease;
+}
+/* 默认（降序）：向下箭头在位，向上箭头收在下方；升序时对调，形成滑动切换 */
+.dir-arrow .dir-up { transform: translateY(120%); opacity: 0; }
+.dir-arrow .dir-down { transform: translateY(0); opacity: 1; }
+.dir-arrow[data-dir='asc'] .dir-up { transform: translateY(0); opacity: 1; }
+.dir-arrow[data-dir='asc'] .dir-down { transform: translateY(-120%); opacity: 0; }
 
 /* ── 索引工具栏搜索框 + Apple 开关 ──────────────────────── */
 .ed-search { width: 260px; }

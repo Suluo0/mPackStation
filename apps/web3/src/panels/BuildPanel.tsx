@@ -10,7 +10,11 @@ import {useUrlState} from '../app/url';
 import {Icon} from '../ui/Icon';
 import {Modal} from '../ui/Modal';
 
-/* 构建面板（Git 分支语义 + 四个构建动作）：
+/* 构建面板（版本/构建语义 + 四个构建动作）：
+   注意口径：这里没有 Git —— 后端不存在任何 git 集成，「分支图标」是早期
+   设计稿的说法（2026-10-04 用户反馈「有 Git 跟踪但不能提交」源于此）。
+   真实能力 = 版本登记 → 锁定 → .mrpack 构建 → 交付检查 → 发布记录（本地），
+   平台发布（CurseForge/Modrinth）尚未实现，见下方发布记录空态文案。
    顶部四个动作 = 这个工具真正要产出的东西 ——
      1 构建发布包      走包内权威清单装配 .mrpack（正式产物）
      2 检查包是否存在异常 把真实信号（冲突 / 健康 / 目录 / 版本 / 任务书）落成交付检查
@@ -252,7 +256,7 @@ export function BuildPanel() {
             </div>
           ))}
           {releases.length === 0 && (
-            <div className="p-empty">还没有发布记录。发布到 CurseForge / Modrinth 的表单与轮询由 3F 落地（无凭证时后端按 by-design 拒绝）。</div>
+            <div className="p-empty">平台发布（CurseForge / Modrinth）尚未实现：当前产物是 .mrpack 文件，可直接导入启动器。接入平台发布需要 API 凭证与上传链路，届时这里会出现发布入口。</div>
           )}
         </div>
 

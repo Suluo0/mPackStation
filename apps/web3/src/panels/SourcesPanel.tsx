@@ -628,6 +628,10 @@ function SearchHits({q}: {q: string}) {
    行上刻意**不挂**「停用 / 移除」按钮：那是低频且不可逆的动作，
    挤在每个模组右侧等于给误点造靶子，现在一律走右键菜单。
    本体（builtin）也用这一行，只是 badge 不同（「原版」而非状态相关的东西）。 */
+/* 向游戏实际贡献内容的种类（配方/物品模型/结构/群系/战利品/进度/标签）。
+   只有 lang/metadata/texture/item_icon 的模组对游戏没有任何变化 —— 折叠成一行。 */
+const GAMEPLAY_KINDS = new Set(['recipe', 'item_model', 'structure', 'worldgen', 'loot_table', 'advancement', 'tag']);
+
 function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, badge}: {
   mod: Mod;
   expanded: boolean;
@@ -636,21 +640,50 @@ function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, badge}:
   onContextMenu: (e: React.MouseEvent) => void;
   badge?: ReactNode;
 }) {
+  /* 空模组判定用后端给的精确计数（contentKinds），不再靠展开后取样数。
+     原版（minecraft）的 mod_content 里 metadata 只有一行内部口径，其余种类
+     齐全，不会被误判。 */
+  const gameplayTotal = Object.entries(mod.contentKinds ?? {})
+    .filter(([k]) => GAMEPLAY_KINDS.has(k))
+    .reduce((s, [, n]) => s + n, 0);
+  const isEmpty = gameplayTotal === 0;
+  const nameEl = mod.nameZh
+    ? <span className="grow" style={{overflow: 'hidden', textOverflow: 'ellipsis'}}>{mod.nameZh} <span className="sub">{mod.displayName}</span></span>
+    : <span className="grow" style={{overflow: 'hidden', textOverflow: 'ellipsis'}}>{mod.displayName}</span>;
   return (
     <>
       <div className="p-row click" onClick={onFilter} onContextMenu={onContextMenu}
-        title={`${mod.displayName} · 点击筛选它贡献的物品 · 右键更多操作`}>
-        <button type="button" className="src-chevron" aria-label={expanded ? '收起' : '展开解析内容'}
-          aria-expanded={expanded}
-          onClick={e => { e.stopPropagation(); onToggleExpand(); }}>
-          <Icon name={expanded ? 'caretDown' : 'caretRight'} size={13}/>
-        </button>
+        title={`${mod.nameZh ?? mod.displayName} · 点击筛选它贡献的物品 · 右键更多操作`}>
+        {/* 空内容模组没有展开区可给，行首不放箭头 —— 展开箭头的有无本身就是
+            「这个模组有没有可下钻的内容」的信号。 */}
+        {!isEmpty && (
+          <button type="button" className="src-chevron" aria-label={expanded ? '收起' : '展开解析内容'}
+            aria-expanded={expanded}
+            onClick={e => { e.stopPropagation(); onToggleExpand(); }}>
+            <Icon name={expanded ? 'caretDown' : 'caretRight'} size={13}/>
+          </button>
+        )}
         {/* 本体的圆点是蓝色：它不是「装了 / 停了」的状态，是「这就是游戏本身」。 */}
         <span className="dot" style={{background: mod.origin === 'builtin' ? 'var(--mc-blue)' : DOT[mod.status] ?? 'var(--mc-muted)'}}/>
-        <span className="grow" style={{overflow: 'hidden', textOverflow: 'ellipsis'}}>{mod.displayName}</span>
+        {nameEl}
         {badge}
       </div>
-      {expanded && <ModContent modId={mod.id} ns={mod.canonicalModId}/>}
+      {isEmpty && (
+        <div className="p-row" style={{paddingLeft: 26}}>
+          <span className="sub">{mod.description ?? '这个模组不向游戏提供物品、配方、结构等内容（例如纯翻译/纯库模组）。'}</span>
+        </div>
+      )}
+      {expanded && !isEmpty && (
+        <>
+          {/* 展开第一行 = 模组的一句话描述（平台元数据；原版行由后端给定）。 */}
+          {mod.description && (
+            <div className="p-row" style={{paddingLeft: 26}} title="模组的一句话描述">
+              <span className="sub">{mod.description}</span>
+            </div>
+          )}
+          <ModContent modId={mod.id} ns={mod.canonicalModId}/>
+        </>
+      )}
     </>
   );
 }
@@ -821,8 +854,10 @@ function ModContent({modId, ns}: {modId: string; ns: string}) {
 
   if (loading) return <div className="p-empty" style={{paddingLeft: 26}}>载入解析内容…</div>;
 
-  const gameplay = kinds.filter(k => !RESOURCE_KINDS.has(k.kind));
-  const resources = kinds.filter(k => RESOURCE_KINDS.has(k.kind));
+  /* metadata（模组自述元数据）是系统内部口径，只送后端消费，不再作为内容种类
+     展示（2026-10-04 用户反馈：它不该出现在前端）。 */
+  const gameplay = kinds.filter(k => !RESOURCE_KINDS.has(k.kind) && k.kind !== 'metadata');
+  const resources = kinds.filter(k => RESOURCE_KINDS.has(k.kind) && k.kind !== 'metadata');
 
   const kindRow = (k: {kind: string; count: number}) => (
     <div key={k.kind} className="p-row click"

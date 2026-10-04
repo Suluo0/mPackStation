@@ -35,6 +35,21 @@ export function ContentPanel() {
 
   return (
     <div className="tp-body">
+      {/* 种类切换（2026-10-04 用户反馈：后端支持配方/结构/矿脉三种，但此前
+          ?ck= 没有 UI 写入点，结构/矿脉成了藏在 URL 后面的功能）。 */}
+      <div className="p-section">
+        <div className="p-title">自建内容</div>
+        <div className="ck-tabs">
+          {Object.entries(KINDS).map(([value, label]) => (
+            <button key={value} type="button"
+              className={`ck-tab${kind === value ? ' on' : ''}`}
+              aria-pressed={kind === value}
+              onClick={() => patch({ck: value === 'recipe' ? null : value, doc: null})}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="p-section">
         <div className="p-title">{KINDS[kind] ?? kind} <span className="count">{docs.length}</span></div>
         {error && <div className="p-empty">{error}</div>}

@@ -231,3 +231,16 @@
   border-radius: var(--mc-radius);
   padding: 3px;
 }
+
+/* ── 自建内容的种类切换（配方/结构/矿脉）：与索引视图切换同一外观语言 ── */
+.ck-tabs { display: flex; gap: 2px; margin-top: 4px; }
+.ck-tab {
+  border: 1px solid var(--mc-line);
+  background: var(--mc-fill);
+  border-radius: var(--mc-radius);
+  padding: 3px 10px;
+  cursor: pointer;
+  color: var(--mc-text-2);
+}
+.ck-tab:hover { background: var(--mc-hover); }
+.ck-tab.on { background: var(--mc-primary-bg); color: var(--mc-primary-deep); border-color: var(--mc-primary); }

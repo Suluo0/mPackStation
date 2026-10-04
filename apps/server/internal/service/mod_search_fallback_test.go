@@ -150,7 +150,7 @@ func TestOnlyOtherLoaderProjectsDropsUnknownLoaders(t *testing.T) {
 		{Slug: "has-fabric", Name: "Has Fabric", Loaders: []string{"forge", "fabric"}},
 		{Slug: "unknown-empty-slice", Name: "Empty Slice", Loaders: []string{}},
 	}
-	got := onlyOtherLoaderProjects(items, "fabric", "other")
+	got := onlyOtherLoaderProjects(items, "fabric", searchTerms("other"))
 	if len(got) != 1 || got[0].Slug != "other-only" {
 		names := make([]string, 0, len(got))
 		for _, p := range got {
@@ -168,16 +168,32 @@ func TestOnlyOtherLoaderProjectsDropsUnknownLoaders(t *testing.T) {
 // 相关性：只沾摘要（20 分）的不要，名称/slug 真命中的才留。
 func TestOtherLoaderRelevantRejectsPlatformNoise(t *testing.T) {
 	noise := provider.Project{Slug: "noemotecraft", Name: "NoEmotecraft", Summary: "Mek-inspired sound mod"}
-	if otherLoaderRelevant(noise, "fabric", "mek") {
+	if otherLoaderRelevant(noise, "fabric", searchTerms("mek")) {
 		t.Fatal("只在摘要里沾到查询的条目不该进降级区 —— 它会把真正的答案挤掉")
 	}
 	real := provider.Project{Slug: "mekanism", Name: "Mekanism", Loaders: []string{"neoforge"}}
-	if !otherLoaderRelevant(real, "fabric", "mek") {
+	if !otherLoaderRelevant(real, "fabric", searchTerms("mek")) {
 		t.Fatal("名称以查询开头、且不支持本包加载器的条目必须进降级区")
 	}
 	compatible := provider.Project{Slug: "mek-tools", Name: "Mek Tools", Loaders: []string{"fabric"}}
-	if otherLoaderRelevant(compatible, "fabric", "mek") {
+	if otherLoaderRelevant(compatible, "fabric", searchTerms("mek")) {
 		t.Fatal("支持本包加载器的条目属于主结果，不该出现在降级区")
+	}
+}
+
+// TestOtherLoaderRelevantAcceptsChineseAlias 复刻 2026-10-04 排查确认的回归：
+// Fabric 包搜「通用机械」，Mekanism（只有 forge/neoforge 版）先被 loader 拦在
+// 主结果外、再被降级区 ≥50 分门槛滤掉（中文对英文元数据只有 10 分），哪儿都
+// 不出现。评分词表带上别名展开词（searchTerms）后，正主必须能进降级区。
+func TestOtherLoaderRelevantAcceptsChineseAlias(t *testing.T) {
+	mek := provider.Project{Slug: "mekanism", Name: "Mekanism", Loaders: []string{"forge", "neoforge"}}
+	if !otherLoaderRelevant(mek, "fabric", searchTerms("通用机械")) {
+		t.Fatal("别名命中的正主（通用机械→mekanism）必须能进降级区 —— 否则中文搜索在 Fabric 包里永远搜不到它")
+	}
+	// 别名不相关的条目依然要被门槛拦住。
+	stray := provider.Project{Slug: "storage-drawers", Name: "Storage Drawers", Loaders: []string{"forge"}}
+	if otherLoaderRelevant(stray, "fabric", searchTerms("通用机械")) {
+		t.Fatal("别名不该给无关条目放行 —— 降级区的相关性门槛仍然生效")
 	}
 }
 
@@ -188,16 +204,16 @@ func TestHasRelevantHitDistinguishesNoiseFromAnswer(t *testing.T) {
 		{Provider: "modrinth", Project: provider.Project{Slug: "noemotecraft", Name: "NoEmotecraft", Summary: "Mek-inspired sound mod"}},
 		{Provider: "modrinth", Project: provider.Project{Slug: "keprofiles", Name: "KeProfiles", Summary: "profile helper"}},
 	}
-	if hasRelevantHit("mek", noise) {
+	if hasRelevantHit(searchTerms("mek"), noise) {
 		t.Fatal("整屏都是模糊噪音时不该算「搜到了」—— 那会让降级永不触发")
 	}
 	answer := []ModSearchAllItem{
 		{Provider: "modrinth", Project: provider.Project{Slug: "mek-tools", Name: "Mek Tools for Fabric", Loaders: []string{"fabric"}}},
 	}
-	if !hasRelevantHit("mek", answer) {
+	if !hasRelevantHit(searchTerms("mek"), answer) {
 		t.Fatal("名称以查询开头必须算「搜到了」")
 	}
-	if hasRelevantHit("mek", nil) {
+	if hasRelevantHit(searchTerms("mek"), nil) {
 		t.Fatal("空列表当然没有相关命中")
 	}
 }

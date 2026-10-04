@@ -73,6 +73,13 @@ type Mod struct {
 	// sides and never auto-updated.
 	MirrorSource    *string `json:"mirrorSource"`
 	MirrorProjectID *string `json:"mirrorProjectId"`
+	// 展示性增强，全部可为 null / 空（前端各自降级，不作为功能依赖）：
+	// NameZh = 社区中文名（别名表按 slug 反查）；Description = 平台一句话描述
+	// （0029 起落库，历史行缺失时服务层读取时按需补拉并回写）；
+	// ContentKinds = 解析产物精确分类计数（模组树展开计数与「空模组」判定用）。
+	NameZh       *string          `json:"nameZh"`
+	Description  *string          `json:"description"`
+	ContentKinds map[string]int64 `json:"contentKinds"`
 	// Origin: manual = 手动添加; compat-fix = 兼容知识库自动加装的补丁。
 	Origin    string `json:"origin"`
 	AddedAt   string `json:"addedAt"`
@@ -146,14 +153,15 @@ func (a *API) ModSearch(ctx context.Context, packID string, in ModSearchInput) (
 	if err != nil {
 		return ModSearchResult{}, err
 	}
-	r, err := ad.Search(ctx, provider.SearchRequest{Query: in.Query, MCVersion: in.MCVersion, Loader: in.Loader, Cursor: in.Cursor, Limit: in.Limit})
+	r, err := ad.Search(ctx, provider.SearchRequest{Query: platformSearchQuery(in.Query), MCVersion: in.MCVersion, Loader: in.Loader, Cursor: in.Cursor, Limit: in.Limit})
 	if err != nil {
 		return ModSearchResult{}, mapProviderError(err)
 	}
 	out := ModSearchResult{Items: r.Items, NextCursor: r.NextCursor, Total: r.Total}
 	// 与多平台路径同一开关：主结果里没有真正相关的命中才降级（理由见 ModSearchAll）。
-	if in.Loader != "" && !hasRelevantProject(in.Query, r.Items) {
-		out.Fallback = relaxLoaderAndSearch(ctx, ad, in)
+	terms := searchTerms(in.Query)
+	if in.Loader != "" && !hasRelevantProject(terms, r.Items) {
+		out.Fallback = relaxLoaderAndSearch(ctx, ad, in, terms)
 	}
 	return out, nil
 }
@@ -166,24 +174,24 @@ func (a *API) ModSearch(ctx context.Context, packID string, in ModSearchInput) (
 //
 // 查不到 MC 版本这一维**不要摘**：降级是为了回答「换个加载器能不能装」，
 // 如果把 MC 版本也放开，返回的会是一堆版本也对不上的噪音。
-func relaxLoaderAndSearch(ctx context.Context, ad provider.Adapter, in ModSearchInput) []provider.Project {
+func relaxLoaderAndSearch(ctx context.Context, ad provider.Adapter, in ModSearchInput, terms []string) []provider.Project {
 	relaxed := in
 	relaxed.Loader = ""
-	r, err := ad.Search(ctx, provider.SearchRequest{Query: relaxed.Query, MCVersion: relaxed.MCVersion, Cursor: relaxed.Cursor, Limit: relaxed.Limit})
+	r, err := ad.Search(ctx, provider.SearchRequest{Query: platformSearchQuery(relaxed.Query), MCVersion: relaxed.MCVersion, Cursor: relaxed.Cursor, Limit: relaxed.Limit})
 	if err != nil {
 		return nil // 降级是增强，失败就退回「没有额外交代」而不是把主搜索也报错
 	}
-	return onlyOtherLoaderProjects(r.Items, in.Loader, in.Query)
+	return onlyOtherLoaderProjects(r.Items, in.Loader, terms)
 }
 
 // onlyOtherLoaderProjects 是 otherLoaderRelevant 在纯项目列表上的版本。
-func onlyOtherLoaderProjects(items []provider.Project, want, query string) []provider.Project {
+func onlyOtherLoaderProjects(items []provider.Project, want string, terms []string) []provider.Project {
 	out := []provider.Project{}
 	for _, p := range items {
 		if len(out) >= modSearchFallbackLimit {
 			break
 		}
-		if otherLoaderRelevant(p, want, query) {
+		if otherLoaderRelevant(p, want, terms) {
 			out = append(out, p)
 		}
 	}
@@ -191,13 +199,40 @@ func onlyOtherLoaderProjects(items []provider.Project, want, query string) []pro
 }
 
 // hasRelevantProject 是 hasRelevantHit 在纯项目列表上的版本。
-func hasRelevantProject(query string, items []provider.Project) bool {
+func hasRelevantProject(terms []string, items []provider.Project) bool {
 	for _, p := range items {
-		if modSearchScore(query, p) >= modSearchRelevantScore {
+		if modSearchBestScore(terms, p) >= modSearchRelevantScore {
 			return true
 		}
 	}
 	return false
+}
+
+// searchTerms 返回本次搜索的评分词表：原始查询在前，别名展开的英文词在后。
+//
+// 中文别名（通用机械）在英文平台元数据上永远打不到分（modSearchScore 最低档
+// 10 分）——平台查询词已经换用别名词，相关度判定、降级准入也必须用别名词
+// 再看一遍取最高分，否则降级区的 ≥50 分门槛会把别名正主滤掉：
+// Fabric 包搜「通用机械」时 Mekanism 只有 forge/neoforge 版，主结果被 loader
+// 拦掉、降级区又被打分门槛滤掉，哪儿都不出现（2026-10-04 排查确认的回归）。
+func searchTerms(query string) []string {
+	q := strings.TrimSpace(query)
+	terms := []string{q}
+	if s := expandModSearchAlias(q); s != "" && !strings.EqualFold(s, q) {
+		terms = append(terms, s)
+	}
+	return terms
+}
+
+// modSearchBestScore 取整个词表的最高相关度分。
+func modSearchBestScore(terms []string, p provider.Project) int {
+	best := 0
+	for _, t := range terms {
+		if s := modSearchScore(t, p); s > best {
+			best = s
+		}
+	}
+	return best
 }
 
 func declaresLoader(loaders []string, want string) bool {
@@ -346,6 +381,7 @@ func (a *API) ModSearchAll(ctx context.Context, packID string, in ModSearchInput
 		return ModSearchAllResult{}, err
 	}
 	in = withPackSearchDefaults(in, pack)
+	terms := searchTerms(in.Query)
 
 	out, err := a.modSearchFanout(ctx, in)
 	if err != nil {
@@ -356,24 +392,24 @@ func (a *API) ModSearchAll(ctx context.Context, packID string, in ModSearchInput
 	// 真正相关」。平台的模糊搜索会用摘要里的边角匹配把列表塞满 —— 实测在一个
 	// Fabric 包里搜 mek，主结果非空但两条都是 NoEmotecraft / KeProfiles 这种
 	// 噪音，用「空」当开关等于永不降级，Mekanism 永远露不出来。
-	if in.Loader != "" && !hasRelevantHit(in.Query, out.Items) {
+	if in.Loader != "" && !hasRelevantHit(terms, out.Items) {
 		relaxed := in
 		relaxed.Loader = ""
 		if alt, altErr := a.modSearchFanout(ctx, relaxed); altErr == nil {
-			out.Fallback = onlyOtherLoaderItems(alt.Items, in.Loader, in.Query)
+			out.Fallback = onlyOtherLoaderItems(alt.Items, in.Loader, terms)
 		}
 	}
 	return out, nil
 }
 
 // onlyOtherLoaderItems 是 otherLoaderRelevant 在合并卡片上的版本。
-func onlyOtherLoaderItems(items []ModSearchAllItem, want, query string) []ModSearchAllItem {
+func onlyOtherLoaderItems(items []ModSearchAllItem, want string, terms []string) []ModSearchAllItem {
 	out := []ModSearchAllItem{}
 	for _, it := range items {
 		if len(out) >= modSearchFallbackLimit {
 			break
 		}
-		if otherLoaderRelevant(it.Project, want, query) {
+		if otherLoaderRelevant(it.Project, want, terms) {
 			out = append(out, it)
 		}
 	}
@@ -384,15 +420,16 @@ func onlyOtherLoaderItems(items []ModSearchAllItem, want, query string) []ModSea
 //
 //  1. 明确声明了加载器、且都不含本包的加载器（说不出加载器的不算，因为降级区
 //     的意义就是解释「为什么不适用」）；
-//  2. 跟查询真正相关（见 modSearchRelevantScore）。
+//  2. 跟查询真正相关（见 modSearchBestScore，评分词表含别名展开词 —— 中文
+//     别名对英文元数据打不上分，不看别名词 Mekanism 就会被这道门槛滤掉）。
 //
 // 第 2 条不是锦上添花：降级查询摘掉了加载器限制，平台会把摘要里沾边的全都倒
 // 出来，不过滤的话降级区就是一屏噪音，正好把真正的答案（Mekanism）盖掉。
-func otherLoaderRelevant(p provider.Project, want, query string) bool {
+func otherLoaderRelevant(p provider.Project, want string, terms []string) bool {
 	if len(p.Loaders) == 0 || declaresLoader(p.Loaders, want) {
 		return false
 	}
-	return modSearchScore(query, p) >= modSearchRelevantScore
+	return modSearchBestScore(terms, p) >= modSearchRelevantScore
 }
 
 // modSearchRelevantScore 是「这条命中跟查询是否真的相关」的分界线。
@@ -404,13 +441,25 @@ const modSearchFallbackLimit = 10
 
 // hasRelevantHit 判断主结果里有没有一条跟查询真正相关的命中。
 // 只看有没有，不看有几条 —— 有一条就说明「本包确实有这个东西」，不需要降级。
-func hasRelevantHit(query string, items []ModSearchAllItem) bool {
+func hasRelevantHit(terms []string, items []ModSearchAllItem) bool {
 	for _, it := range items {
-		if modSearchScore(query, it.Project) >= modSearchRelevantScore {
+		if modSearchBestScore(terms, it.Project) >= modSearchRelevantScore {
 			return true
 		}
 	}
 	return false
+}
+
+// platformSearchQuery 把用户输入换成实际发给平台的查询词：查询命中别名表时
+// 用别名展开的 slug（「通用机械」→ mekanism）。平台元数据没有中文，按原文
+// 发出去只会得到噪音甚至空结果；slug 在两个平台的搜索接口都能命中正主。
+// 相关度仍按 searchTerms 的词表（原文 + 别名词）打分，用户输入不丢。
+func platformSearchQuery(query string) string {
+	q := strings.TrimSpace(query)
+	if s := expandModSearchAlias(q); s != "" && !strings.EqualFold(s, q) {
+		return s
+	}
+	return q
 }
 
 // modSearchFanout 是纯扇出：并发查询 + 跨平台配对 + slug 直取 + 复合排序。
@@ -447,7 +496,9 @@ func (a *API) modSearchFanout(ctx context.Context, in ModSearchInput) (ModSearch
 			if fetchLimit < 25 {
 				fetchLimit = 25
 			}
-			r, err := ad.Search(pctx, provider.SearchRequest{Query: in.Query, MCVersion: in.MCVersion, Loader: in.Loader, Cursor: in.Cursor, Limit: fetchLimit})
+			// 平台查询词换用别名展开词（通用机械 → mekanism）：平台元数据没有
+			// 中文，原文发出去只会得到噪音。相关度仍按 searchTerms 词表打分。
+			r, err := ad.Search(pctx, provider.SearchRequest{Query: platformSearchQuery(in.Query), MCVersion: in.MCVersion, Loader: in.Loader, Cursor: in.Cursor, Limit: fetchLimit})
 			if err != nil {
 				slots[i].err = err
 				return
@@ -494,9 +545,12 @@ func (a *API) modSearchFanout(ctx context.Context, in ModSearchInput) (ModSearch
 	// slug 前缀 > slug 包含 > 摘要），下载量兜底，provider+name 定序。
 	// 别名注入的正主（精致存储→sophisticated-storage、aer→ae2）代表用户的
 	// 搜索意图本身，排在一切有机命中之前（95 分，仅次于 slug 精确 100）。
+	// 评分用词表最高分：中文别名查询（通用机械）对英文元数据打不上分，
+	// 不看别名词的话降级区外的一切排序都退化成噪音序。
+	terms := searchTerms(in.Query)
 	aliasSlug := expandModSearchAlias(in.Query)
 	sort.SliceStable(out.Items, func(i, j int) bool {
-		si, sj := modSearchScore(in.Query, out.Items[i].Project), modSearchScore(in.Query, out.Items[j].Project)
+		si, sj := modSearchBestScore(terms, out.Items[i].Project), modSearchBestScore(terms, out.Items[j].Project)
 		if aliasSlug != "" {
 			if strings.EqualFold(out.Items[i].Slug, aliasSlug) {
 				si = 95
@@ -653,11 +707,7 @@ func (a *API) ListPackMods(ctx context.Context, packID string) ([]Mod, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Mod, 0, len(rows))
-	for _, m := range rows {
-		out = append(out, modDTO(m))
-	}
-	return out, nil
+	return a.enrichModDTOs(ctx, rows), nil
 }
 
 // ListPackContentSources returns every mod-shaped content source in a pack,
@@ -673,12 +723,136 @@ func (a *API) ListPackContentSources(ctx context.Context, packID string) ([]Mod,
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Mod, 0, len(rows))
-	for _, m := range rows {
-		out = append(out, modDTO(m))
-	}
-	return out, nil
+	return a.enrichModDTOs(ctx, rows), nil
 }
+
+// enrichModDTOs 给模组清单补展示字段，全部 best-effort（任何一步失败都只是
+// 字段留空，清单本身照常返回）：
+//   - ContentKinds：解析产物精确分类计数（mod_content GROUP BY，空模组判定与
+//     展开计数都用它，前端不再对 1000 条取样自己数）；
+//   - NameZh：社区中文名，按平台 slug 从别名表反查（modsearch_alias.go）；
+//   - Description：平台一句话描述，读 platform_projects.description（0029），
+//     历史行缺失时对前几个模组后台补拉一次并回写，下次清单就有了。
+func (a *API) enrichModDTOs(ctx context.Context, rows []store.PackModRecord) []Mod {
+	packID := ""
+	externalIDs := make([]string, 0, len(rows))
+	for _, m := range rows {
+		if packID == "" {
+			packID = m.PackID
+		}
+		if isPlatformSource(m.Source) && m.ProjectID != "" {
+			externalIDs = append(externalIDs, m.ProjectID)
+		}
+	}
+	briefs := map[string]store.PlatformProjectBrief{}
+	if len(externalIDs) > 0 {
+		if b, err := a.repo.PlatformProjectBriefs(ctx, externalIDs); err == nil {
+			briefs = b
+		}
+	}
+	kinds := map[string]map[string]int64{}
+	if packID != "" {
+		if k, err := a.repo.ModContentKindCounts(ctx, packID); err == nil {
+			kinds = k
+		}
+	}
+
+	out := make([]Mod, 0, len(rows))
+	var missing [][2]string // {platform, projectID}
+	for _, m := range rows {
+		dto := modDTO(m)
+		if k := kinds[m.ID]; k != nil {
+			dto.ContentKinds = k
+		} else {
+			dto.ContentKinds = map[string]int64{}
+		}
+		switch {
+		case m.ModID == "minecraft":
+			// 内置原版行：没有平台元数据，描述与中文名直接给定。
+			desc := "Minecraft 本体（原版物品、配方、进度、结构、群系、语言与纹理）。"
+			zh := "我的世界"
+			dto.Description, dto.NameZh = &desc, &zh
+		case isPlatformSource(m.Source) && m.ProjectID != "":
+			if b, ok := briefs[m.Source+"|"+m.ProjectID]; ok {
+				if zh := zhNameForSlug(b.Slug); zh != "" {
+					dto.NameZh = &zh
+				}
+				if b.Description != "" {
+					dto.Description = &b.Description
+				} else {
+					missing = append(missing, [2]string{m.Source, m.ProjectID})
+				}
+			} else {
+				missing = append(missing, [2]string{m.Source, m.ProjectID})
+			}
+		}
+		out = append(out, dto)
+	}
+	if len(missing) > 0 {
+		go a.backfillDescriptions(missing)
+	}
+	return out
+}
+
+// backfillDescriptions 对缺描述的平台模组补拉一次（≤5 个、共享 10s 预算）并
+// 回写 platform_projects。fire-and-forget：描述是展示增强，失败静默，
+// 不重试 —— 用户下次进面板时清单还会再触发一轮。
+func (a *API) backfillDescriptions(missing [][2]string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if len(missing) > 5 {
+		missing = missing[:5]
+	}
+	var wg sync.WaitGroup
+	for _, m := range missing {
+		platform, projectID := m[0], m[1]
+		ad, err := a.p5Adapter(platform)
+		if err != nil {
+			continue // 平台未配置/不可用：跳过，下次再说
+		}
+		wg.Add(1)
+		go func(ad provider.Adapter, platform, projectID string) {
+			defer wg.Done()
+			p, err := ad.Project(ctx, projectID)
+			if err != nil || p.Summary == "" {
+				return
+			}
+			_ = a.repo.SetPlatformProjectDescription(ctx, platform, projectID, p.Summary)
+		}(ad, platform, projectID)
+	}
+	wg.Wait()
+}
+
+// isPlatformSource 判断来源是不是平台模组（本地 zip 上传的没有平台元数据）。
+func isPlatformSource(source string) bool {
+	return source == "modrinth" || source == "curseforge"
+}
+
+// zhNameForSlug 从别名表反查社区中文名。别名表的 key 一半是英文缩写
+// （ae2/jei），只有含汉字的别名才算「中文名」，反查时跳过英文键。
+// 表里没有的模组返回空串，前端降级成只显示英文名。
+func zhNameForSlug(slug string) string {
+	if slug == "" {
+		return ""
+	}
+	for alias, s := range modSearchAliases {
+		if s == slug && containsHan(alias) {
+			return alias
+		}
+	}
+	return ""
+}
+
+// containsHan 判断字符串是否含汉字。
+func containsHan(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}
+
 func modDTO(m store.PackModRecord) Mod {
 	strPtr := func(s string) *string {
 		if s == "" {

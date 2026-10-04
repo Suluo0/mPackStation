@@ -32,6 +32,12 @@ export const modSchema = z.object({
   updatedAt: z.iso.datetime(),
   /* 用户自定义分类（"优化"/"科技"…），空 = 未分类（0027）。 */
   category: z.string().default(''),
+  /* 展示性增强（2026-10-04）：nameZh=社区中文名（别名表反查，可能为 null）；
+     description=平台一句话描述（可能为 null）；contentKinds=解析产物精确分类
+     计数（空模组判定与展开计数用）。 */
+  nameZh: z.string().nullable(),
+  description: z.string().nullable(),
+  contentKinds: z.record(z.string(), z.number()),
 });
 export type Mod = z.infer<typeof modSchema>;
 
