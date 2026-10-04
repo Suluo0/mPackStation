@@ -57,6 +57,20 @@ for i in $(seq 1 45); do
   if [ "$srv" = "200" ] && port_busy 5271; then
     echo "[dev] backend  ready  http://127.0.0.1:18872"
     echo "[dev] frontend ready  http://127.0.0.1:5271"
+    # ── 外部访问（EasyTier mesh）────────────────────────────────────────
+    # 人在外面时，mesh 内的设备（手机/其他机器）直接开 http://<虚拟IP>:5271。
+    # 应用本体仍只监听 127.0.0.1：这里只把 mesh 虚拟 IP 上的 5271 转发到回环，
+    # 不开 0.0.0.0（vite.config.ts 头注的安全约束不破）。EasyTier 不在线就跳过。
+    et_ip=""
+    if command -v easytier-cli >/dev/null 2>&1; then
+      et_ip="$(easytier-cli node 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+    fi
+    if [ -n "$et_ip" ]; then
+      EXT_HOST="$et_ip" node "$ROOT/scripts/ext-proxy.mjs" > "$LOGDIR/ext-proxy.log" 2>&1 &
+      echo "[dev] 外部访问: http://$et_ip:5271  （EasyTier mesh 内可用；日志 $LOGDIR/ext-proxy.log）"
+    else
+      echo "[dev] EasyTier 不在线，跳过外部访问代理（scripts/ext-proxy.mjs 可手动起）"
+    fi
     echo "[dev] logs: $LOGDIR"
     echo "[dev] stop: scripts/dev-stop.sh"
     exit 0
