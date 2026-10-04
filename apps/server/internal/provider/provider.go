@@ -41,6 +41,13 @@ type Project struct {
 	Summary   string `json:"summary,omitempty"`
 	IconURL   string `json:"iconUrl,omitempty"`
 	Downloads int64  `json:"downloads"`
+	// Loaders 是该模组声明支持的加载器(小写, 如 fabric/neoforge/quilt)。
+	// 平台没给就为空 —— 空表示「未知」, 不表示「一个都不支持」, 判定时不得当否定证据。
+	//
+	// 为什么要单独带出来: 「支持某个 MC 版本」与「支持某个加载器」是两个独立维度。
+	// Mekanism 支持 1.21.1, 但 loaders 只有 forge/neoforge —— 只看 MC 版本会
+	// 把装不进 Fabric 包的模组当成可选项摆在用户面前。
+	Loaders []string `json:"loaders,omitempty"`
 }
 type Version struct {
 	ID            string       `json:"id"`

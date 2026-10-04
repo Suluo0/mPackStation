@@ -1,0 +1,36 @@
+{
+  "byType": {
+    "mekanism:enriching":         {"mode": "per-cycle", "ticksPerCycle": 200, "source": "javap TileEntity*.BASE_TICKS_REQUIRED", "confidence": "derived"},
+    "mekanism:oxidizing":         {"mode": "per-cycle", "ticksPerCycle": 100, "source": "javap TileEntityChemicalOxidizer", "confidence": "derived"},
+    "mekanism:dissolution":       {"mode": "per-cycle", "ticksPerCycle": 100, "source": "javap TileEntityChemicalDissolutionChamber", "confidence": "derived"},
+    "mekanism:crystallizing":     {"mode": "per-cycle", "ticksPerCycle": 200, "source": "javap TileEntityChemicalCrystallizer", "confidence": "derived"},
+    "mekanism:chemical_infuser":  {"mode": "per-cycle", "ticksPerCycle": null, "source": "继承链 6 层无常量，静态不可判定", "confidence": "assumed"},
+    "mekanism:centrifuging":      {"mode": "per-cycle", "ticksPerCycle": null, "source": "同上", "confidence": "assumed"},
+    "mekanism:compressing":       {"mode": "per-cycle", "ticksPerCycle": null, "source": "未核", "confidence": "assumed"},
+    "mekanism:injecting":         {"mode": "per-cycle", "ticksPerCycle": null, "source": "未核", "confidence": "assumed"},
+    "mekanism:purifying":         {"mode": "per-cycle", "ticksPerCycle": null, "source": "未核", "confidence": "assumed"},
+    "mekanism:sawing":            {"mode": "per-cycle", "ticksPerCycle": null, "source": "未核", "confidence": "assumed"},
+    "mekanism:metallurgic_infusing": {"mode": "per-cycle", "ticksPerCycle": null, "source": "未核", "confidence": "assumed"},
+    "mekanism:solar_neutron_activator": {"mode": "rate", "rate": {"inQty": 10, "inUnit": "mB", "outQty": 1, "outUnit": "mB", "perTicks": 1}, "source": "GeneralConfig.java:140", "confidence": "derived"},
+    "minecraft:smelting":         {"mode": "per-cycle", "ticksPerCycle": 200, "source": "vanilla FurnaceBlockEntity", "confidence": "measured"},
+    "minecraft:blasting":         {"mode": "per-cycle", "ticksPerCycle": 100, "source": "vanilla BlastFurnaceBlockEntity", "confidence": "measured"},
+    "minecraft:smoking":          {"mode": "per-cycle", "ticksPerCycle": 100, "source": "vanilla SmokerBlockEntity", "confidence": "measured"},
+    "minecraft:campfire_cooking": {"mode": "per-cycle", "ticksPerCycle": 600, "source": "vanilla CampfireBlockEntity", "confidence": "measured"},
+    "minecraft:stonecutting":     {"mode": "per-cycle", "ticksPerCycle": 1, "source": "vanilla StonecutterBlockEntity", "confidence": "measured"}
+  },
+  "gather": {
+    "minecraft:log":   {"destroyTime": 0.5, "tool": "axe", "wood": true},
+    "minecraft:stone": {"destroyTime": 1.5, "tool": "pickaxe", "stone": true},
+    "minecraft:cobblestone": {"destroyTime": 2.0, "tool": "pickaxe", "stone": true},
+    "mekanism:ore_block_uranium": {"destroyTime": 3.0, "tool": "pickaxe", "confidence": "assumed"},
+    "minecraft:iron_ore": {"destroyTime": 3.0, "tool": "pickaxe", "stone": true},
+    "minecraft:gold_ore": {"destroyTime": 3.0, "tool": "pickaxe", "stone": true},
+    "minecraft:deepslate_gold_ore": {"destroyTime": 4.5, "tool": "pickaxe", "stone": true},
+    "minecraft:deepslate_iron_ore": {"destroyTime": 4.5, "tool": "pickaxe", "stone": true},
+    "minecraft:apple": {"destroyTime": 0.2, "tool": "axe", "wood": true},
+    "minecraft:coal_ore": {"destroyTime": 3.0, "tool": "pickaxe", "stone": true},
+    "minecraft:diamond_ore": {"destroyTime": 3.0, "tool": "pickaxe", "stone": true},
+    "minecraft:deepslate_diamond_ore": {"destroyTime": 4.5, "tool": "pickaxe", "stone": true},
+    "minecraft:ancient_debris": {"destroyTime": 5.0, "tool": "pickaxe", "stone": true}
+  }
+}

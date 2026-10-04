@@ -5,7 +5,34 @@ import (
 	"image/color"
 	"math"
 	"sort"
+	"strings"
 )
+
+/* 生物群系着色（tint）的默认三基色。
+   树叶 / 草 / 水在游戏里的颜色由所在群系决定（plains 的 grass #91BD59、
+   foliage #77AB2F、water #3F76E4）。静态图标给不出群系，但「不着色」比
+   「用默认群系的颜色」错得多 —— 前者是一片灰白，后者形状与颜色都对，
+   只是换个群系会略有差异。所以这里按贴图名挑一类默认色套上去。 */
+var (
+	tintWater   = [3]float64{0x3F / 255.0, 0x76 / 255.0, 0xE4 / 255.0}
+	tintFoliage = [3]float64{0x77 / 255.0, 0xAB / 255.0, 0x2F / 255.0}
+	tintGrass   = [3]float64{0x91 / 255.0, 0xBD / 255.0, 0x59 / 255.0}
+)
+
+func biomeTint(textureRef string) [3]float64 {
+	s := strings.ToLower(textureRef)
+	switch {
+	case strings.Contains(s, "water"):
+		return tintWater
+	case strings.Contains(s, "leaves"), strings.Contains(s, "foliage"),
+		strings.Contains(s, "vine"), strings.Contains(s, "lily"),
+		strings.Contains(s, "roots"), strings.Contains(s, "azalea"),
+		strings.Contains(s, "wart"), strings.Contains(s, "mangrove"):
+		return tintFoliage
+	default:
+		return tintGrass
+	}
+}
 
 type iconVec struct{ x, y, z float64 }
 
@@ -42,6 +69,7 @@ func renderBlockModel(m iconModel, texture func(string) image.Image) (image.Imag
 		uv           [4][2]float64
 		tex          image.Image
 		light, depth float64
+		tint         [3]float64
 	}
 	faces := []face{}
 	for _, el := range m.Elements {
@@ -55,9 +83,16 @@ func renderBlockModel(m iconModel, texture func(string) image.Image) (image.Imag
 			if tex == nil {
 				return nil, "missing_texture"
 			}
-			// Tint handlers live in game code. Do not present an untinted image as exact.
-			if f.TintIndex != nil && *f.TintIndex >= 0 {
-				return nil, "requires_tint"
+			// tintindex 0 是草丛/树叶/水这一档的群系着色：套默认群系色渲染出来。
+			// 更高的索引（草方块侧面的叠加层之类）不是简单乘积能还原的，仍然不猜。
+			tint := [3]float64{1, 1, 1}
+			if f.FixedTint != nil {
+				tint = *f.FixedTint
+			} else if f.TintIndex != nil && *f.TintIndex >= 0 {
+				if *f.TintIndex > 0 {
+					return nil, "requires_tint"
+				}
+				tint = biomeTint(lookupVar(f.Texture, m.Textures))
 			}
 			var p [4]iconVec
 			var uv []float64
@@ -145,7 +180,7 @@ func renderBlockModel(m iconModel, texture func(string) image.Image) (image.Imag
 			for i := 0; i < 4; i++ {
 				rotated[i] = coords[(i+((f.Rotation/90)%4+4)%4)%4]
 			}
-			faces = append(faces, face{p: p, uv: rotated, tex: tex, light: light, depth: (p[0].z + p[1].z + p[2].z + p[3].z) / 4})
+			faces = append(faces, face{p: p, uv: rotated, tex: tex, light: light, tint: tint, depth: (p[0].z + p[1].z + p[2].z + p[3].z) / 4})
 		}
 	}
 	sort.SliceStable(faces, func(i, j int) bool { return faces[i].depth < faces[j].depth })
@@ -178,9 +213,9 @@ func renderBlockModel(m iconModel, texture func(string) image.Image) (image.Imag
 				if c.A == 0 {
 					continue
 				}
-				c.R = uint8(float64(c.R) * f.light)
-				c.G = uint8(float64(c.G) * f.light)
-				c.B = uint8(float64(c.B) * f.light)
+				c.R = uint8(float64(c.R) * f.light * f.tint[0])
+				c.G = uint8(float64(c.G) * f.light * f.tint[1])
+				c.B = uint8(float64(c.B) * f.light * f.tint[2])
 				dst := out.NRGBAAt(x, y)
 				alpha := float64(c.A) / 255
 				da := float64(dst.A) / 255

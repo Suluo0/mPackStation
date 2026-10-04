@@ -318,11 +318,11 @@ func (r *Repository) ReadCatalog(ctx context.Context, packID string) (c Catalog,
 			return rows.Err()
 		}
 		items, blocks, tags, recipes := map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
-		if e = read(`SELECT item_id,evidence,source,model_path,icon_status FROM pack_catalog_items WHERE pack_id=? ORDER BY item_id`, func(rows *sql.Rows) error {
+		if e = read(`SELECT item_id,evidence,source,model_path,icon_status,icon_reason FROM pack_catalog_items WHERE pack_id=? ORDER BY item_id`, func(rows *sql.Rows) error {
 			var v CatalogItem
 			v.Names = []CatalogName{}
 			v.Tags = []string{}
-			if x := rows.Scan(&v.ID, &v.Evidence, &v.Source, &v.ModelPath, &v.IconStatus); x != nil {
+			if x := rows.Scan(&v.ID, &v.Evidence, &v.Source, &v.ModelPath, &v.IconStatus, &v.IconReason); x != nil {
 				return x
 			}
 			items[v.ID] = len(c.Items)
@@ -495,4 +495,26 @@ func (r *Repository) currentCatalogGeneration(ctx context.Context, packID string
 	var current int
 	err := r.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM packs p JOIN catalog_generations g ON g.pack_id=p.id AND g.id=p.current_generation_id WHERE p.id=? AND g.status='ready' AND g.config_revision=p.config_revision)`, packID).Scan(&current)
 	return current != 0, err
+}
+
+// CatalogIsCurrent 回答「现在 ReadCatalog 会不会成功」。
+//
+// 它必须和 ReadCatalog 用同一个判断的两半：代次仍是当前代次（config_revision
+// 没被作废），且 source_revision == built_revision。以前 /catalog/status 只看
+// 后一半，于是出现过「状态灯报 stale=false、读目录却 409 catalog_stale」——
+// 界面据此显示「目录是最新的」，但索引页是空的。状态和读路径不许分叉。
+func (r *Repository) CatalogIsCurrent(ctx context.Context, packID string) (bool, error) {
+	current, err := r.currentCatalogGeneration(ctx, packID)
+	if err != nil || !current {
+		return false, err
+	}
+	var source, built int64
+	err = r.db.QueryRowContext(ctx, `SELECT source_revision,built_revision FROM pack_catalog_state WHERE pack_id=?`, packID).Scan(&source, &built)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return source == built, nil
 }

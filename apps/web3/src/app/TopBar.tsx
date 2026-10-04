@@ -2,13 +2,23 @@ import {useUrlPatch, useUrlState} from './url';
 import {usePackSummary} from './PackSummaryContext';
 import {PackMenu} from './PackMenu';
 import {ProblemsPopover} from './ProblemsPopover';
-import {Icon} from './Icon';
+import {Icon} from '../ui/Icon';
 import {useState} from 'react';
 
 /* 顶栏（第三轮反馈：四个编辑器 tab 降为二级能力，挪进编辑区头——选中对象后才出现）。
-   顶栏只剩一级能力：包名菜单 + 问题徽标 + 任务胶囊 + ⌘K。 */
+   顶栏只剩一级能力：包名菜单 + 问题徽标 + 任务胶囊 + 包级动作 + ⌘K。
+
+   右侧三个动作按钮（自建内容 / 构建 / 运行）是对**当前包**做一次动作，
+   不是「进入某个内容区」，所以不占左侧按钮轨（04-align-pack-root.md §7）。
+   它们换的是侧边栏内容，所以当前 tool 命中时按钮要亮着。 */
+const ACTIONS = [
+  {tool: 'content', label: '自建内容', icon: 'wrench'},
+  {tool: 'build', label: '构建', icon: 'build'},
+  {tool: 'run', label: '运行', icon: 'run'},
+] as const;
+
 export function TopBar({onOpenPalette}: {onOpenPalette: () => void}) {
-  const {packId} = useUrlState();
+  const {packId, tool} = useUrlState();
   const patch = useUrlPatch();
   const {pack, tasks, pendingConflicts} = usePackSummary();
   const [problemsOpen, setProblemsOpen] = useState(false);
@@ -48,6 +58,13 @@ export function TopBar({onOpenPalette}: {onOpenPalette: () => void}) {
           </button>
         )}
         {pack && <span className="ps-sub">v{pack.packVersion}</span>}
+        {packId && ACTIONS.map(a => (
+          <button key={a.tool} type="button"
+            className={`tb-btn tb-act${tool === a.tool ? ' on' : ''}`}
+            onClick={() => patch({tool: a.tool})}>
+            <Icon name={a.icon} size={12}/> {a.label}
+          </button>
+        ))}
         <button type="button" className="tb-btn" onClick={onOpenPalette}>
           <Icon name="search" size={12}/> <span style={{marginLeft: 4}}>⌘K</span>
         </button>

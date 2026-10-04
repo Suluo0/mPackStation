@@ -2,6 +2,7 @@ import {useUrlState} from '../app/url';
 import {EditorHeader} from './EditorHeader';
 import {ModeIndex} from './ModeIndex';
 import {ModeGraph} from './ModeGraph';
+import {ModeChain} from './ModeChain';
 import {ModeEdit} from './ModeEdit';
 import {ModeQuest} from './ModeQuest';
 import {Welcome} from './Welcome';
@@ -19,6 +20,7 @@ export function EditorArea() {
       <EditorHeader/>
       {mode === 'index' && <ModeIndex/>}
       {mode === 'graph' && <ModeGraph/>}
+  {mode === 'chain' && <ModeChain/>}
       {mode === 'edit' && <ModeEdit/>}
       {mode === 'quest' && <ModeQuest/>}
     </main>

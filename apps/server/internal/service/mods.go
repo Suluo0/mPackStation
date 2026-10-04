@@ -32,6 +32,9 @@ type ModSearchResult struct {
 	Items      []provider.Project `json:"items"`
 	NextCursor string             `json:"next_cursor"`
 	Total      int                `json:"total"`
+	// Fallback 装「本包加载器装不上、但同 MC 版本有别的加载器版本」的模组。
+	// 主结果为空时才去查，用来回答「为什么搜不到」而不是给一个空列表。
+	Fallback []provider.Project `json:"fallback,omitempty"`
 }
 type AddModInput struct {
 	Provider, ProjectID, VersionID string
@@ -134,9 +137,11 @@ func (a *API) ModSearch(ctx context.Context, packID string, in ModSearchInput) (
 	if err := a.ready(); err != nil {
 		return ModSearchResult{}, err
 	}
-	if _, err := a.repo.GetPack(ctx, packID); err != nil {
+	pack, err := a.repo.GetPack(ctx, packID)
+	if err != nil {
 		return ModSearchResult{}, err
 	}
+	in = withPackSearchDefaults(in, pack)
 	ad, err := a.p5Adapter(in.Provider)
 	if err != nil {
 		return ModSearchResult{}, err
@@ -145,7 +150,92 @@ func (a *API) ModSearch(ctx context.Context, packID string, in ModSearchInput) (
 	if err != nil {
 		return ModSearchResult{}, mapProviderError(err)
 	}
-	return ModSearchResult{Items: r.Items, NextCursor: r.NextCursor, Total: r.Total}, nil
+	out := ModSearchResult{Items: r.Items, NextCursor: r.NextCursor, Total: r.Total}
+	// 与多平台路径同一开关：主结果里没有真正相关的命中才降级（理由见 ModSearchAll）。
+	if in.Loader != "" && !hasRelevantProject(in.Query, r.Items) {
+		out.Fallback = relaxLoaderAndSearch(ctx, ad, in)
+	}
+	return out, nil
+}
+
+// relaxLoaderAndSearch 摘掉加载器限制再搜一次，只留下「明确只支持别的加载器」的条目。
+//
+// 这是「降级搜索」的实现：Fabric 包里搜 Mekanism 时，带 fabric facet 查是空的，
+// 但同 MC 版本下 Mekanism 确实存在（Forge/NeoForge 版）。把这些条目交出去，
+// 界面就能解释清楚，而不是留一个空列表让人怀疑搜索坏了。
+//
+// 查不到 MC 版本这一维**不要摘**：降级是为了回答「换个加载器能不能装」，
+// 如果把 MC 版本也放开，返回的会是一堆版本也对不上的噪音。
+func relaxLoaderAndSearch(ctx context.Context, ad provider.Adapter, in ModSearchInput) []provider.Project {
+	relaxed := in
+	relaxed.Loader = ""
+	r, err := ad.Search(ctx, provider.SearchRequest{Query: relaxed.Query, MCVersion: relaxed.MCVersion, Cursor: relaxed.Cursor, Limit: relaxed.Limit})
+	if err != nil {
+		return nil // 降级是增强，失败就退回「没有额外交代」而不是把主搜索也报错
+	}
+	return onlyOtherLoaderProjects(r.Items, in.Loader, in.Query)
+}
+
+// onlyOtherLoaderProjects 是 otherLoaderRelevant 在纯项目列表上的版本。
+func onlyOtherLoaderProjects(items []provider.Project, want, query string) []provider.Project {
+	out := []provider.Project{}
+	for _, p := range items {
+		if len(out) >= modSearchFallbackLimit {
+			break
+		}
+		if otherLoaderRelevant(p, want, query) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// hasRelevantProject 是 hasRelevantHit 在纯项目列表上的版本。
+func hasRelevantProject(query string, items []provider.Project) bool {
+	for _, p := range items {
+		if modSearchScore(query, p) >= modSearchRelevantScore {
+			return true
+		}
+	}
+	return false
+}
+
+func declaresLoader(loaders []string, want string) bool {
+	for _, l := range loaders {
+		if strings.EqualFold(strings.TrimSpace(l), strings.TrimSpace(want)) {
+			return true
+		}
+	}
+	return false
+}
+
+// withPackSearchDefaults 把调用方没显式指定的过滤维度补成当前包的口径。
+//
+// 商店面板原先只传 `q`，于是搜出来的是「世上所有叫这名字的模组」——包括
+// 装不进这个包的。加载器与 MC 版本是两个独立维度，缺一个都会漏进不兼容项，
+// 所以两个都要补。
+func withPackSearchDefaults(in ModSearchInput, pack store.PackRecord) ModSearchInput {
+	if strings.TrimSpace(in.MCVersion) == "" {
+		in.MCVersion = strings.TrimSpace(pack.MCVersion)
+	}
+	if strings.TrimSpace(in.Loader) == "" {
+		in.Loader = packSearchLoader(pack.Loader)
+	}
+	return in
+}
+
+// packSearchLoader 把包记录里的加载器转成搜索过滤值；认不出来就返回空(=不过滤)。
+//
+// 这里刻意**不复用 normalizeLoader**：那个函数把一切不认识的值兜底成 "forge"，
+// 用来展示无害，用在搜索过滤上却会让一个 loader 字段异常的包被静默当成 Forge 包，
+// 搜出一堆同样装不上的东西。搜索宁可不过滤，也不要猜错。
+func packSearchLoader(v string) string {
+	switch s := strings.ToLower(strings.TrimSpace(v)); s {
+	case "fabric", "forge", "neoforge", "quilt":
+		return s
+	default:
+		return ""
+	}
 }
 func (a *API) p5Adapter(name string) (provider.Adapter, error) {
 	ad, err := a.p5Registry().Get(name)
@@ -219,6 +309,10 @@ type ModSearchAllResult struct {
 	Errors     map[string]string  `json:"errors"`
 	Total      int                `json:"total"`
 	NextCursor *string            `json:"next_cursor"`
+	// Fallback 是「降级搜索结果」：本包加载器搜不到东西时，摘掉加载器限制重搜
+	// 得到的、明确只支持其他加载器的模组。每个条目的 Loaders 会让界面能说清
+	// 「这个只有 NeoForge 版」，而不是让用户对着一片空白猜。
+	Fallback []ModSearchAllItem `json:"fallback,omitempty"`
 }
 
 // providerErrorCode maps provider failures to stable per-platform codes.
@@ -235,18 +329,99 @@ func providerErrorCode(err error) string {
 	}
 }
 
-// ModSearchAll fans one fuzzy name query out to every known platform
-// concurrently. Adapters are stateless, so no locking is needed: each
-// goroutine writes only its own result slot. Rate-limit safety comes from
-// exactly one request per platform per search, no retries, and a per-platform
-// timeout.
+// ModSearchAll 把一次模糊查询并发扇出到所有已知平台，并保证「搜出来的东西
+// 装得进当前包」。两件事：
+//
+//  1. 调用方没给 loader / mcVersion 时，用包的现成口径补齐。商店面板只传 q，
+//     少了这一步就会把 Forge 专有的模组摆在 Fabric 包的用户面前。
+//  2. 补齐后仍然一个都搜不到，就摘掉加载器限制再搜一遍，结果放进 Fallback
+//     —— 让界面能说清「Mekanism 只有 Forge / NeoForge 版」，而不是留一个
+//     空列表让人以为搜索坏了。
 func (a *API) ModSearchAll(ctx context.Context, packID string, in ModSearchInput) (ModSearchAllResult, error) {
 	if err := a.ready(); err != nil {
 		return ModSearchAllResult{}, err
 	}
-	if _, err := a.repo.GetPack(ctx, packID); err != nil {
+	pack, err := a.repo.GetPack(ctx, packID)
+	if err != nil {
 		return ModSearchAllResult{}, err
 	}
+	in = withPackSearchDefaults(in, pack)
+
+	out, err := a.modSearchFanout(ctx, in)
+	if err != nil {
+		return ModSearchAllResult{}, err
+	}
+	out.Total = len(out.Items)
+	// 触发降级的条件**不是**「主结果为空」，而是「主结果里没有任何一条跟查询
+	// 真正相关」。平台的模糊搜索会用摘要里的边角匹配把列表塞满 —— 实测在一个
+	// Fabric 包里搜 mek，主结果非空但两条都是 NoEmotecraft / KeProfiles 这种
+	// 噪音，用「空」当开关等于永不降级，Mekanism 永远露不出来。
+	if in.Loader != "" && !hasRelevantHit(in.Query, out.Items) {
+		relaxed := in
+		relaxed.Loader = ""
+		if alt, altErr := a.modSearchFanout(ctx, relaxed); altErr == nil {
+			out.Fallback = onlyOtherLoaderItems(alt.Items, in.Loader, in.Query)
+		}
+	}
+	return out, nil
+}
+
+// onlyOtherLoaderItems 是 otherLoaderRelevant 在合并卡片上的版本。
+func onlyOtherLoaderItems(items []ModSearchAllItem, want, query string) []ModSearchAllItem {
+	out := []ModSearchAllItem{}
+	for _, it := range items {
+		if len(out) >= modSearchFallbackLimit {
+			break
+		}
+		if otherLoaderRelevant(it.Project, want, query) {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// otherLoaderRelevant 是降级区**唯一**的准入判断，两个条件缺一不可：
+//
+//  1. 明确声明了加载器、且都不含本包的加载器（说不出加载器的不算，因为降级区
+//     的意义就是解释「为什么不适用」）；
+//  2. 跟查询真正相关（见 modSearchRelevantScore）。
+//
+// 第 2 条不是锦上添花：降级查询摘掉了加载器限制，平台会把摘要里沾边的全都倒
+// 出来，不过滤的话降级区就是一屏噪音，正好把真正的答案（Mekanism）盖掉。
+func otherLoaderRelevant(p provider.Project, want, query string) bool {
+	if len(p.Loaders) == 0 || declaresLoader(p.Loaders, want) {
+		return false
+	}
+	return modSearchScore(query, p) >= modSearchRelevantScore
+}
+
+// modSearchRelevantScore 是「这条命中跟查询是否真的相关」的分界线。
+// 取 50 正好把「slug 包含」及以上算相关，把「仅摘要提及」(20) 和平台硬塞 (10) 排除。
+const modSearchRelevantScore = 50
+
+// modSearchFallbackLimit 给降级区封顶：它只是说明性的附注，不该长过主结果。
+const modSearchFallbackLimit = 10
+
+// hasRelevantHit 判断主结果里有没有一条跟查询真正相关的命中。
+// 只看有没有，不看有几条 —— 有一条就说明「本包确实有这个东西」，不需要降级。
+func hasRelevantHit(query string, items []ModSearchAllItem) bool {
+	for _, it := range items {
+		if modSearchScore(query, it.Project) >= modSearchRelevantScore {
+			return true
+		}
+	}
+	return false
+}
+
+// modSearchFanout 是纯扇出：并发查询 + 跨平台配对 + slug 直取 + 复合排序。
+//
+// 它**不含**包口径补齐与降级决策 —— 那两件事留在调用方，因为降级要靠
+// 「主结果是否为空」来判断，而本函数会被调用两次（主查一次、降级查一次）。
+//
+// Adapters are stateless, so no locking is needed: each goroutine writes only
+// its own result slot. Rate-limit safety comes from exactly one request per
+// platform per search, no retries, and a per-platform timeout.
+func (a *API) modSearchFanout(ctx context.Context, in ModSearchInput) (ModSearchAllResult, error) {
 	known := []provider.Name{provider.CurseForge, provider.Modrinth}
 	type outcome struct {
 		name  provider.Name
@@ -311,9 +486,9 @@ func (a *API) ModSearchAll(ctx context.Context, packID string, in ModSearchInput
 	// （搜 ae2 出一堆附属，Applied Energistics 2 的标题不含 ae2）。
 	// 别名命中或查询本身像 slug 且结果里没有精确命中时，按 slug 直接拉一次。
 	if slug := expandModSearchAlias(in.Query); slug != "" {
-		out.Items = a.injectSlugMatch(ctx, slug, out.Items)
+		out.Items = a.injectSlugMatch(ctx, slug, out.Items, in.Loader)
 	} else if candidate := strings.ToLower(strings.TrimSpace(in.Query)); candidate != "" && !strings.ContainsAny(candidate, " \t") {
-		out.Items = a.injectSlugMatch(ctx, candidate, out.Items)
+		out.Items = a.injectSlugMatch(ctx, candidate, out.Items, in.Loader)
 	}
 	// 复合排序：缩写/俗名优先（slug 精确 > 名称首词 > 名称分词前缀 > 名称包含 >
 	// slug 前缀 > slug 包含 > 摘要），下载量兜底，provider+name 定序。
@@ -341,7 +516,6 @@ func (a *API) ModSearchAll(ctx context.Context, packID string, in ModSearchInput
 		}
 		return out.Items[i].Name < out.Items[j].Name
 	})
-	out.Total = len(out.Items)
 	return out, nil
 }
 
@@ -381,7 +555,7 @@ func modSearchScore(query string, p provider.Project) int {
 
 /* injectSlugMatch：结果里没有 slug 精确命中时，按 slug 直取 Modrinth 项目并置顶。
    网络失败静默放弃（搜索本身已经给出可用结果），错误不外泄。 */
-func (a *API) injectSlugMatch(ctx context.Context, slug string, items []ModSearchAllItem) []ModSearchAllItem {
+func (a *API) injectSlugMatch(ctx context.Context, slug string, items []ModSearchAllItem, loader string) []ModSearchAllItem {
 	if slug == "" {
 		return items
 	}
@@ -398,6 +572,13 @@ func (a *API) injectSlugMatch(ctx context.Context, slug string, items []ModSearc
 	defer cancel()
 	p, err := ad.Project(pctx, slug)
 	if err != nil {
+		return items
+	}
+	// 这条直取路径绕开了平台侧的 facets，所以必须自己补一次加载器检查：
+	// 否则搜 "mekanism" 时，slug 精确命中会把 Mekanism 直接塞进 Fabric 包的
+	// 主结果里 —— 既让用户看到装不上的东西，又让「主结果为空才降级」永远
+	// 不成立。降级查询时 loader 是空串，于是这里不拦，正好能把它捞回来。
+	if loader != "" && len(p.Loaders) > 0 && !declaresLoader(p.Loaders, loader) {
 		return items
 	}
 	return append([]ModSearchAllItem{{Provider: string(provider.Modrinth), Project: p}}, items...)
@@ -815,6 +996,8 @@ func (a *API) UpdatePackMod(ctx context.Context, packID, modID string, in Update
 	if !ok {
 		return Mod{}, store.ErrNotFound
 	}
+	// 改之前的快照：末尾据此判断这次 PATCH 是否真的动了目录。
+	before := found
 	if in.Category != nil {
 		found.Category = strings.TrimSpace(*in.Category)
 	}
@@ -899,14 +1082,39 @@ func (a *API) UpdatePackMod(ctx context.Context, packID, modID string, in Update
 	}
 	found.UpdatedAt = time.Now().UnixMilli()
 	if err := a.repo.WithTx(ctx, func(tx *store.Repository) error {
-		if err := tx.InvalidatePackGeneration(ctx, packID); err != nil {
-			return err
+		// 只有真正影响目录成员/内容的字段变了才作废目录。分类(category)是纯展示
+		// 字段，改它不该让 1330 项目录全部变成 pending —— 这条链路上曾经
+		// 「挪一次分类 => 索引页变 409 占位」，根因就在这里。
+		if catalogRelevantModChange(before, found) {
+			if err := tx.InvalidatePackGeneration(ctx, packID); err != nil {
+				return err
+			}
 		}
 		return tx.UpdatePackMod(ctx, found)
 	}); err != nil {
 		return Mod{}, err
 	}
 	return modDTO(found), nil
+}
+
+// catalogRelevantModChange 回答「这次模组记录的改动会不会让已建好的物品目录失效」。
+//
+// 口径必须与迁移 0028 收窄后的 catalog_pack_mods_UPDATE 触发器一致：目录成员
+// 由 status / sha1 / current_selection_id 决定，目录输入还牵涉 version_id 与
+// 镜像钉版；category（用户分类）、required（构建开关）、display_name 等纯展示
+// 或纯构建期字段都不在列。两边一旦分叉，就会出现「SQL 说没变、Go 说变了」。
+func catalogRelevantModChange(before, after store.PackModRecord) bool {
+	return before.Status != after.Status ||
+		before.SHA1 != after.SHA1 ||
+		before.CurrentSelectionID != after.CurrentSelectionID ||
+		before.VersionID != after.VersionID ||
+		before.MirrorVersionID != after.MirrorVersionID ||
+		before.MirrorSource != after.MirrorSource ||
+		before.MirrorProjectID != after.MirrorProjectID ||
+		before.FileName != after.FileName ||
+		before.ProjectID != after.ProjectID ||
+		before.ModID != after.ModID ||
+		before.Origin != after.Origin
 }
 func (a *API) RemovePackMod(ctx context.Context, packID, modID, requestID string) error {
 	if err := a.ready(); err != nil {

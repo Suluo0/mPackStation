@@ -30,6 +30,15 @@ export function usePackSummary(): PackSummary {
   return v;
 }
 
+/* 可选版本：给「可以没有它，但不能因此白屏」的面板用（商店这类独立面板）。
+   为什么需要：开发时 vite 的 Fast Refresh 在文件同时导出组件和普通函数时会放弃
+   热替换、把整棵树 invalidate 重建；重建的一瞬间新旧两份 Context 并存，
+   旧组件读到 null 就抛「必须在 Provider 内使用」。那是假错误，但会让整个界面
+   崩掉，用户看到的是「商店点不了」。真放错位置时，这里退化成空实现而不是崩。 */
+export function usePackSummaryOptional(): PackSummary | null {
+  return useContext(Ctx);
+}
+
 function computeScore(h: PackHealth | null, p: DashboardPack | null): number {
   return Math.max(0, Math.min(100,
     100

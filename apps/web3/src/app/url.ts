@@ -7,16 +7,29 @@ import {useSearchParams} from 'react-router-dom';
 export const MODES = [
   {mode: 'index', label: '索引', hotkey: ''},
   {mode: 'graph', label: '关系', hotkey: 'Enter'},
+  {mode: 'chain', label: '链路', hotkey: 'C'},
   {mode: 'edit', label: '魔改', hotkey: 'E'},
   {mode: 'quest', label: '编排', hotkey: 'Q'},
 ] as const;
 
-export type Mode = typeof MODES[number]['mode'];
+export type Mode = typeof MODES[number]['mode'] | 'chain';
 
+/* tool 名沿用老的（改名字要动 URL 与一堆调用点），只有展示文案按新职责改。
+   第 2 区（图标轨）四个按钮 = 项目管理 / 新增模组 / 任务书 / Get Version；
+   自建内容 / 构建 / 运行 是顶边栏右侧的动作按钮，不占图标轨（04-align-pack-root.md §7）。 */
 export const TOOLS = [
-  {tool: 'sources', label: '来源'},
+  {tool: 'sources', label: '项目管理'},
+  {tool: 'store', label: '新增模组'},
+  {tool: 'quest', label: '任务书'},
+  {tool: 'releases', label: 'Get Version'},
+  {tool: 'content', label: '自建内容'},
   {tool: 'build', label: '构建'},
   {tool: 'run', label: '运行'},
+] as const;
+
+/* 图标轨 = 第 2 区：一个按钮一件事。顺序即轨道从上到下的顺序。 */
+export const RAIL_TOOLS = [
+  'sources', 'store', 'quest', 'releases',
 ] as const;
 
 export type Tool = typeof TOOLS[number]['tool'];
@@ -58,8 +71,27 @@ export function useUrlState() {
       dir: params.get('dir') === 'desc' ? 'desc' : 'asc',
       doc: params.get('doc'),
       node: params.get('node'),
+      /* ?chap= 编排态当前选中的章节。左栏章节面板点一章就是写它，
+         这样「点章节」能直接落到那一章，而不是总回到第一章。 */
+      chap: params.get('chap'),
+      /* ?ck= 自建内容的种类（recipe / structure / ore）—— 后端 validContentKind
+         只认这三种，传别的会被 422 拒。左栏「自建内容管理」的子节点写它。 */
+      ck: params.get('ck'),
+      /* ?qscope=all 让画布一次显示整本书（跨章节连线才看得见）。
+         默认只看当前章节 —— FTB 也是一章一屏。 */
+      qscope: params.get('qscope') === 'all' ? 'all' : 'chap',
       q: params.get('q') ?? '',
       settings: params.get('settings') === '1',
+      /* 关系态（mode=graph）私有状态：
+         rd   = 方向，out=作为产物 / in=作为原料（对应 JEI 的 R / U）
+         rv   = 视图，canvas=焦点下钻 / list=双向清单
+         r    = 当前方向下正在看第几条配方（可分享的位置感）
+         rpath= 下钻轨迹（逗号分隔物品 id），面包屑与「返回上层」的数据源
+         瞬态状态（槽位选中、标签候选游标）一律不进 URL。 */
+      rd: params.get('rd') === 'in' ? 'in' : 'out',
+      rv: params.get('rv') === 'list' ? 'list' : 'canvas',
+      r: Math.max(0, Number(params.get('r') ?? 0) || 0),
+      rpath: params.get('rpath') ?? '',
     };
   }, [params]);
 }
@@ -78,8 +110,13 @@ export function useUrlPatch() {
   }, [setParams]);
 }
 
-/** 焦点的读写（与 web2 useFocus 同一契约：物品 ?item=，其余 ?f=&fid=）。 */
-export function useFocus(): [{kind: string; id: string} | null, (next: {kind: string; id: string} | null, opts?: {mode?: Mode}) => void] {
+/** 焦点的读写（与 web2 useFocus 同一契约：物品 ?item=，其余 ?f=&fid=）。
+    opts.patch 用来把「换焦点的同时要改的其它参数」并进同一次写入 ——
+    例如关系态下钻要同时写 rpath。分两次写会多一次导航。 */
+export function useFocus(): [
+  {kind: string; id: string} | null,
+  (next: {kind: string; id: string} | null, opts?: {mode?: Mode; patch?: Record<string, string | null>}) => void,
+] {
   const state = useUrlState();
   const patch = useUrlPatch();
   const focus = useMemo(() => {
@@ -87,14 +124,16 @@ export function useFocus(): [{kind: string; id: string} | null, (next: {kind: st
     if (state.focusKind && state.focusId) return {kind: state.focusKind, id: state.focusId};
     return null;
   }, [state.item, state.focusKind, state.focusId]);
-  const setFocus = useCallback((next: {kind: string; id: string} | null, opts?: {mode?: Mode}) => {
-    const p: Record<string, string | null> = {item: null, f: null, fid: null};
-    if (next) {
-      if (next.kind === 'item') p.item = next.id;
-      else { p.f = next.kind; p.fid = next.id; }
-    }
-    if (opts?.mode) p.mode = opts.mode;
-    patch(p);
-  }, [patch]);
+  const setFocus = useCallback(
+    (next: {kind: string; id: string} | null, opts?: {mode?: Mode; patch?: Record<string, string | null>}) => {
+      const p: Record<string, string | null> = {item: null, f: null, fid: null};
+      if (next) {
+        if (next.kind === 'item') p.item = next.id;
+        else { p.f = next.kind; p.fid = next.id; }
+      }
+      if (opts?.mode) p.mode = opts.mode;
+      if (opts?.patch) Object.assign(p, opts.patch);
+      patch(p);
+    }, [patch]);
   return [focus, setFocus];
 }

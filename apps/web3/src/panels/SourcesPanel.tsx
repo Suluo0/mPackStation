@@ -1,19 +1,28 @@
-import {useCallback, useEffect, useMemo, useRef, useState, type ReactElement} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode} from 'react';
 import {
-  addMod, listContentSources, listModVersions, searchAllMods, updateMod,
+  addMod, listContentSources, listModVersions, removeMod, resolvePack, searchAllMods, updateMod,
+  otherLoadersText, providerLabel,
   type Mod, type ModVersion, type SearchAllItem,
 } from '../api/mods';
 import {
   getModContentRun, listModContent, parseModContent,
   type ModContentRun,
 } from '../api/modContent';
-import {getQuest} from '../api/content';
 import {useFocus, useUrlPatch, useUrlState} from '../app/url';
+import {useNavRootSlot} from '../app/navRootSlot';
+import {createPortal} from 'react-dom';
+import {loaderLabel} from '../api/packs';
 import {usePackSummary} from '../app/PackSummaryContext';
 import {useCatalog} from '../app/CatalogContext';
 import {searchCatalogByTag, searchCatalogItems, suggestTags} from '../app/catalogSearch';
-import {Icon} from '../app/Icon';
+import {Icon} from '../ui/Icon';
+import {useContextMenu, type MenuItem} from '../ui/ContextMenu';
+import {Prompt} from '../ui/Prompt';
 import './panels.css';
+
+/* 菜单分隔线。抽成常量是因为三元表达式里写 `{separator: true}` 会被推断成
+   `{separator: boolean}`，对不上判别联合的 MenuSeparator。 */
+const SEP: MenuItem = {separator: true};
 
 /* 来源面板 = 包的项目树（第三轮反馈修订）：
    - 原版 Minecraft 是第一个来源行（includeBuiltin），点击 = 索引态看它贡献的全部物品；
@@ -22,9 +31,11 @@ import './panels.css';
    - 点任何内容类型 → 索引态 ?ns=&type= 浏览解析条目。
    用户自定义分类（"优化/科技"等）需要 pack_mods.category 迁移，待用户批准（文档 §8）。 */
 export function SourcesPanel() {
-  const {mode} = useUrlState();
-  return mode === 'quest' ? <QuestChapters/> : <SourceTree/>;
+  return <SourceTree/>;
 }
+
+/* 章节面板已挪到 QuestPanel.tsx（第九轮反馈：它要能增删改，不该再是只读列表，
+   也不该继续寄居在 600 行的来源面板里）。这里不再导出 QuestChaptersPanel。 */
 
 const DOT: Record<string, string> = {installed: 'var(--mc-success)', pending: 'var(--mc-orange)', disabled: 'var(--mc-muted)'};
 
@@ -44,6 +55,8 @@ function SourceTree() {
   const patch = useUrlPatch();
   const {pack, refresh} = usePackSummary();
   const {status, refreshing} = useCatalog();
+  /* 包名那一行的动作插槽（app/navRootSlot.ts）。面板不在树里渲染时为 null。 */
+  const slot = useNavRootSlot();
   const [mods, setMods] = useState<Mod[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -52,6 +65,10 @@ function SourceTree() {
   const [input, setInput] = useState('');
   const searchSeq = useRef(0);
   const [hits, setHits] = useState<SearchAllItem[] | null>(null);
+  /* 降级搜索结果（后端 ModSearchAllResult.fallback）：按本包加载器一个都没搜到
+     时，后端摘掉加载器限制重搜回来的「只支持其他加载器」的模组。
+     注意与上面的 fallback(镜像回退提示，字符串) 是两回事，故另起名 altHits。 */
+  const [altHits, setAltHits] = useState<SearchAllItem[]>([]);
   const [picked, setPicked] = useState<SearchAllItem | null>(null);
   const [versions, setVersions] = useState<ModVersion[]>([]);
   /* 版本拉取是否已落定（成功或失败都算）：只有「还在飞」才显示载入中，
@@ -64,6 +81,87 @@ function SourceTree() {
   /* 搜索/版本拉取的错误只留在下拉里：和模组的树共用一个 error 时，
      一次 CF 拉版本失败会一直挂在树顶部，用户分不清是树坏了还是搜索坏了。 */
   const [searchError, setSearchError] = useState<string | null>(null);
+  /* 右键菜单：这层只按「光标下是什么」给出条目，坐标/关闭/Esc/出视口翻转
+     全在 ui/ContextMenu 里，本文件不再存 x/y。 */
+  const modMenu = useContextMenu();
+  const groupMenu = useContextMenu();
+  const blankMenu = useContextMenu();
+  const builtinMenu = useContextMenu();
+
+  /* 本体（builtin）的右键：它不能被停用也不能被移除，所以只给「看什么」的动作。
+     展开能力仍走行首的箭头 —— 原版也解析出了配方/结构/物品，和模组一样能下钻。 */
+  const builtinItems = (m: Mod): MenuItem[] => [
+    {label: '浏览它贡献的全部物品', icon: 'search',
+      action: () => patch({ns: m.canonicalModId || 'minecraft', mode: 'index', type: null})},
+    {separator: true},
+    {label: expanded === m.id ? '收起解析内容' : '展开解析内容', icon: 'layers',
+      action: () => setExpanded(x => (x === m.id ? null : m.id))},
+  ];
+
+  const modItems = (m: Mod): MenuItem[] => [
+    /* 停启用在右键里：行上挂「停用 / ✕」两个按钮，每多一个模组就多两个
+       可误点的靶子（移除尤其不可撤销），而这两个动作的使用频率远低于浏览。 */
+    {
+      label: `${m.status === 'disabled' ? '启用' : '停用'} ${m.displayName}`,
+      icon: m.status === 'disabled' ? 'play' : 'pause',
+      disabled: m.status === 'pending',
+      action: () => { void toggleMod(m).catch(() => undefined); },
+    },
+    {label: `重新解析 ${m.displayName}`, icon: 'refresh', action: () => { void parseModContent(packId!, m.id).catch(() => undefined); }},
+    {separator: true},
+    /* 归类：现有分类 → 新建 → 取消归类。子菜单而不是平铺，是因为分类会长；
+       顺序按「最常用的动作在最近的地方」排。 */
+    {label: '移动到分类', icon: 'folder', submenu: [
+      ...categories.map(([name]) => ({
+        label: name,
+        disabled: (m.category ?? '').trim() === name,
+        action: () => { void moveToCategory([m], name); },
+      })),
+      ...(categories.length ? [SEP] : []),
+      {label: '新建分类…', icon: 'folderPlus', action: () => askNewCategory([m], `把「${m.displayName}」放进新分类`)},
+      {
+        label: '取消归类（回到未分类）',
+        disabled: !(m.category ?? '').trim(),
+        action: () => { void moveToCategory([m], ''); },
+      },
+    ]},
+    {separator: true},
+    {label: '从包中移除', icon: 'trash', danger: true, action: () => { void remove(m).catch(() => undefined); }},
+  ];
+
+  const groupItems = (name: string): MenuItem[] => [
+    {label: '新建…', icon: 'plus', submenu: newItems(name)},
+    {separator: true},
+    {label: `重命名分类「${name}」…`, icon: 'wrench', action: () => {
+      setRenameCatValue(name); setRenamingCat(name); setCatOpen(false);
+    }},
+    {
+      label: `解散分类（${modsInCategory(name).length} 个模组回到未分类）`,
+      icon: 'trash', danger: true,
+      action: () => { void moveToCategory(modsInCategory(name), ''); },
+    },
+  ];
+
+  /* 「新建…」的内容：目录内部与空白处共用一套，只是新建目录的落点不同 ——
+     在目录上建 = 建成子分类名「父/新」，空白处建 = 建成顶层分类。 */
+  const newItems = (parent?: string): MenuItem[] => [
+    {
+      label: '新建目录…', icon: 'folderPlus',
+      action: () => setPrompt({
+        title: parent ? `在「${parent}」下新建目录` : '新建目录',
+        ok: v => { const n = v.trim(); if (n) setPendingCats(cs => cs.includes(n) ? cs : [...cs, n]); },
+      }),
+    },
+    {
+      label: '添加模组…', icon: 'store',
+      action: () => patch({tool: 'store'}),
+    },
+  ];
+
+  const [catOpen, setCatOpen] = useState(false);
+  const [renamingCat, setRenamingCat] = useState<string | null>(null);
+  const [renameCatValue, setRenameCatValue] = useState('');
+  const [prompt, setPrompt] = useState<{title: string; ok: (v: string) => void} | null>(null);
 
   const load = useCallback(() => {
     if (!packId) return;
@@ -82,13 +180,91 @@ function SourceTree() {
     refresh();
   };
 
+  const remove = async (m: Mod) => {
+    await removeMod(packId, m.id);
+    load();
+    refresh();
+  };
+
+  const resolveDeps = async () => {
+    await resolvePack(packId);
+    load();
+    refresh();
+  };
+
+  /* ── 分类操作 ─────────────────────────────────────────────────── */
+  /* 分类清单（名字 → 成员数）。空 category 不算一个分类，它只是「还没归类」。
+     pendingCats 是「刚建、还没移入模组」的空分类：后端只有「模组.category」
+     一个字段，空分类没有落库点，先留在前端 —— 模组移入后自然生效，
+     一直为空的话刷新就消失（行上会注明）。 */
+  const [pendingCats, setPendingCats] = useState<string[]>([]);
+  const categories = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const mod of mods) {
+      if (mod.origin === 'builtin') continue;
+      const k = (mod.category ?? '').trim();
+      if (k) m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    for (const k of pendingCats) if (!m.has(k)) m.set(k, 0);
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'zh'));
+  }, [mods, pendingCats]);
+
+  /* 把一组模组整体改到某个分类（空字符串 = 未分类）。
+     后端没有批量接口，只能一个个 PATCH；分类操作是低频人工动作，串行足够。
+     一条失败就停并报错 —— 半途失败留下半个分类比整体失败更难懂。 */
+  const moveToCategory = async (targets: Mod[], category: string) => {
+    if (!packId || targets.length === 0) return;
+    setError(null);
+    try {
+      for (const m of targets) {
+        if ((m.category ?? '').trim() === category) continue;
+        await updateMod(packId, m.id, {category});
+      }
+      /* 有成员落库后，这个分类不再需要前端暂存。 */
+      setPendingCats(prev => prev.filter(k => k !== category));
+      await refresh();
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const modsInCategory = (name: string) =>
+    mods.filter(m => m.origin !== 'builtin' && (m.category ?? '').trim() === name);
+
+  /* 新建分类：先要名字（后端只有「模组.category」这一个字段，没有独立的分类表），
+     拿到名字就把这些模组搬进去。 */
+  const askNewCategory = (targets: Mod[], title: string) => {
+    setPrompt({title, ok: v => { const name = v.trim(); if (name) void moveToCategory(targets, name); }});
+  };
+
+  /* 分类管理菜单里的「新建分类」：不带宿主模组，先建一个空分类（前端暂存），
+     再右键模组移进来。 */
+  const newCategoryFromMenu = () => {
+    setPrompt({
+      title: '新分类名称（建好后右键模组 → 移动到分类）',
+      ok: v => {
+        const name = v.trim();
+        if (!name) return;
+        setPendingCats(prev => (prev.includes(name) || categories.some(([k]) => k === name) ? prev : [...prev, name]));
+        setCatOpen(false);
+      },
+    });
+  };
+
+  const commitRenameCat = (from: string) => {
+    const to = renameCatValue.trim();
+    setRenamingCat(null);
+    if (!to || to === from) return;
+    void moveToCategory(modsInCategory(from), to);
+  };
+
   const search = async () => {
     if (!input.trim() || input.trim().length < 2) return;
     const seq = ++searchSeq.current;
-    setSearchError(null); setPicked(null); setHits(null);
+    setSearchError(null); setPicked(null); setHits(null); setAltHits([]);
     try {
-      const r = (await searchAllMods(packId, {q: input.trim(), limit: 25})).items;
-      if (seq === searchSeq.current) setHits(r);
+      const r = await searchAllMods(packId, {q: input.trim(), limit: 25});
+      if (seq === searchSeq.current) { setHits(r.items); setAltHits(r.fallback ?? []); }
     }
     catch (e) {
       if (seq === searchSeq.current) { setHits([]); setSearchError(e instanceof Error ? e.message : String(e)); }
@@ -114,7 +290,7 @@ function SourceTree() {
         const v = await listModVersions(packId, a.provider, a.projectId);
         if (v.length === 0) { lastErr = `${a.provider} 没有返回版本`; continue; }
         setVersions(v); setSrc(a);
-        if (a.provider !== h.provider) setFallback(`主源 ${h.provider} 取不到版本，已改用镜像 ${a.provider}。`);
+        if (a.provider !== h.provider) setFallback(`主源 ${providerLabel(h.provider)} 取不到版本，已改用镜像 ${providerLabel(a.provider)}。`);
         setVersionsLoaded(true);
         return;
       } catch (e) { lastErr = e instanceof Error ? e.message : String(e); }
@@ -127,7 +303,7 @@ function SourceTree() {
     if (!packId || !picked) return;
     const source = src ?? {provider: picked.provider, projectId: picked.id};
     await addMod(packId, {provider: source.provider, projectId: source.projectId, versionId: v.id, required: true});
-    setPicked(null); setVersions([]); setVersionsLoaded(false); setInput(''); setHits(null); setMode(null); setSrc(null); setFallback(null);
+    setPicked(null); setVersions([]); setVersionsLoaded(false); setInput(''); setHits(null); setMode(null); setSrc(null); setFallback(null); setAltHits([]);
     load();
     refresh();
   };
@@ -150,56 +326,128 @@ function SourceTree() {
     </div>
   );
 
+  /* 这三个按钮**不在本面板里渲染**：它们属于「包名」那一行，由包根目录树的根行
+     提供插槽（.nav-acts），这里用 portal 送上去。删掉面板自己的标题行之后，
+     按钮留在原地就成了无主的孤儿 —— 动作归谁，就该摆在那一行上。
+     状态仍留在本面板（catOpen / mode），树不需要知道这些。 */
+  const actions = (
+    <>
+      {/* 分类管理：没法在这里凭空建空分类（分类是挂在模组上的字段），
+          所以这里只做「看有哪些分类 + 重命名 + 解散」，新建走右键模组。 */}
+      <button type="button" className={`tp-icon-btn${catOpen ? ' on' : ''}`}
+        aria-label="分类" title={`分类管理（${categories.length} 个）`}
+        onClick={() => setCatOpen(v => !v)}><Icon name="folderPlus" size={14}/></button>
+      <div className={`head-field${mode !== null ? ' open' : ''}`}>
+        {mode !== null && (
+          <>
+            <input className="head-input" autoFocus
+              value={mode === 'search' ? q : input}
+              placeholder={mode === 'search' ? '搜物品：中英文名 / ID / 缩写…' : '模组名（Enter 搜索）…'}
+              onChange={e => mode === 'search' ? patch({q: e.target.value || null}) : setInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') setMode(null);
+                if (e.key === 'Enter' && mode === 'add') void search();
+              }}/>
+            {(mode === 'search' ? q : input) && (
+              <button type="button" className="head-clear" aria-label="清空输入"
+                onClick={() => { if (mode === 'search') patch({q: null}); else setInput(''); }}>✕</button>
+            )}
+          </>
+        )}
+        <button type="button" className="tp-icon-btn" aria-label="解析依赖"
+          title="解析全部模组依赖，锁定版本并检测冲突"
+          onClick={() => void resolveDeps().catch(e => setError(String(e)))}><Icon name="refresh" size={14}/></button>
+        <button type="button" className={`tp-icon-btn${mode === 'search' ? ' on' : ''}`} aria-label="搜索物品"
+          title="搜索包内物品（本地目录，支持中英文名 / ID / 来源缩写）"
+          onClick={() => setMode(m => (m === 'search' ? null : 'search'))}><Icon name="search" size={14}/></button>
+        {/* 「添加模组」的加号按钮已移除：商店面板（tool=store）有完整的
+            模组搜索 + 兼容版本选择 + 降级说明，这里的入口只会重复。 */}
+      </div>
+    </>
+  );
+
   return (
     <>
+      {slot && createPortal(actions, slot)}
+      {/* .tp-top 现在只承载两个下拉（分类菜单 / 搜索命中）：按钮已经上移到根行，
+          下拉留在内容区顶端，不会被 .nav-tree 的滚动容器裁掉。 */}
       <div className="tp-top">
-        <div className="tp-head">
-          <span>来源 <span className="count">{installed.length}</span></span>
-          <span style={{flex: 1}}/>
-          <div className={`head-field${mode !== null ? ' open' : ''}`}>
-            {mode !== null && (
+        {catOpen && (
               <>
-                <input className="head-input" autoFocus
-                  value={mode === 'search' ? q : input}
-                  placeholder={mode === 'search' ? '搜物品：中英文名 / ID / 缩写…' : '模组名（Enter 搜索）…'}
-                  onChange={e => mode === 'search' ? patch({q: e.target.value || null}) : setInput(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Escape') setMode(null);
-                    if (e.key === 'Enter' && mode === 'add') void search();
-                  }}/>
-                {(mode === 'search' ? q : input) && (
-                  <button type="button" className="head-clear" aria-label="清空输入"
-                    onClick={() => { if (mode === 'search') patch({q: null}); else setInput(''); }}>✕</button>
-                )}
+                <div style={{position: 'fixed', inset: 0, zIndex: 40}} onClick={() => setCatOpen(false)}/>
+                <div className="cat-menu">
+                  <div className="p-title" style={{padding: '4px 8px 2px'}}>分类 <span className="count">{categories.length}</span></div>
+                  {categories.length === 0 && (
+                    <div className="p-empty" style={{padding: '4px 8px'}}>还没有分类。</div>
+                  )}
+                  {categories.map(([name, n]) => (
+                    <div key={name} className="cat-row">
+                      <Icon name="folder" size={12}/>
+                      <span className="grow" style={{overflow: 'hidden', textOverflow: 'ellipsis'}}>{name}</span>
+                      <span className="sub">{n}</span>
+                      <button type="button" className="p-btn" title="重命名（该分类下全部模组一起改）"
+                        onClick={() => { setRenameCatValue(name); setRenamingCat(name); setCatOpen(false); }}>
+                        改名
+                      </button>
+                      <button type="button" className="p-btn" title="解散分类：成员回到未分类"
+                        onClick={() => { setCatOpen(false); setPendingCats(prev => prev.filter(k => k !== name)); void moveToCategory(modsInCategory(name), ''); }}>
+                        解散
+                      </button>
+                    </div>
+                  ))}
+                  <div className="cat-hint">
+                    <button type="button" className="p-btn" onClick={newCategoryFromMenu}>
+                      <Icon name="plus" size={12}/> 新建分类…
+                    </button>
+                    建好后右键模组 → 移动到分类。空分类暂存本页，移入模组后才会保存。
+                  </div>
+                </div>
               </>
             )}
-            <button type="button" className={`tp-icon-btn${mode === 'search' ? ' on' : ''}`} aria-label="搜索物品"
-              title="搜索包内物品（本地目录，支持中英文名 / ID / 来源缩写）"
-              onClick={() => setMode(m => (m === 'search' ? null : 'search'))}><Icon name="search" size={14}/></button>
-            <button type="button" className={`tp-icon-btn${mode === 'add' ? ' on' : ''}`} aria-label="添加模组"
-              title="从 CurseForge / Modrinth 添加模组"
-              onClick={() => setMode(m => (m === 'add' ? null : 'add'))}><Icon name="plus" size={14}/></button>
-          </div>
-        </div>
         {mode !== null && (
           <div className="head-dd">
             {mode === 'search' ? <SearchHits q={q}/> : (
               <div className="ss-head">
-                <span>双平台搜索</span>
+                <span>模组搜索</span>
                 <span style={{flex: 1}}/>
-                <button type="button" className="p-btn" onClick={() => void search()}>搜</button>
+                {/* 提交键与商店面板同款放大镜（.ui-search-btn），不用「搜」字 ——
+                    中文挤得下、英文 search 放不下。输入框在顶栏、按钮在下拉里，
+                    布局上不是一个整体，所以复用的是 ui 层的样式而不是 SearchInput 组件。 */}
+                <button type="button" className="ui-search-btn" aria-label="搜索" title="搜索"
+                  onClick={() => void search()}>
+                  <Icon name="search" size={14}/>
+                </button>
               </div>
             )}
             {mode === 'add' && (
               <div className="ss-body">
                 {searchError && <div className="p-empty">{searchError}</div>}
-                {hits?.length === 0 && !picked && !searchError && <div className="p-empty">没有命中。设置页确认 CurseForge Key 后再试。</div>}
+                {hits?.length === 0 && !picked && !searchError && altHits.length === 0 && (
+                  <div className="p-empty">没有命中。设置页确认 CurseForge Key 后再试。</div>
+                )}
                 {!picked && (hits ?? []).map(h => (
                   <div key={`${h.provider}-${h.id}`} className="p-row click" onClick={() => void pick(h)} title={h.summary ?? ''}>
                     <span className="grow">{h.name}</span>
-                    <span className="sub">{h.provider}{h.mirror ? ' · 镜像' : ''}</span>
+                    <span className="sub">{providerLabel(h.provider)}{h.mirror ? ' · 镜像' : ''}</span>
                   </div>
                 ))}
+
+                {/* 降级结果：同 MC 版本、但只支持其他加载器。这些**装不进**本包，
+                    所以刻意不可点击 —— 让用户点到一半才失败，比一开始就说清楚更糟。
+                    文案不提「没有命中」：主结果里可能有几条平台的模糊命中。 */}
+                {!picked && altHits.length > 0 && (
+                  <>
+                    <div className="p-empty">
+                      本包（MC {pack?.mcVersion} · {loaderLabel(pack?.loader)}）没有真正匹配的模组。以下同 MC 版本、但只支持其他加载器的，装不进本包：
+                    </div>
+                    {altHits.map(h => (
+                      <div key={`alt-${h.provider}-${h.id}`} className="p-row na" title={h.summary ?? ''}>
+                        <span className="grow">{h.name}</span>
+                        <span className="sub">仅支持 {otherLoadersText(h.loaders, pack?.loader ?? '') || '其他加载器'}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
                 {picked && (
                   <>
                     <div className="p-row">
@@ -222,7 +470,9 @@ function SourceTree() {
                         <div className="p-row click" style={{opacity: .75}} onClick={() => setShowAllVersions(v => !v)}
                           title="这些版本不属于本包的 MC 版本或加载器，装了大概率崩">
                           <span className="grow sub">其他版本（不匹配本包）</span>
-                          <span className="sub">{others.length} {showAllVersions ? '▾' : '▸'}</span>
+                          <span className="sub" style={{display: 'inline-flex', alignItems: 'center', gap: 3}}>
+                            {others.length} <Icon name={showAllVersions ? 'caretDown' : 'caretRight'} size={12}/>
+                          </span>
                         </div>
                         {showAllVersions && others.map(versionRow)}
                       </>
@@ -235,17 +485,30 @@ function SourceTree() {
           </div>
         )}
       </div>
-      <div className="tp-body">
+      {/* 空白区右键：只给「新建…」这类跟光标下对象无关的动作。
+          与目录上右键同一模型 —— 先「新建…」，再选建什么，不把动作平铺在顶层。 */}
+      <div className="tp-body" onContextMenu={e => blankMenu.open(e, [
+        {label: '新建…', icon: 'plus', submenu: newItems()},
+      ])}>
         {error && <div className="p-empty">{error}</div>}
+        {/* 本体也走 ModRow：它也解析出了配方 / 结构 / 物品，展开后和模组一样
+            能按内容类型下钻。差别只有两处 —— 圆点是蓝色（不是装/停的状态灯），
+            右键菜单里没有「停用 / 移除 / 归类」（本体不能也不需要）。 */}
         {builtin.map(m => (
-          <div key={m.id} className="p-row click" onClick={() => patch({ns: 'minecraft', mode: 'index', type: null})}
-            title="Minecraft 原版 · 点击浏览它贡献的全部物品">
-            <span className="dot" style={{background: 'var(--mc-blue)'}}/>
-            <span className="grow">{m.displayName}</span>
-            <span className="sub">原版</span>
-          </div>
+          <ModRow key={m.id} mod={m} expanded={expanded === m.id}
+            onToggleExpand={() => setExpanded(x => x === m.id ? null : m.id)}
+            onFilter={() => patch({ns: m.canonicalModId || 'minecraft', mode: 'index', type: null})}
+            onContextMenu={e => builtinMenu.open(e, builtinItems(m))}
+            badge={<span className="sub">原版</span>}/>
         ))}
-        {renderGrouped(installed, expanded, setExpanded, toggleMod, patch)}
+        <ModGroups installed={installed} expanded={expanded} setExpanded={setExpanded}
+          extraCats={pendingCats}
+          patch={patch}
+          onContextMenu={(e, m) => modMenu.open(e, modItems(m))}
+          onGroupContextMenu={(e, name) => groupMenu.open(e, groupItems(name))}
+          renamingCat={renamingCat} renameCatValue={renameCatValue}
+          setRenameCatValue={setRenameCatValue}
+          onCommitRenameCat={commitRenameCat} onCancelRenameCat={() => setRenamingCat(null)}/>
         {installed.length === 0 && !error && <div className="p-empty">还没有模组。点顶栏右上「+」搜一个。</div>}
         {ns && !expanded && (
           <div className="p-row">
@@ -261,6 +524,17 @@ function SourceTree() {
           <span className="grow sub">{busyCatalog ? '目录构建中…' : status ? `revision ${status.builtRevision}` : '未构建'}</span>
         </div>
       </div>
+      {modMenu.menu}
+      {groupMenu.menu}
+      {blankMenu.menu}
+      {builtinMenu.menu}
+
+      {/* 输入弹窗走 ui/Prompt（Esc / 空值 / 聚焦三件事统一处理）。 */}
+      {prompt && (
+        <Prompt title={prompt.title} okLabel="创建并移入"
+          placeholder="分类名，如：科技 / 主线 / 优化"
+          onOk={prompt.ok} onClose={() => setPrompt(null)}/>
+      )}
     </div>
     </>
   );
@@ -349,101 +623,135 @@ function SearchHits({q}: {q: string}) {
   );
 }
 
-/* 单个模组行：名称行（点击=筛选它贡献的物品）+ 展开（解析状态 + 内容类型下钻）。 */
-function ModRow({mod, expanded, onToggleExpand, onToggleStatus, onFilter}: {
+/* 单个模组行：名称行（点击=筛选它贡献的物品）+ 展开（解析状态 + 内容类型下钻）。
+
+   行上刻意**不挂**「停用 / 移除」按钮：那是低频且不可逆的动作，
+   挤在每个模组右侧等于给误点造靶子，现在一律走右键菜单。
+   本体（builtin）也用这一行，只是 badge 不同（「原版」而非状态相关的东西）。 */
+function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, badge}: {
   mod: Mod;
   expanded: boolean;
   onToggleExpand: () => void;
-  onToggleStatus: () => void;
   onFilter: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  badge?: ReactNode;
 }) {
   return (
     <>
-      <div className="p-row click" onClick={onFilter} title={`${mod.displayName} · 点击筛选它贡献的物品`}>
+      <div className="p-row click" onClick={onFilter} onContextMenu={onContextMenu}
+        title={`${mod.displayName} · 点击筛选它贡献的物品 · 右键更多操作`}>
         <button type="button" className="src-chevron" aria-label={expanded ? '收起' : '展开解析内容'}
+          aria-expanded={expanded}
           onClick={e => { e.stopPropagation(); onToggleExpand(); }}>
-          {expanded ? '▾' : '▸'}
+          <Icon name={expanded ? 'caretDown' : 'caretRight'} size={13}/>
         </button>
-        <span className="dot" style={{background: DOT[mod.status] ?? 'var(--mc-muted)'}}/>
+        {/* 本体的圆点是蓝色：它不是「装了 / 停了」的状态，是「这就是游戏本身」。 */}
+        <span className="dot" style={{background: mod.origin === 'builtin' ? 'var(--mc-blue)' : DOT[mod.status] ?? 'var(--mc-muted)'}}/>
         <span className="grow" style={{overflow: 'hidden', textOverflow: 'ellipsis'}}>{mod.displayName}</span>
-        <button type="button" className="p-btn" disabled={mod.status === 'pending'}
-          onClick={e => { e.stopPropagation(); onToggleStatus(); }}>
-          {mod.status === 'disabled' ? '启用' : '停用'}
-        </button>
+        {badge}
       </div>
-      {expanded && <CategoryEditor mod={mod}/>}
       {expanded && <ModContent modId={mod.id} ns={mod.canonicalModId}/>}
     </>
   );
 }
 
-/* 分类编辑：写 pack_mods.category（真接口），空 = 未分类。 */
-function CategoryEditor({mod}: {mod: Mod}) {
-  const {packId} = useUrlState();
-  const {refresh} = usePackSummary();
-  const [value, setValue] = useState(mod.category || '');
-  const [saved, setSaved] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const save = async () => {
-    if (!packId) return;
-    setBusy(true); setSaved(false);
-    try {
-      await updateMod(packId, mod.id, {category: value.trim()});
-      setSaved(true);
-      refresh();
-      window.setTimeout(() => setSaved(false), 1500);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="p-row" style={{paddingLeft: 26}}>
-      <span className="sub" style={{flex: 'none'}}>分类</span>
-      <input className="p-input" style={{flex: 1, minWidth: 0}} value={value} placeholder="如：优化 / 科技（回车保存）"
-        onChange={e => setValue(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') void save(); }}/>
-      <button type="button" className="p-btn" disabled={busy || value.trim() === (mod.category || '')}
-        onClick={() => void save()}>{saved ? '✓' : '存'}</button>
-    </div>
-  );
-}
+/* 分组渲染（0027 / 本轮加分类管理）：按 mod.category 分组的模组树。
+   未分类的模组不套标题（平铺在最前），有分类的每组一个标题行，
+   标题行可右键重命名 / 解散，也可以就地改名（双击标题走的是同一个状态机）。
 
-/* 分组渲染（0027）：有多于一个类目时按类目分组出标题；否则平铺不噪声。 */
-function renderGrouped(installed: Mod[], expanded: string | null,
-  setExpanded: (fn: (x: string | null) => string | null) => void,
-  toggleMod: (m: Mod) => Promise<void>,
-  patch: (p: Record<string, string | null>, opts?: {push?: boolean}) => void) {
+   为什么是组件而不是函数：分组标题要能就地变成输入框（重命名），
+   这需要它自己持有展开/编辑态；原来那个函数式渲染没法挂。 */
+function ModGroups({installed, expanded, setExpanded, extraCats, patch,
+  onContextMenu, onGroupContextMenu, renamingCat, renameCatValue, setRenameCatValue,
+  onCommitRenameCat, onCancelRenameCat}: {
+  installed: Mod[];
+  expanded: string | null;
+  setExpanded: (fn: (x: string | null) => string | null) => void;
+  /* 前端暂存的空分类（新建后还没移入模组）：也要渲染成可折叠的分组。 */
+  extraCats: string[];
+  patch: (p: Record<string, string | null>, opts?: {push?: boolean}) => void;
+  onContextMenu: (e: React.MouseEvent, m: Mod) => void;
+  onGroupContextMenu: (e: React.MouseEvent, name: string) => void;
+  renamingCat: string | null;
+  renameCatValue: string;
+  setRenameCatValue: (v: string) => void;
+  onCommitRenameCat: (from: string) => void;
+  onCancelRenameCat: () => void;
+}) {
+  /* 折叠的分类集合。与模组展开（单选 expanded）不同：分类折叠是多选开关，
+     默认全展开 —— 目录的意义就是看见里面的东西，折叠只是收起干扰。 */
+  const [collapsedCats, setCollapsedCats] = useState<Set<string>>(new Set());
   const groups = new Map<string, Mod[]>();
   for (const m of installed) {
     const key = m.category?.trim() || '';
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(m);
   }
-  const categorized = [...groups.keys()].filter(k => k !== '');
-  if (categorized.length === 0) {
-    return installed.map(m => (
-      <ModRow key={m.id} mod={m} expanded={expanded === m.id}
-        onToggleExpand={() => setExpanded(x => x === m.id ? null : m.id)}
-        onToggleStatus={() => void toggleMod(m).catch(() => undefined)}
-        onFilter={() => patch({ns: m.canonicalModId, src: null, mode: 'index', type: null})}/>
-    ));
-  }
-  const ordered = [['', ...categorized.sort((a, b) => a.localeCompare(b, 'zh'))]];
+  for (const k of extraCats) if (!groups.has(k)) groups.set(k, groups.get(k) ?? []);
+  const categorized = [...groups.keys()].filter(k => k !== '').sort((a, b) => a.localeCompare(b, 'zh'));
+
+  const row = (m: Mod) => (
+    <ModRow key={m.id} mod={m} expanded={expanded === m.id}
+      onToggleExpand={() => setExpanded(x => x === m.id ? null : m.id)}
+      onFilter={() => patch({ns: m.canonicalModId, src: null, mode: 'index', type: null})}
+      onContextMenu={e => onContextMenu(e, m)}/>
+  );
+
+  /* 一个分类都没有时不套标题，避免给「还没归类」凭空造一个组。 */
+  if (categorized.length === 0) return <>{installed.map(row)}</>;
+
   const rows: ReactElement[] = [];
-  for (const key of ordered[0]) {
+  for (const key of ['', ...categorized]) {
     const list = groups.get(key) ?? [];
-    if (list.length === 0) continue;
+    const isPendingEmpty = list.length === 0 && extraCats.includes(key);
+    if (list.length === 0 && !isPendingEmpty) continue;
     if (key !== '') {
-      rows.push(<div key={`g-${key}`} className="p-title" style={{padding: '4px 6px 0'}}>📁 {key} <span className="count">{list.length}</span></div>);
+      const collapsed = collapsedCats.has(key);
+      rows.push(
+        <div key={`g-${key}`} className="p-title cat-head"
+          title={`${key} · ${list.length} 个模组\n点击折叠 / 展开；右键：重命名 / 解散这个分类`}
+          onClick={() => setCollapsedCats(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            return next;
+          })}
+          onContextMenu={e => onGroupContextMenu(e, key)}>
+          <button type="button" className="src-chevron" aria-label={collapsed ? '展开分类' : '折叠分类'}
+            aria-expanded={!collapsed}
+            onClick={e => {
+              e.stopPropagation();
+              setCollapsedCats(prev => {
+                const next = new Set(prev);
+                if (next.has(key)) next.delete(key); else next.add(key);
+                return next;
+              });
+            }}>
+            <Icon name={collapsed ? 'caretRight' : 'caretDown'} size={13}/>
+          </button>
+          {renamingCat === key
+            ? <input className="p-input" autoFocus value={renameCatValue}
+                style={{flex: 1, minWidth: 0, marginLeft: 4}}
+                onClick={e => e.stopPropagation()}
+                onChange={e => setRenameCatValue(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') onCommitRenameCat(key);
+                  if (e.key === 'Escape') onCancelRenameCat();
+                }}
+                onBlur={() => onCommitRenameCat(key)}/>
+            : <>{' '}{key} <span className="count">{list.length}</span></>}
+        </div>);
     }
-    for (const m of list) {
-      rows.push(<ModRow key={m.id} mod={m} expanded={expanded === m.id}
-        onToggleExpand={() => setExpanded(x => x === m.id ? null : m.id)}
-        onToggleStatus={() => void toggleMod(m).catch(() => undefined)}
-        onFilter={() => patch({ns: m.canonicalModId, src: null, mode: 'index', type: null})}/>);
+    if (key === '' || !collapsedCats.has(key)) {
+      if (isPendingEmpty) {
+        rows.push(
+          <div key={`g-empty-${key}`} className="p-empty" style={{paddingLeft: 26}}>
+            空分类（暂存本页，移入模组后保存）：右键任意模组 → 移动到分类 → {key}
+          </div>);
+      }
+      for (const m of list) rows.push(row(m));
     }
   }
-  return rows;
+  return <>{rows}</>;
 }
 
 /* 展开区：解析运行状态 + 内容分组（玩法内容在前，资源折叠在后；取样上限 1000 条）。 */
@@ -548,7 +856,9 @@ function ModContent({modId, ns}: {modId: string; ns: string}) {
           <div className="p-row click" style={{paddingLeft: 26}} onClick={() => setResOpen(v => !v)}
             title="模组自带的贴图/翻译/清单，系统用它们生成目录图标与中文名；一般不用编辑">
             <span className="grow sub">资源（图标/翻译等，{resources.length} 类）</span>
-            <span className="sub">{resources.reduce((s, k) => s + k.count, 0)} {resOpen ? '▾' : '▸'}</span>
+            <span className="sub" style={{display: 'inline-flex', alignItems: 'center', gap: 3}}>
+              {resources.reduce((s, k) => s + k.count, 0)} <Icon name={resOpen ? 'caretDown' : 'caretRight'} size={12}/>
+            </span>
           </div>
           {resOpen && resources.map(kindRow)}
         </>
@@ -557,32 +867,5 @@ function ModContent({modId, ns}: {modId: string; ns: string}) {
         <div className="p-empty" style={{paddingLeft: 26}}>这个模组没有解析出内容条目（功能全靠运行时代码的模组就是这样）。</div>
       )}
     </div>
-  );
-}
-
-/* 编排态：来源面板整体换成章节 rail（不是并存）。 */
-function QuestChapters() {
-  const {packId} = useUrlState();
-  const [chapters, setChapters] = useState<{id: string; title: string; position: number}[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!packId) return;
-    getQuest(packId)
-      .then(b => setChapters([...b.revision.draft.chapters].sort((a, b) => a.position - b.position)))
-      .catch(e => setError(e instanceof Error ? e.message : String(e)));
-  }, [packId]);
-
-  return (
-    <>
-      <div className="tp-head"><span>章节 <span className="count">{chapters.length}</span></span></div>
-      <div className="tp-body">
-        {error && <div className="p-empty">{error}</div>}
-        {chapters.map(c => (
-          <div key={c.id} className="p-row"><span className="grow">{c.title || '(未命名章节)'}</span></div>
-        ))}
-        {chapters.length === 0 && !error && <div className="p-empty">任务书还没有章节。画布（3D 落地）里可以建。</div>}
-      </div>
-    </>
   );
 }

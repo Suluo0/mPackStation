@@ -8,6 +8,14 @@ import (
 )
 
 func registerPublishRoutes(mux *http.ServeMux, app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service, version string) {
+	mux.HandleFunc("GET /api/export-dirs", func(w http.ResponseWriter, r *http.Request) {
+		v, err := app.ListExportDirectories(r.Context())
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"items": v, "next_cursor": nil, "total": len(v)})
+	})
 	mux.HandleFunc("POST /api/export-dirs", func(w http.ResponseWriter, r *http.Request) {
 		var body struct{ Name, Directory string }
 		if !decodeJSON(w, r, &body) {

@@ -99,6 +99,41 @@ func cfLoaderType(loader string) string {
 	}
 }
 
+// knownLoaders 是 Modrinth 用来标加载器的分类名集合。
+//
+// 搜索结果的 `categories` 字段是**加载器与普通分类混装**的
+// （technology / storage / equipment 和 forge / neoforge 挤在同一个数组里），
+// 所以不能整坨当成加载器用，必须与这张表求交。
+var knownLoaders = map[string]bool{
+	"fabric": true, "forge": true, "neoforge": true, "quilt": true,
+	"rift": true, "liteloader": true, "modloader": true,
+}
+
+// normalizeLoaderList 规整平台专用的 loaders 数组（去空白、统一小写）。
+// 这里**不做白名单求交**：它与混装的 categories 不同，本身就是加载器字段，
+// 丢掉不认识的项等于凭空断言「不支持」，那会误伤。
+func normalizeLoaderList(v []string) []string {
+	out := []string{}
+	for _, s := range v {
+		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// pickLoaders 从混合分类里挑出真正的加载器。挑不出就返回空 ——
+// 空表示「平台没告诉我们」，调用方必须按未知处理，不能当成「不支持任何加载器」。
+func pickLoaders(categories []string) []string {
+	out := []string{}
+	for _, c := range categories {
+		if normalized := strings.ToLower(strings.TrimSpace(c)); knownLoaders[normalized] {
+			out = append(out, normalized)
+		}
+	}
+	return out
+}
+
 func (h *HTTPAdapter) Search(ctx context.Context, in SearchRequest) (SearchResult, error) {
 	// Each platform has its own query vocabulary; build params per provider.
 	q := url.Values{}
@@ -153,6 +188,7 @@ func (h *HTTPAdapter) Search(ctx context.Context, in SearchRequest) (SearchResul
 			Description string          `json:"description"`
 			IconURL     string          `json:"icon_url"`
 			Downloads   int64           `json:"downloads"`
+			Categories  []string        `json:"categories"`
 		} `json:"hits"`
 		Data []struct {
 			ID      json.RawMessage `json:"id"`
@@ -188,7 +224,7 @@ func (h *HTTPAdapter) Search(ctx context.Context, in SearchRequest) (SearchResul
 		if name == "" {
 			name = x.Name
 		}
-		out.Items = append(out.Items, Project{ID: id, Slug: x.Slug, Name: name, Summary: x.Description, IconURL: x.IconURL, Downloads: x.Downloads})
+		out.Items = append(out.Items, Project{ID: id, Slug: x.Slug, Name: name, Summary: x.Description, IconURL: x.IconURL, Downloads: x.Downloads, Loaders: pickLoaders(x.Categories)})
 	}
 	for _, x := range raw.Data {
 		id, e := normalizeID(x.ID)
@@ -244,9 +280,19 @@ func (h *HTTPAdapter) Project(ctx context.Context, id string) (Project, error) {
 		} `json:"logo"`
 		Downloads     int64 `json:"downloads"`
 		DownloadCount int64 `json:"downloadCount"`
+		// Modrinth 的项目详情里加载器在专用的 `loaders` 字段(不是混装的 categories)，
+		// 这里必须解析出来 —— 模组搜索的「按 slug 直取」走的就是这个接口，
+		// 拿不到加载器就没法判断它到底装不装得进当前包。
+		Loaders    []string `json:"loaders"`
+		Categories []string `json:"categories"`
 	}
 	if e := json.Unmarshal(raw, &x); e != nil {
 		return Project{}, fmt.Errorf("decode project: %w", e)
+	}
+	loaders := normalizeLoaderList(x.Loaders)
+	if len(loaders) == 0 {
+		// 兜底：某些响应只给混装的 categories，那就求交挑出来。
+		loaders = pickLoaders(x.Categories)
 	}
 	name := x.Title
 	if name == "" {
@@ -267,7 +313,7 @@ func (h *HTTPAdapter) Project(ctx context.Context, id string) (Project, error) {
 	if downloads == 0 {
 		downloads = x.DownloadCount
 	}
-	return Project{ID: id, Slug: x.Slug, Name: name, Summary: summary, IconURL: icon, Downloads: downloads}, nil
+	return Project{ID: id, Slug: x.Slug, Name: name, Summary: summary, IconURL: icon, Downloads: downloads, Loaders: loaders}, nil
 }
 func (h *HTTPAdapter) Versions(ctx context.Context, id string) ([]Version, error) {
 	var payload json.RawMessage

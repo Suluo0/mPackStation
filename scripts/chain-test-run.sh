@@ -16,19 +16,105 @@ LOG=${1:-/tmp/chain-run.log}
 STUB=$DATA/tools/mpack-launcher
 
 say() { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }
+die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
-wait_up() { # wait_up <port>
+# 本机探测一律绕过 HTTP 代理。环境里常驻 HTTP_PROXY/HTTPS_PROXY，若不回环
+# 请求走代理，curl 连不上时会「成功」返回一段纯文本错误（退出码 0），
+# 于是 port_state 把代理错误当成实例应答，闸门既误报又漏报。
+# --noproxy '*' 让连不上时的退出码回到 7（真·无实例）。
+CURL_LOCAL="curl -s -m 2 --noproxy *"
+
+# 端口身份闸（issue-chain-test-port-collision）：
+# 本脚本默认 PORT 与唯一开发后端 18872 同口。撞口时脚本自己的后端 bind 失败，
+# 而 wait_up 只看 /api/health 是否 200 —— 开发后端会答这个 200，于是 173 个用例
+# （含建包/删包）会打在 /tmp/mpack-data 上。修法是按响应体里的 dataDir 认人，
+# 不认「健康就绪」这个既不唯一也不安全的信号。
+#
+# port_state <port> 分三态，让调用方能区分「端口没人」与「有人但读不到标记」：
+#   free     curl 连不上，端口确实无人应答
+#   unknown  有人应答，但 /api/health/identity 不可用（旧二进制没有实例标记）
+#   <path>   实例真实服务的 dataDir
+# unknown 必须当危险处理：读不到标记就假定端口干净，正是本缺陷当初的成因。
+port_state() {
+  local body rc
+  body=$($CURL_LOCAL "http://127.0.0.1:$1/api/health/identity" 2>/dev/null); rc=$?
+  if [ $rc -ne 0 ] || [ -z "$body" ]; then echo free; return 0; fi
+  printf '%s' "$body" | python3 -c 'import json,sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("unknown"); raise SystemExit
+# 后端活着但回的是 404 信封（无 identity 端点）= 旧二进制，标记不可读。
+print("unknown" if ("error" in d and "dataDir" not in d) else (d.get("dataDir") or "unknown"))' 2>/dev/null || echo unknown
+}
+
+# assert_port_free_or_ours <port> <期望 dataDir> <人类可读标签>
+# 起服务前调用：端口无人、或已有的正是上一轮 ours，都放行；
+# 端口上是别人的实例（尤其是开发库）或身份不可读，则硬失败。
+assert_port_free_or_ours() { # <port> <期望 dataDir> <标签>
+  _port="$1"; _want="$2"; _label="$3"
+  _state=$(port_state "$_port")
+  [ "$_state" = free ] && return 0                  # 端口无人应答 → 可以起
+  if [ "$_state" = "$_want" ]; then
+    say "端口 ${_port} 上是本脚本上一轮的实例(${_label})，继续"
+    return 0
+  fi
+  if [ "$_state" = unknown ]; then
+    cat >&2 <<EOF
+[chain] 拒绝执行：端口 ${_port} 上有实例在应答，但它没有 /api/health/identity
+       （后端二进制比本脚本预期的旧），读不到 dataDir，无法确认它服务的是不是隔离目录。
+       把读不到标记当成「端口干净」正是本缺陷当初的成因，所以这里硬失败。
+
+  请停掉占用者：scripts/dev-stop.sh
+  或换端口：     CHAIN_PORT=<空闲端口> scripts/chain-test-run.sh
+EOF
+    exit 1
+  fi
+  cat >&2 <<EOF
+[chain] 拒绝执行：端口 ${_port} 已被另一个 mPackStation 实例占用。
+
+  端口上实例的数据目录：${_state}
+  本脚本要用的数据目录：${_want}
+
+  这正是 issue-chain-test-port-collision 描述的自伤路径：
+  继续跑会把 ${_state} 里的数据当成隔离环境重置（建包/删包/清目录），
+  而 ${_state} 很可能就是你的开发库。
+
+  三种解法（任选其一）：
+    1) 停掉占用者：scripts/dev-stop.sh
+    2) 换端口：     CHAIN_PORT=<空闲端口> scripts/chain-test-run.sh
+    3) 真的想复用同一个实例 —— 那就不该用这个脚本，直接对开发库手工验证
+EOF
+  exit 1
+}
+
+# wait_up <port> <期望 dataDir>：不仅要 200，还要确认应答的实例确实是我们要的
+# 那个数据目录。开发后端答 200 但 dataDir 不同的情况必须判失败。
+wait_up() { # <port> <期望 dataDir>
   for _ in $(seq 1 30); do
-    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 "http://127.0.0.1:$1/api/health")" = 200 ] && return 0
+    if [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 --noproxy '*' "http://127.0.0.1:$1/api/health")" = 200 ]; then
+      [ "$(port_state "$1")" = "$2" ] && return 0
+      return 1   # 应答者不是目标数据目录 → 立刻失败，不等 30 秒
+    fi
     sleep 1
   done
   return 1
 }
 
+say '端口身份闸：确认 '"$PORT"'/'"$PORT2"' 上没有别的实例'
+assert_port_free_or_ours "$PORT"  "$DATA"  '主隔离实例'
+assert_port_free_or_ours "$PORT2" "$DATA2" '无启动器备用实例'
+
 say '停掉上一轮隔离后端(只按 -data 路径匹配,不杀别的进程)'
 pkill -f "mpack-chain-server -addr 127.0.0.1:${PORT}" 2>/dev/null
 pkill -f "mpack-chain-server -addr 127.0.0.1:${PORT2}" 2>/dev/null
 sleep 1
+
+# pkill 之后再确认一次：上面只按二进制名匹配，杀不掉 dev.sh 起的 go run。
+for p in "$PORT" "$PORT2"; do
+  case "$p" in "$PORT") w="$DATA";; *) w="$DATA2";; esac
+  [ "$(port_state "$p")" = "$w" ] || assert_port_free_or_ours "$p" "$w" '停后复核'
+done
 
 say '清空隔离数据目录'
 rm -rf "$DATA" "$DATA2"
@@ -158,17 +244,17 @@ say '启动隔离后端(带启动器二进制:'"$LAUNCHER"') :'
 echo "  http://127.0.0.1:${PORT}  -data ${DATA}  launcher=${LAUNCHER}"
 ( MPACK_TOKEN="$TOK" MPACK_LAUNCHER_BIN="$LAUNCHER" \
     "$BIN" -addr "127.0.0.1:${PORT}" -data "$DATA" > "$DATA/server.log" 2>&1 & )
-wait_up "$PORT" || { echo "隔离后端 :${PORT} 起不来"; tail -20 "$DATA/server.log"; exit 1; }
+wait_up "$PORT" "$DATA" || { echo "隔离后端 :${PORT} 起不来,或应答者不是 ${DATA}"; tail -20 "$DATA/server.log" 2>/dev/null; exit 1; }
 
 say '启动第二个隔离实例(无启动器二进制,仅供反向用例) :'
 echo "  http://127.0.0.1:${PORT2}  -data ${DATA2}"
 ( MPACK_TOKEN="$TOK" MPACK_LAUNCHER_BIN="" \
     "$BIN" -addr "127.0.0.1:${PORT2}" -data "$DATA2" > "$DATA2/server.log" 2>&1 & )
-if wait_up "$PORT2"; then NOBIN="http://127.0.0.1:${PORT2}"; else NOBIN=''; echo '  备用实例起不来,该反向用例将 SKIP'; fi
+if wait_up "$PORT2" "$DATA2"; then NOBIN="http://127.0.0.1:${PORT2}"; else NOBIN=''; echo '  备用实例起不来,该反向用例将 SKIP'; fi
 
 say '确认前端 dev 代理在 :'
 echo "  http://127.0.0.1:${WEB_PORT}"
-if [ "$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:${WEB_PORT}/api/health")" != 200 ]; then
+if [ "$(curl -s -o /dev/null -w '%{http_code}' -m 3 --noproxy '*' "http://127.0.0.1:${WEB_PORT}/api/health")" != 200 ]; then
   cat >&2 <<EOF
 前端代理 :${WEB_PORT}/api 不可用。请在 apps/web 下用隔离后端起 dev:
   cd ${ROOT}/apps/web

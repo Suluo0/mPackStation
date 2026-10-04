@@ -211,3 +211,21 @@ Electron 打包；step3 领域真组件（按批次另做）；后端任何改�
 并行会话环境冲突导致共享 /tmp 数据清空（见 `docs/tests/incident-2026-10-03-shared-env-wipe.md`）后，用户定稿唯一标准：
 **后端 18872（-data /tmp/mpack-data）、前端 5271（apps/web3）**，`scripts/dev.sh` / `dev-stop.sh` 唯一起停方式，
 禁止一切历史端口（5173/5273/5274/5275/5276/18871/18880）与新开实例。约束已写入 `AGENTS.md` 首节。
+
+## 17. 鉴权移除 + 链路引擎 P0（2026-10-03）
+
+### 鉴权移除（用户定稿：面向 Electron 单可执行文件，不需要 token）
+
+- 后端 `securityMiddleware` 精简为仅 Host/Origin 校验（防 DNS rebinding/跨站），写令牌检查全删。
+- 前端 `__MPACK_WRITE_TOKEN__` define / vite-env.d.ts 声明 / SettingsModal 令牌行 / http.ts 注入 全部清除。
+- `runtime-token` 文件机制不再生成。后续 Electron 打包时无需迁移任何鉴权逻辑。
+
+### 链路引擎 P0（`apps/web3/src/chain/`，纯前端 ≈350 行，方案 `craft-chain-engine-plan-2026-10-03.md`）
+
+- `interpret.ts`：配方 payload → 边（键名并集分类，非 type 白名单；化学品/流体 → mB 单位）。
+- `ticks.ts`：机器时长三级降级（配方字段 → 规则表 → unknown，绝不用固定值兜底）。
+- `expand.ts`：逆向递归（BFS+路径栈+环检测+深度/节点上限）；出边三级降级；多配方选一；标签取代表成员展开。
+- `chainRules.json`：机器节拍/速率/采集时长数据表（每行带 source 出处），`tick:null` = 节拍未核（禁止兜底）。
+- `ChainView.tsx` + `editor/ModeChain.tsx`：深度分列渲染，节点 = 数量，行下标注机器·时长；断点按类型着色。
+- 挂载：url.ts MODES + EditorArea + EditorHeader（第 5 个透镜「链路」，快捷键 C）。
+- 金苹果链验收：90 节点 / 深度 ≥3 / 汇总行原料合计+能量+断点 / 无 crash。

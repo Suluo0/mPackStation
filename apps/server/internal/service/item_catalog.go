@@ -864,7 +864,14 @@ func (a *API) GetCatalogStatus(ctx context.Context, packID string) (CatalogStatu
 	if err != nil {
 		return CatalogStatus{}, err
 	}
-	return CatalogStatus{SourceRevision: state.SourceRevision, BuiltRevision: state.BuiltRevision, Status: state.Status, BuiltAt: state.BuiltAt, LastError: state.LastError, Warnings: state.Warnings, Stale: state.SourceRevision != state.BuiltRevision}, nil
+	// stale 的语义是「读目录会失败」，不是「版本号不等」。作废代次（config_revision
+	// 前进而 current_generation_id 被清空）同样会让 ReadCatalog 返回 409，必须算进来，
+	// 否则构建面板会显示「目录是最新的」而索引页其实没有数据。
+	current, err := a.repo.CatalogIsCurrent(ctx, packID)
+	if err != nil {
+		return CatalogStatus{}, err
+	}
+	return CatalogStatus{SourceRevision: state.SourceRevision, BuiltRevision: state.BuiltRevision, Status: state.Status, BuiltAt: state.BuiltAt, LastError: state.LastError, Warnings: state.Warnings, Stale: !current}, nil
 }
 
 func (a *API) GetCatalogItem(ctx context.Context, packID, itemID, locale string) (CatalogItemView, error) {

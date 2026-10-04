@@ -161,3 +161,86 @@ func TestHTTPAdapterCurseForgeEnvelopeNormalization(t *testing.T) {
 		t.Fatalf("curseforge versions=%#v error=%v", versions, err)
 	}
 }
+
+// TestHTTPAdapterSearchParsesLoadersFromMixedCategories 钉住搜索结果的加载器解析。
+//
+// Modrinth 的 search hit 里 `categories` 是**加载器与普通分类混装**的
+// （technology / storage / equipment 和 forge / neoforge 在同一个数组），
+// 直接整坨当 loaders 用会让「仅支持 X」的提示全是废话，所以必须求交。
+func TestHTTPAdapterSearchParsesLoadersFromMixedCategories(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"hits":[{"project_id":"p1","title":"Mekanism",
+			"categories":["technology","storage","forge","neoforge","equipment"]}],
+			"pagination":{"total":1}}`))
+	}))
+	defer s.Close()
+	a, err := NewHTTPAdapter(Modrinth, s.URL, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.Search(context.Background(), SearchRequest{Query: "mek"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Items) != 1 {
+		t.Fatalf("items=%#v", got.Items)
+	}
+	loaders := got.Items[0].Loaders
+	if len(loaders) != 2 || loaders[0] != "forge" || loaders[1] != "neoforge" {
+		t.Fatalf("loaders=%v, want [forge neoforge] —— 普通分类必须被滤掉", loaders)
+	}
+}
+
+// TestHTTPAdapterProjectParsesLoaders 保护「按 slug 直取」那条路径。
+//
+// 模组搜索的 slug 直取走的是项目详情接口，它绕开了平台侧的 facets 过滤，
+// 所以加载器必须从详情里拿到手，才能自己再判一次能不能装。
+func TestHTTPAdapterProjectParsesLoaders(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"p1","slug":"mekanism","title":"Mekanism",
+			"loaders":["Forge"," NeoForge "],"categories":["technology"]}`))
+	}))
+	defer s.Close()
+	a, err := NewHTTPAdapter(Modrinth, s.URL, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := a.Project(context.Background(), "mekanism")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Loaders) != 2 || p.Loaders[0] != "forge" || p.Loaders[1] != "neoforge" {
+		t.Fatalf("loaders=%v, want 规整成小写去空白的 [forge neoforge]", p.Loaders)
+	}
+
+	// 只有混装 categories 时按求交兜底。
+	s2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"p2","slug":"x","title":"X","categories":["storage","quilt","decoration"]}`))
+	}))
+	defer s2.Close()
+	a2, err := NewHTTPAdapter(Modrinth, s2.URL, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2, err := a2.Project(context.Background(), "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p2.Loaders) != 1 || p2.Loaders[0] != "quilt" {
+		t.Fatalf("loaders=%v, want 兜底求交出 [quilt]", p2.Loaders)
+	}
+}
+
+// TestPickLoadersReturnsEmptyForUnknown 守住「空 = 未知」的语义：
+// 挑不出加载器时必须返回空，让调用方按未知处理，绝不能当成「一个都不支持」。
+func TestPickLoadersReturnsEmptyForUnknown(t *testing.T) {
+	if got := pickLoaders([]string{"technology", "storage"}); len(got) != 0 {
+		t.Fatalf("pickLoaders = %v, want 空", got)
+	}
+	if got := pickLoaders(nil); len(got) != 0 {
+		t.Fatalf("pickLoaders(nil) = %v, want 空", got)
+	}
+	if got := pickLoaders([]string{"FABRIC", "NeoForge"}); len(got) != 2 || got[0] != "fabric" || got[1] != "neoforge" {
+		t.Fatalf("pickLoaders = %v, want [fabric neoforge]", got)
+	}
+}

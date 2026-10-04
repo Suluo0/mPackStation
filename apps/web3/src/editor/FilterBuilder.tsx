@@ -5,7 +5,7 @@ import {
   type FilterCond, type FilterMode,
 } from '../app/catalogSearch';
 import {useUrlPatch, useUrlState} from '../app/url';
-import {Icon} from '../app/Icon';
+import {Icon} from '../ui/Icon';
 
 /* 复杂过滤器（用户定稿：JEI 式前缀，无类型选择器、无语法学习成本）。
    一个标准输入框，前缀分派：# 标签（概念词或标签 ID）、@ 来源（模组命名空间）、

@@ -1,5 +1,6 @@
-/* 设计令牌。基础色板迁自 web2 tokens.css（暖纸 + ember，品牌不换）。
-   V3 外壳新增布局与密度变量；语义色注释是全站信号配色约定，不许改值。 */
+/* 设计令牌：只放**不随主题变**的基础刻度（圆角 / 间距 / 布局尺寸 / 动效 / 字体）。
+   颜色类令牌在 styles/themes.css，按 [data-theme] 分组，light / dark 各一套同名变量。
+   基础色板迁自 web2 tokens.css（暖纸 + ember，品牌不换）；V3 外壳新增布局与密度变量。 */
 
 :root {
   /* 圆角（V3 收紧：面板 6 / 控件 4） */
@@ -23,41 +24,9 @@
   --mc-statusbar-h: 24px;
   --mc-dock-h: 220px;
 
-  /* 中性色 */
-  --mc-text: #252522;
-  --mc-text-2: #5e5a52;
-  --mc-muted: #888278;
-  --mc-bg: #f4f0e8;
-  --mc-fill: #fffdf8;
-  --mc-fill-2: #faf6ee;
-  --mc-line: #e4ded2;
-  --mc-line-strong: #d4ccbc;
-  --mc-hover: #f2eadf;
-
-  /* 品牌色：暖纸底上的 ember 橙，仅保留一个主强调色 */
-  --mc-primary: #c9783b;
-  --mc-primary-deep: #a9562d;
-  --mc-primary-bg: #f7e6d4;
-  --mc-brand-from: #dd9a5a;
-  --mc-brand-to: #b85e32;
-  --mc-brand-shadow: rgba(139, 77, 39, 0.2);
-
-  /* 语义色（信号配色语义固定：绿=已解决，红/橙=待解决，蓝=可更新） */
-  --mc-blue: #3b82f6;
-  --mc-blue-bg: #eaf1fe;
-  --mc-success: #16a34a;
-  --mc-success-bg: #e7f8ee;
-  --mc-fail: #e5484d;
-  --mc-fail-bg: #fdecec;
-  --mc-orange: #ea8600;
-  --mc-orange-bg: #fef3e2;
-  --mc-gold: #b45309;
-  --mc-gold-bg: #fff7e8;
-  --mc-gold-line: #f3dfae;
-
-  /* 阴影 */
-  --mc-shadow: 0 2px 8px rgba(64, 50, 33, 0.06);
-  --mc-shadow-lg: 0 12px 28px rgba(64, 50, 33, 0.12);
+  /* 颜色不在这里 —— 随主题变化的量（中性色 / 品牌色 / 语义色 / 阴影）全部搬到
+     styles/themes.css，按 [data-theme] 分组，light / dark 各一套同名变量。
+     换主题只改 themes.css，本文件不动。 */
 
   /* 动效 */
   --mc-ease: cubic-bezier(0.2, 0.6, 0.3, 1);

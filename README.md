@@ -69,20 +69,15 @@ bash scripts/verify-terminal-chain.sh --launch          # 流水线终局：后�
 
 > 端口约定（2026-10-03 定稿，权威文本见仓库根 `AGENTS.md`「服务与环境铁律」）：**开发前端 5271、开发后端 18872**，数据目录 `/tmp/mpack-data`；5173 / 5273 / 5274 / 5275 / 5276 / 18871 / 18880 一律作废，禁止另开实例。起停只用 `scripts/dev.sh` / `scripts/dev-stop.sh`。
 >
-> ⚠ **跑链路测试前必须先 `scripts/dev-stop.sh`**：`scripts/chain-test-run.sh` 的默认后端端口就是 **18872**（`CHAIN_PORT` 可改），与唯一开发实例同口。不停开发实例时，chain 自己的后端绑不上端口，而脚本的健康探活会被**开发后端**答 200，于是 173 个用例（含建包/删包）直接打在 `/tmp/mpack-data` 上。`verify-terminal-chain.sh` 用 18874、chain 的无启动器第二实例用 18873，这两个不撞。两个脚本都**按设计重置各自的隔离数据目录**（`/tmp/mpack-chain`、`/tmp/mpack-terminal`），那不是事故。
+> ⚠ **链路脚本自带端口身份闸（2026-10-03 已修）**：`scripts/chain-test-run.sh` 的默认后端端口是 **18872**，与唯一开发实例同口。脚本现在会在 `rm -rf` 之前读 `GET /api/health/identity` 的 `dataDir` 核对实例身份——不是自己的隔离实例就**硬失败退出**，并提示三种解法（停掉占用者 / `CHAIN_PORT` 换口 / 放弃用脚本）。修法见 `docs/tests/` 与 `issue-chain-test-port-collision`。`verify-terminal-chain.sh` 同样加了闸门（它默认 18874，但 `TERM_PORT` 可改）。
 >
-> 跨机访问：dev 前端绑 `0.0.0.0`，另一台设备用 `http://<本机局域网 IP>:5271` 打开即可，接口经 vite 代理回本机后端（后端只绑回环，不直接对外）。若要用 mDNS 主机名而非 IP 访问，需同时给两端加白名单：vite 的 `server.allowedHosts` 与后端的 `MPACK_ALLOWED_HOSTS`。
+> 前端同样只绑回环（`127.0.0.1`），后端只绑 `127.0.0.1`，因此**只能从本机打开**。这是本机单用户工具的边界，见 `docs/api/auth.md`。若确实需要局域网访问：把 `apps/web3/vite.config.ts` 的 `server.host` 改回 `0.0.0.0` **并且**必须把写令牌加回来 —— 同网段任何设备都能直接读写本机数据库，没有凭据能拦住。
 
-### 写操作令牌
+### 写操作：无令牌
 
-非 GET 请求需要 `X-MPack-Token` 请求头，与服务端环境变量 `MPACK_TOKEN` 一致。未设置时后端回落到 dev 令牌 `test`（后端代码里标注为 P2 待办）。前端从构建期变量 `VITE_MPACK_TOKEN` 读取，dev 下未设置时同样回落到 `test`。
+本工具是本机单用户 IDE，前后端都只监听 `127.0.0.1`，不引入写令牌。曾经的 `X-MPack-Token` 机制已移除（2026-10-03）—— 它在只有一个人的机器上没有对应威胁，而「前端怎么拿到令牌」这条链路本身是故障源：vite 一旦读到另一个实例遗留的过期 `runtime-token`，读接口正常而所有写接口 401，表现为「界面加载得出来但点不动」。
 
-生产部署必须同时设置两者：
-
-```bash
-MPACK_TOKEN=<强随机值> ./mpackstation-server
-VITE_MPACK_TOKEN=<同一个值> npm run build
-```
+仍保留的防护是 Host / Origin 校验：浏览器里打开的任意网页不能借你的浏览器改库（403 `invalid_origin`）。完整边界见 `docs/api/auth.md`。
 
 ## 项目结构
 

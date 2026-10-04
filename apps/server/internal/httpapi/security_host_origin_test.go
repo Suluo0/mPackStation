@@ -21,7 +21,7 @@ func secHandler(t *testing.T) http.Handler {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return NewRouter(db, "test", "test")
+	return NewRouter(db, "test")
 }
 
 func secDo(t *testing.T, h http.Handler, method, path, host, origin string, write bool) *httptest.ResponseRecorder {

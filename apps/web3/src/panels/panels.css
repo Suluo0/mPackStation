@@ -7,6 +7,12 @@
 /* 添加模组：版本列表缩进 */
 .tp-body .p-section .p-section { border-left: 2px solid var(--mc-line); padding-left: 8px; }
 
+/* 降级搜索结果行（只支持其他加载器，装不进当前包）。
+   刻意不用 .click、不装 hover 效果 —— 它不可点击，视觉上就不该像个按钮。
+   置灰只是「说明」的视觉语气，不是禁用态。 */
+.p-row.na { color: var(--mc-muted); cursor: default; }
+.p-row.na:hover { background: transparent; }
+
 /* ── 上下文字形/清除按钮（编辑区头复用） ─────────────────── */
 .ctx-glyph { color: var(--mc-primary-deep); font-size: 13px; flex: none; }
 .ctx-clear {
@@ -127,3 +133,101 @@
 .mod-kinds { display: flex; flex-direction: column; }
 .mod-kinds .p-row { padding-left: 26px; }
 .run-stats { color: var(--mc-muted); font-size: 12px; padding: 0 6px 2px 26px; display: flex; gap: 8px; }
+
+/* 右键菜单样式已迁到 ui/ui.css（菜单是基础组件，样式跟组件走）。 */
+
+/* ── 分类：工具栏下拉的管理器 ── */
+.cat-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 50;
+  min-width: 250px;
+  max-height: 60vh;
+  overflow: auto;
+  background: var(--mc-fill);
+  border: 1px solid var(--mc-line-strong);
+  border-radius: var(--mc-radius);
+  box-shadow: var(--mc-shadow-lg);
+  padding: 3px;
+}
+.cat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: var(--mc-radius);
+  font-size: 12.5px;
+}
+.cat-row:hover { background: var(--mc-hover); }
+.cat-row .p-btn { padding: 1px 6px; font-size: 11.5px; }
+.cat-hint {
+  margin-top: 3px;
+  padding: 5px 8px;
+  border-top: 1px solid var(--mc-line);
+  color: var(--mc-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* 分类标题行：除了插一条分隔线，还要能整行右键，所以给个手型提示 */
+.p-title.cat-head { display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
+.p-title.cat-head:hover { color: var(--mc-text); }
+.p-title.cat-head:hover { color: var(--mc-text-2); }
+
+/* ── 小输入弹层（新建分类这类「要一个名字」的动作） ──
+   弹层样式已迁到 ui/ui.css（ui/Modal.tsx + ui/Prompt.tsx 是全站唯一实现，
+   样式跟组件走）。业务弹窗自己的内容样式（.dir-modal 等）仍留在这里。 */
+
+/* ── 构建面板：四个构建动作（竖排满宽，图标 + 文案，主次分明） ── */
+.build-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.build-actions .p-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-start;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+/* ── 产物目录选择弹层（后端枚举目录，浏览器给不出服务端绝对路径） ──
+   遮罩 .modal-backdrop 在 ui/ui.css，这里只放目录列表自己的内容样式。 */
+.dir-modal {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(520px, calc(100vh - 80px));
+  overflow: auto;
+  background: var(--mc-fill);
+  border: 1px solid var(--mc-line-strong);
+  border-radius: var(--mc-radius-panel);
+  box-shadow: var(--mc-shadow-lg);
+  padding: var(--mc-sp);
+}
+.dm-path {
+  display: flex;
+  align-items: center;
+  gap: var(--mc-sp-xs);
+  margin: 4px 0 var(--mc-sp-sm);
+}
+.dm-path .mono {
+  font-family: var(--mc-font-mono);
+  font-size: 11.5px;
+  color: var(--mc-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--mc-line);
+  border-radius: var(--mc-radius);
+  padding: 3px;
+}

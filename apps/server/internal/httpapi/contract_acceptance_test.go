@@ -19,7 +19,7 @@ func TestFrontendContractRoutesExist(t *testing.T) {
 	}
 	defer db.Close()
 
-	handler := NewRouter(db, "test", "test")
+	handler := NewRouter(db, "test")
 	routes := []struct {
 		method string
 		path   string

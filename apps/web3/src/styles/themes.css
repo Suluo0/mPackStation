@@ -1,0 +1,84 @@
+/* 主题颜色层。随主题变化的量全在这里，按 [data-theme] 分组。
+   不随主题变的量（圆角 / 间距 / 布局尺寸 / 动效 / 字体）在 tokens.css。
+
+   :root 与 [data-theme="light"] 并列写，是为了「还没设 data-theme 时也有值」——
+   启动时 main.tsx 会立即落一个 data-theme，但这段兜底能避免首帧闪白。
+
+   语义色约定（不许改语义）：绿=已解决，红/橙=待解决，蓝=可更新，金=提示。
+   命名一律用语义名，不许写颜色名（--mc-primary 而非 --mc-orange）。 */
+
+:root,
+[data-theme='light'] {
+  /* 中性色 */
+  --mc-text: #252522;
+  --mc-text-2: #5e5a52;
+  --mc-muted: #888278;
+  --mc-bg: #f4f0e8;
+  --mc-fill: #fffdf8;
+  --mc-fill-2: #faf6ee;
+  --mc-line: #e4ded2;
+  --mc-line-strong: #d4ccbc;
+  --mc-hover: #f2eadf;
+
+  /* 品牌色：暖纸底上的 ember 橙，仅保留一个主强调色 */
+  --mc-primary: #c9783b;
+  --mc-primary-deep: #a9562d;
+  --mc-primary-bg: #f7e6d4;
+  --mc-brand-from: #dd9a5a;
+  --mc-brand-to: #b85e32;
+  --mc-brand-shadow: rgba(139, 77, 39, 0.2);
+
+  /* 语义色（信号配色语义固定） */
+  --mc-blue: #3b82f6;
+  --mc-blue-bg: #eaf1fe;
+  --mc-success: #16a34a;
+  --mc-success-bg: #e7f8ee;
+  --mc-fail: #e5484d;
+  --mc-fail-bg: #fdecec;
+  --mc-orange: #ea8600;
+  --mc-orange-bg: #fef3e2;
+  --mc-gold: #b45309;
+  --mc-gold-bg: #fff7e8;
+  --mc-gold-line: #f3dfae;
+
+  /* 阴影（深色底上要加重，否则弹层浮不起来） */
+  --mc-shadow: 0 2px 8px rgba(64, 50, 33, 0.06);
+  --mc-shadow-lg: 0 12px 28px rgba(64, 50, 33, 0.12);
+}
+
+[data-theme='dark'] {
+  /* 中性色：暖深色，保留「暖纸」的性格而不是纯灰 */
+  --mc-text: #e9e3d7;
+  --mc-text-2: #b6aea1;
+  --mc-muted: #8b8375;
+  --mc-bg: #1b1917;
+  --mc-fill: #26241f;
+  --mc-fill-2: #2c2925;
+  --mc-line: #3a3630;
+  --mc-line-strong: #4b463e;
+  --mc-hover: #332f29;
+
+  /* 品牌色：暗底上要提亮，否则 ember 橙会被吃对比度 */
+  --mc-primary: #e2954f;
+  --mc-primary-deep: #c9783b;
+  --mc-primary-bg: #3a2a1c;
+  --mc-brand-from: #eaa869;
+  --mc-brand-to: #cb6f3a;
+  --mc-brand-shadow: rgba(0, 0, 0, 0.4);
+
+  /* 语义色：同上，全部提亮一档 */
+  --mc-blue: #6ea8fe;
+  --mc-blue-bg: #1b2740;
+  --mc-success: #4ade80;
+  --mc-success-bg: #14301f;
+  --mc-fail: #ff6b6f;
+  --mc-fail-bg: #3a1c1e;
+  --mc-orange: #fbbf24;
+  --mc-orange-bg: #3a2c14;
+  --mc-gold: #fbbf24;
+  --mc-gold-bg: #3a2c14;
+  --mc-gold-line: #5a4520;
+
+  --mc-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --mc-shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.45);
+}

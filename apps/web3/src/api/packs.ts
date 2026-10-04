@@ -6,6 +6,21 @@ import {del, get, patch, post} from './http';
 export const loaderEnum = z.enum(['forge', 'neoforge', 'fabric', 'quilt']);
 export type Loader = z.infer<typeof loaderEnum>;
 
+/* 加载器显示名。后端存的是小写标识（fabric / neoforge），界面上要按各家官方写法
+   显示：NeoForge 和 Forge 是两个词、必须大写中间那个字母，Fabric / Quilt 单词首字母大写。
+   不认识的值原样返回 —— 不猜、不吞。 */
+const LOADER_LABELS: Record<string, string> = {
+  fabric: 'Fabric',
+  forge: 'Forge',
+  neoforge: 'NeoForge',
+  quilt: 'Quilt',
+};
+export function loaderLabel(loader: string | null | undefined): string {
+  const v = (loader ?? '').trim();
+  if (!v) return '';
+  return LOADER_LABELS[v.toLowerCase()] ?? v;
+}
+
 export const packSchema = z.object({
   id: z.string(),
   name: z.string(),

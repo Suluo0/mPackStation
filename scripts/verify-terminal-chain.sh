@@ -23,8 +23,51 @@ PROFILE=${PROFILE:-debug}
 LOG=${TERM_LOG:-/tmp/terminal-run.log}
 
 say() { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }
+
+# 本机探测一律绕过 HTTP 代理：环境里常驻 HTTP_PROXY，不绕过时 curl 连不上
+# 会「成功」返回一段纯文本错误（退出码 0），端口探测因此既误报又漏报。
+CURL_LOCAL="curl -s -m 2 --noproxy *"
+
+# 与 chain-test-run.sh 同源的三态端口探测：free / unknown / <dataDir>。
+# unknown = 端口上有人应答但没有 identity 端点（旧后端二进制），读不到实例
+# 身份就必须当危险处理，不能当成「端口干净」。
+port_state() {
+  local body rc
+  body=$($CURL_LOCAL "http://127.0.0.1:$1/api/health/identity" 2>/dev/null); rc=$?
+  if [ $rc -ne 0 ] || [ -z "$body" ]; then echo free; return 0; fi
+  printf '%s' "$body" | python3 -c 'import json,sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("unknown"); raise SystemExit
+print("unknown" if ("error" in d and "dataDir" not in d) else (d.get("dataDir") or "unknown"))' 2>/dev/null || echo unknown
+}
+
+# 身份闸：默认 18874 与开发实例不同口，但 TERM_PORT 可改，且下面会 rm -rf。
+# 端口上若已有别人的实例（改了 TERM_PORT 撞上 18872 等），必须硬失败 ——
+# 否则 TERM_FRESH=1 的清库会打在开发数据上。见 issue-chain-test-port-collision。
+_state=$(port_state "$PORT")
+if [ -n "$_state" ] && [ "$_state" != free ] && [ "$_state" != "$DATA" ]; then
+  if [ "$_state" = unknown ]; then
+    _shown='(读不到：端口上的后端没有 /api/health/identity，是旧版二进制)'
+  else
+    _shown="$_state"
+  fi
+  cat >&2 <<EOF
+[terminal] 拒绝执行：端口 ${PORT} 上已有实例，但不是本脚本的隔离实例。
+  端口上实例的数据目录：${_shown}
+  本脚本要清空的数据目录：${DATA}
+  继续跑会 rm -rf 掉不属于本脚本的数据。改 TERM_PORT=<空闲端口>，或先 scripts/dev-stop.sh。
+EOF
+  exit 1
+fi
+
+# wait_up <port>：200 之外还要确认应答者就是目标数据目录
 wait_up() { for _ in $(seq 1 40); do
-    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 "http://127.0.0.1:$1/api/health")" = 200 ] && return 0
+    if [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 --noproxy '*' "http://127.0.0.1:$1/api/health")" = 200 ]; then
+      [ "$(port_state "$1")" = "$DATA" ] && return 0
+      return 1
+    fi
     sleep 1; done; return 1; }
 
 # ---- 1. Rust 内核 -------------------------------------------------------

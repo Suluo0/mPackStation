@@ -213,7 +213,7 @@ func TestP7ArtifactHashAndDownloadContract(t *testing.T) {
 	if got := hex.EncodeToString(digest[:]); got != built.Artifact.SHA256 || int64(len(body)) != built.Artifact.SizeBytes {
 		t.Fatalf("P7-ARTIFACT-001 digest=%q/%d, registered=%q/%d", hex.EncodeToString(digest[:]), len(body), built.Artifact.SHA256, built.Artifact.SizeBytes)
 	}
-	handler := NewRouter(db, "test", "test")
+	handler := NewRouter(db, "test")
 	res := p7Do(t, handler, http.MethodGet, "/api/packs/"+packID+"/artifacts/"+built.Artifact.ID+"/download", nil, false)
 	if res.Code != http.StatusOK {
 		t.Fatalf("P7-ARTIFACT-001 download status=%d body=%s", res.Code, res.Body.String())
@@ -438,13 +438,15 @@ func TestP7HTTPErrorEnvelopeIsStable(t *testing.T) {
 	handler, db, _, _ := p7HTTPFixture(t)
 	defer db.Close()
 
-	unauth := httptest.NewRequest(http.MethodPost, "/api/export-dirs", bytes.NewBufferString(`{}`))
-	unauth.Host = "localhost"
-	unauth.Header.Set("Origin", "http://localhost")
-	unauth.Header.Set("X-Request-ID", "p7-unauth")
+	// 无鉴权模式（用户 2026-10-03 定调）：写操作不再需要令牌；跨站 Origin
+	// 仍必须被拒（浏览器里的恶意网页不能借用户的手写库）。
+	crossSite := httptest.NewRequest(http.MethodPost, "/api/export-dirs", bytes.NewBufferString(`{}`))
+	crossSite.Host = "localhost"
+	crossSite.Header.Set("Origin", "https://evil.example")
+	crossSite.Header.Set("X-Request-ID", "p7-unauth")
 	res := httptest.NewRecorder()
-	handler.ServeHTTP(res, unauth)
-	p7RequireError(t, res, http.StatusUnauthorized, "unauthorized", "p7-unauth")
+	handler.ServeHTTP(res, crossSite)
+	p7RequireError(t, res, http.StatusForbidden, "invalid_origin", "p7-unauth")
 
 	badHost := p7Request(t, http.MethodPost, "/api/export-dirs", bytes.NewBufferString(`{}`), true)
 	badHost.Host = "evil.example"
@@ -506,7 +508,7 @@ func (a *p7CountingAdapter) statusCalls() int { a.mu.Lock(); defer a.mu.Unlock()
 func p7HTTPFixture(t *testing.T) (http.Handler, *sql.DB, string, string) {
 	t.Helper()
 	db, _, packID, versionID := newP7ServiceFixture(t)
-	return NewRouter(db, "test", "test"), db, packID, versionID
+	return NewRouter(db, "test"), db, packID, versionID
 }
 
 func newP7ServiceFixture(t *testing.T) (*sql.DB, *service.API, string, string) {

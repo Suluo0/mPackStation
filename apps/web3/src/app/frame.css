@@ -46,13 +46,15 @@
   border-radius: var(--mc-radius);
   background: var(--mc-fill-2);
   cursor: pointer;
-  max-width: 220px;
+  /* 文案是「包名 · MC 版本 · 加载器」三段，220px 放不下就会把包名截断。 */
+  max-width: 320px;
   position: relative;
   color: var(--mc-text);
 }
 .pack-switcher:hover { background: var(--mc-hover); }
 .pack-switcher .ps-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pack-switcher .ps-sub { color: var(--mc-muted); font-size: 12px; white-space: nowrap; }
+.pack-switcher .ps-sep { color: var(--mc-line-strong, var(--mc-muted)); font-size: 12px; }
 .ps-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -128,6 +130,15 @@
 }
 .tb-btn.primary:hover { background: var(--mc-primary-deep); }
 .tb-btn.primary:disabled { background: var(--mc-line); border-color: var(--mc-line); color: var(--mc-muted); }
+
+/* 顶栏右侧的「包级动作」按钮（自建内容 / 构建 / 运行）。
+   它们换的是侧边栏内容，所以命中当前 tool 时要亮着，否则点了没反馈。 */
+.tb-act { display: inline-flex; align-items: center; gap: 5px; }
+.tb-btn.on {
+  background: var(--mc-primary-bg);
+  border-color: color-mix(in srgb, var(--mc-primary) 45%, var(--mc-line));
+  color: var(--mc-primary-deep);
+}
 .tb-icon-btn {
   border: none;
   background: none;
@@ -223,6 +234,59 @@
   min-height: 0;
   position: relative;
 }
+/* ── 侧边栏：包根目录树（app/NavTree.tsx）──────────────────
+   根（当前包）→ 三个分组。展开分组内联该类的清单，所以整棵树就是侧边栏
+   的全部内容 —— 它自己滚，不再需要外层的 .tp-scroll 包裹层。 */
+.nav-tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.nav-root {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--mc-text);
+}
+.nav-meta { flex: none; font-weight: 400; color: var(--mc-text-2); font-size: 11.5px; }
+/* 包名右侧的动作插槽：内容面板用 portal 把按钮送上来（app/navRootSlot.ts）。 */
+.nav-acts { margin-left: auto; display: flex; align-items: center; gap: 2px; flex: none; }
+.nav-root .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.nav-branch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--mc-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 3px 10px;
+}
+.nav-branch:hover { background: var(--mc-hover); }
+
+/* 分组展开后的清单：由各面板自己渲染，这里只给缩进与容器语义。 */
+.nav-children { display: flex; flex-direction: column; min-height: 0; }
+
+.nav-count {
+  flex: none;
+  color: var(--mc-text-2);
+  font-weight: 400;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
 .tp-head {
   height: 30px;
   flex: none;
@@ -326,41 +390,16 @@
 .p-btn.primary:hover { background: var(--mc-primary-deep); }
 .p-btn.primary:disabled { background: var(--mc-line); border-color: var(--mc-line); color: var(--mc-muted); }
 
+/* ── 左栏目录树已删（曾把侧边栏切成上下两块，见 04-align-pack-root.md §8）── */
+
 /* ── 底部停靠 ────────────────────────────────────────────── */
+/* 骨架由 ui/MasterDetail 提供（方向、滚动、分隔条），这里只给尺寸与皮肤。 */
 .dock {
   flex: none;
   height: var(--mc-dock-h);
   border-top: 1px solid var(--mc-line-strong);
   background: var(--mc-fill);
-  display: flex;
   min-height: 0;
-}
-.dock-tasks {
-  width: 260px;
-  flex: none;
-  border-right: 1px solid var(--mc-line);
-  overflow: auto;
-  padding: var(--mc-sp-xs);
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.dock-log {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.dock-log-head {
-  height: 28px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 var(--mc-sp-sm);
-  border-bottom: 1px solid var(--mc-line);
-  color: var(--mc-text-2);
-  font-size: 12px;
 }
 .dock-log-body {
   flex: 1;
@@ -455,4 +494,15 @@
 }
 .palette-item:hover { background: var(--mc-hover); }
 .palette-item .pi-sub { margin-left: auto; color: var(--mc-muted); font-size: 12px; }
+/* 行首物品图标：与索引态表格同一尺寸，缺图时退化成首字占位 */
+.palette-item .row-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  image-rendering: pixelated;
+  object-fit: contain;
+  color: var(--mc-muted);
+  font-size: 11px;
+  line-height: 20px;
+}
 .palette-empty { color: var(--mc-muted); padding: var(--mc-sp-sm) 0; }

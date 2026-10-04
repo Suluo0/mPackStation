@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import {del, get, patch, post} from './http';
+import {loaderLabel} from './packs';
 
 /* 模组域:已装模组、平台搜索、版本选择、依赖解析/锁/冲突、包健康。 */
 
@@ -75,6 +76,9 @@ export const projectSchema = z.object({
   summary: z.string().optional(),
   iconUrl: z.string().optional(),
   downloads: z.number().optional(),
+  /* 该模组声明支持的加载器（小写，如 fabric/neoforge）。后端可能拿不到 → 空数组，
+     空表示「未知」而不是「一个都不支持」，所以不要拿它做否定判断。 */
+  loaders: z.array(z.string()).optional(),
 });
 export type Project = z.infer<typeof projectSchema>;
 
@@ -82,6 +86,9 @@ export const modSearchSchema = z.object({
   items: z.array(projectSchema),
   next_cursor: z.string().nullable(),
   total: z.number().int(),
+  /* 降级搜索结果：本包加载器搜不到东西时，后端摘掉加载器限制重搜得到的、
+     明确只支持其他加载器的模组。见 modSearchAllSchema.fallback。 */
+  fallback: z.array(projectSchema).optional(),
 });
 
 export const modVersionSchema = z.object({
@@ -112,7 +119,32 @@ export const modSearchAllSchema = z.object({
   errors: z.record(z.string(), z.string()).nullable(),
   total: z.number().int(),
   next_cursor: z.string().nullable(),
+  /* 降级搜索结果。存在的意义只有一个：让界面说清「为什么按本包搜不到」——
+     例如 Fabric 包里搜 Mekanism，主结果为空，这里会带上 NeoForge 版的
+     Mekanism，界面据此显示「仅支持 NeoForge」。主结果非空时后端不会填充它。 */
+  fallback: z.array(searchAllItemSchema).optional(),
 });
+
+/* otherLoadersText 把「该模组支持的其他加载器」拼成一句人话，供降级区说明用。
+   返回空串表示这个模组没声明加载器（或只支持本包的加载器）—— 两种情况下
+   调用方都不该给出「仅支持 X」这种结论。显示名复用 packs.ts 的 loaderLabel，
+   不在这里另立一张表。 */
+export function otherLoadersText(loaders: string[] | undefined, packLoader: string): string {
+  const mine = loaderLabel(packLoader).toLowerCase();
+  const others = (loaders ?? []).map(loaderLabel).filter(l => l && l.toLowerCase() !== mine);
+  return others.join(' / ');
+}
+
+/* providerLabel 把平台标识（modrinth / curseforge）转成显示名。
+   用户不需要知道也不该关心背后搜的是哪个平台（2026-10-04 反馈），
+   界面上只在小字里用显示名，不再直接打小写标识。 */
+export function providerLabel(provider: string | null | undefined): string {
+  switch ((provider ?? '').toLowerCase()) {
+    case 'modrinth': return 'Modrinth';
+    case 'curseforge': return 'CurseForge';
+    default: return provider ?? '';
+  }
+}
 
 export type ModSearchQuery = Record<string, string | number | undefined>;
 

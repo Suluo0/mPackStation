@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 type fixtureFault struct {
@@ -70,14 +71,30 @@ func (f *FixtureAdapter) Search(ctx context.Context, q SearchRequest) (SearchRes
 	}
 	out := make([]Project, 0, limit)
 	for _, p := range f.catalog.Projects {
-		if q.Query == "" || contains(p.Name, q.Query) || contains(p.Slug, q.Query) {
-			out = append(out, p)
+		if q.Query != "" && !contains(p.Name, q.Query) && !contains(p.Slug, q.Query) {
+			continue
 		}
+		// 加载器过滤: 只在该项目**声明了** loaders 且与请求不符时才排除。
+		// 声明为空 = 平台没告诉我们 = 未知, 不能当否定证据 —— 与生产口径一致
+		// (Modrinth 侧由 facets 过滤, 那条路径不会产生"未知"的项目)。
+		if q.Loader != "" && len(p.Loaders) > 0 && !hasLoaderFold(p.Loaders, q.Loader) {
+			continue
+		}
+		out = append(out, p)
 	}
 	if len(out) > limit {
 		out = out[:limit]
 	}
 	return SearchResult{Items: out, Total: len(out)}, nil
+}
+
+func hasLoaderFold(loaders []string, want string) bool {
+	for _, l := range loaders {
+		if strings.EqualFold(strings.TrimSpace(l), strings.TrimSpace(want)) {
+			return true
+		}
+	}
+	return false
 }
 func contains(a, b string) bool { return len(b) == 0 || len(a) >= len(b) && indexFold(a, b) >= 0 }
 func indexFold(a, b string) int {

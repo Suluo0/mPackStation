@@ -142,11 +142,20 @@ export const questBookSchema = z.object({
   revision: questRevisionSchema,
 });
 export type QuestBook = z.infer<typeof questBookSchema>;
+export type QuestChapter = z.infer<typeof questChapterSchema>;
+export type QuestNode = z.infer<typeof questNodeSchema>;
+export type QuestEdge = z.infer<typeof questEdgeSchema>;
+export type QuestDraft = z.infer<typeof questDraftSchema>;
 
 export const getQuest = (packId: string) =>
   get(`/api/packs/${encodeURIComponent(packId)}/quests`, questBookSchema);
+/* PUT /quests/draft 的响应信封是 {revision, issues} 而不是裸的 revision ——
+   以前这里按裸 revision 解析，zod 每次都在校验阶段失败，于是「草稿其实已经存进库了，
+   界面却认为失败」，保存按钮永远等不到回执、后续按钮一直 disabled。 */
 export const saveQuestDraft = (packId: string, ifMatch: number, body: unknown) =>
-  put(`/api/packs/${encodeURIComponent(packId)}/quests/draft`, body, questRevisionSchema, {headers: {'If-Match': `"${ifMatch}"`}});
+  put(`/api/packs/${encodeURIComponent(packId)}/quests/draft`, body,
+    z.object({revision: questRevisionSchema, issues: z.array(validationIssueSchema).default([])}),
+    {headers: {'If-Match': `"${ifMatch}"`}}).then(r => r.revision);
 export const validateQuest = (packId: string) =>
   post(`/api/packs/${encodeURIComponent(packId)}/quests/validate`, {}, questValidationSchema);
 export const applyQuest = (packId: string) =>

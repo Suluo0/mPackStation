@@ -11,6 +11,13 @@ func registerSystemRoutes(mux *http.ServeMux, app *service.API, version string) 
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": version})
 	})
+	// Instance identity: which data directory does the process on THIS port
+	// actually serve. Startup scripts assert on this before running any write
+	// case, so a port collision fails loudly instead of writing into another
+	// instance's database. Read-only, no token (see service.InstanceIdentity).
+	mux.HandleFunc("GET /api/health/identity", func(w http.ResponseWriter, r *http.Request) {
+		WriteJSON(w, http.StatusOK, app.InstanceIdentity())
+	})
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		if err := appReady(app, r); err != nil {
 			apiError(w, r, http.StatusServiceUnavailable, "not_ready", "service is not ready")

@@ -5,7 +5,10 @@ import {applyFilter, matchNamespace, parseFilterSpec, textMatchItem, tagMatchIte
 import {FilterBuilder} from './FilterBuilder';
 import {useFocus, useUrlPatch, useUrlState} from '../app/url';
 import {ItemGrid, ItemQuickView} from './ItemGrid';
-import {Icon} from '../app/Icon';
+import {iconReasonText} from './iconReason';
+import {hoverProps} from '../app/hoverTarget';
+import {Icon} from '../ui/Icon';
+import {useContextMenu, type MenuItem} from '../ui/ContextMenu';
 
 /* 索引态（3A 升级）：网格（图标 + 方向键走格，Enter 进关系）/ 表格两视图（D-3B 决策）。
    搜索框在来源面板的放大镜里（?q= 仍是单一事实源，这里只显示与清除）。 */
@@ -19,11 +22,52 @@ export function ModeIndex() {
 
 function CatalogTable({q, ns, view}: {q: string; ns: string | null; view: 'grid' | 'table'}) {
   const patch = useUrlPatch();
-  const {packId, f, fmode, sort, dir} = useUrlState();
-  const {catalog, refreshing, error, rebuild} = useCatalog();
+  const {packId, f, fmode, sort, dir, fs} = useUrlState();
+  const {catalog, refreshing, error} = useCatalog();
   const [focus, setFocus] = useFocus();
   const [cap, setCap] = useState(CAP_STEP);
   const [quick, setQuick] = useState<{id: string; x: number; y: number} | null>(null);
+  /* 右键菜单：坐标/关闭/Esc 都在 ui/ContextMenu，这里只给条目。 */
+  const menu = useContextMenu();
+
+  /* 物品右键：网格格子和表格行共用同一套动作 —— 同一个对象不该因为换了视图
+     就换一套菜单。动作都是页面级的（要写 URL / 清瞬态），所以菜单挂在这里。 */
+  const openItemMenu = (e: React.MouseEvent, id: string) =>
+    menu.open(e, itemItems(id, e.clientX, e.clientY));
+  const gotoLens = (id: string, opts: {mode: 'graph' | 'chain'; rd?: 'in' | null}) => {
+    setQuick(null);
+    setFocus({kind: 'item', id}, {
+      patch: {mode: opts.mode, item: id, ...(opts.mode === 'graph' ? {rd: opts.rd ?? null, r: null, rpath: null} : {})},
+    });
+  };
+
+  /* 速览浮层要落在右键的位置上，所以坐标从事件带进来，不从菜单取。 */
+  const itemItems = (id: string, x: number, y: number): MenuItem[] => {
+    const it = catalog?.items.find(v => v.id === id);
+    const name = it?.displayName ?? id.split(':').pop() ?? id;
+    const copy = (text: string) => { void navigator.clipboard?.writeText(text).catch(() => undefined); };
+    return [
+      {label: '看合成（R）', action: () => gotoLens(id, {mode: 'graph', rd: null})},
+      {label: '看用途（U）', action: () => gotoLens(id, {mode: 'graph', rd: 'in'})},
+      {label: '看逆向链路（C）', action: () => gotoLens(id, {mode: 'chain'})},
+      {separator: true},
+      {label: '设为焦点', icon: 'focus', action: () => setFocus({kind: 'item', id})},
+      {label: '看速览配方', action: () => setQuick({id, x, y})},
+      {separator: true},
+      {label: '复制物品 ID', icon: 'copy', action: () => copy(id)},
+      {label: '复制名称', icon: 'copy', action: () => copy(name)},
+    ];
+  };
+
+  /* 浮层开着时，焦点换人（点别的格子 / 方向键）就跟着换内容 ——
+     否则浮层会停在旧物品上，和旁边的高亮对不上。滚轮不在此列：网格不拦滚轮，
+     滚轮只负责翻页，不该让高亮框跟着跑。 */
+  useEffect(() => {
+    setQuick(q => (q && focus?.kind === 'item' && focus.id !== q.id ? {...q, id: focus.id} : q));
+  }, [focus]);
+
+  const iconUrl = (itemId: string) =>
+    `/api/packs/${encodeURIComponent(packId ?? '')}/catalog/icon?itemId=${encodeURIComponent(itemId)}`;
 
   /* 过滤管线：复杂条件（?f=）→ ?ns= 快捷来源 → ?q= 文本/标签词，全部 AND；
      ?q= 以 # 开头时按标签语义（与来源下拉的 # 搜索同一口径——搜索驱动页面）。 */
@@ -49,17 +93,29 @@ function CatalogTable({q, ns, view}: {q: string; ns: string | null; view: 'grid'
     () => (items.length === 0 && ns && q && !q.startsWith('#') ? matchNamespace(catalog?.items ?? [], q) : null),
     [items.length, ns, q, catalog],
   );
+  /* 可合成的物品种数 = 有 output 引用的去重物品数。
+     这个数才是和「配方数」同量纲的比较对象（1290 > 837），
+     目录里的全部物品数（1330）拿它比会看成「配方比物品少」。 */
+  const craftable = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of catalog?.recipes ?? []) {
+      for (const ref of r.refs) {
+        if (ref.role === 'output' && ref.kind === 'item') s.add(ref.id);
+      }
+    }
+    return s.size;
+  }, [catalog]);
 
   return (
     <>
       <div className="ed-toolbar">
         <span className="title">索引</span>
+        {/* 简单搜索：JEI 式前缀（#标签 @来源 /正则 裸词），始终可见 */}
+        <input className="p-input ed-search" value={q} placeholder="搜：#标签 @来源 /正则 文本…"
+          onChange={e => patch({q: e.target.value || null})}/>
         {q && (
-          <span className="q-chip" title="搜索框在来源面板的放大镜里">
-            搜索 “{q}”
-            <button type="button" className="ctx-clear" style={{color: 'var(--mc-text-2)'}}
-              aria-label="清除搜索" onClick={() => patch({q: null})}>✕</button>
-          </span>
+          <button type="button" className="ctx-clear" style={{color: 'var(--mc-muted)'}}
+            aria-label="清除搜索" onClick={() => patch({q: null})}>✕</button>
         )}
         {ns && (
           <span className="q-chip" title="来源面板里点模组名设置的快捷筛选">
@@ -68,7 +124,21 @@ function CatalogTable({q, ns, view}: {q: string; ns: string | null; view: 'grid'
               aria-label="清除来源" onClick={() => patch({ns: null, type: null})}>✕</button>
           </span>
         )}
-        <FilterBuilder/>
+        {/* 高级搜索默认收起来：普通搜索只留一个漏斗图标，点开才展开复杂过滤器。
+            以前那个常驻的「高级」开关白占地方，而且一进索引就摊着多条件面板的入口。 */}
+        <button type="button" className={`p-btn${fs === '1' ? ' on-view' : ''}`}
+          title={fs === '1' ? '收起高级搜索' : '高级搜索（多条件组合）'}
+          aria-pressed={fs === '1'}
+          onClick={() => patch({fs: fs === '1' ? null : '1'})}>
+          <Icon name="filter" size={12}/>
+        </button>
+        {fs === '1' && (
+          <span className="q-chip" title="高级搜索已开启">
+            高级<button type="button" className="ctx-clear" style={{color: 'var(--mc-text-2)'}}
+              aria-label="关闭高级搜索" onClick={() => patch({fs: null})}>✕</button>
+          </span>
+        )}
+        {fs === '1' && <FilterBuilder/>}
         <select className="p-input" value={sort} onChange={e => patch({sort: e.target.value === 'def' ? null : e.target.value})} style={{width: 92}} title="排序">
           <option value="def">默认排序</option>
           <option value="name">按名称</option>
@@ -82,45 +152,71 @@ function CatalogTable({q, ns, view}: {q: string; ns: string | null; view: 'grid'
           <span className={dir === 'asc' ? 'on' : ''}><Icon name="sortup" size={13}/></span>
         </button>
         <span className="grow"/>
-        <span className="ed-count">
-          物品 {items.length}{catalog ? ` / ${catalog.items.length}` : ''} · 配方 {catalog?.recipes.length ?? 0}{catalog ? ` · r${catalog.revision}` : ''}
+        {/* 计数口径写全：1330 是目录里的**全部**物品（原矿、方块、掉落这些不可合成的都在里面），
+            所以它必然大于配方数；可合成的输出只有 837 个，配方 1290 条 ——
+            1290 > 837 才对。只写「物品 / 配方」两个数会看成「配方比物品少，是不是漏了」。
+            末尾的 r14751 是目录版本号（只增计数器），和数据量无关，已去掉。 */}
+        <span className="ed-count" title="物品 = 目录全部物品（含不可合成）；可合成 = 有配方输出的物品种数；配方 = 配方条目数（同一物品可能有多条）">
+          物品 {items.length}{catalog ? ` / ${catalog.items.length}` : ''}
+          {catalog && ` · 可合成 ${craftable} · 配方 ${catalog.recipes.length}`}
         </span>
         <span className="view-switch">
           <button type="button" className={`p-btn${view === 'grid' ? ' on-view' : ''}`} onClick={() => patch({view: null})}>网格</button>
           <button type="button" className={`p-btn${view === 'table' ? ' on-view' : ''}`} onClick={() => patch({view: 'table'})}>表格</button>
         </span>
         {refreshing && <span className="sub">目录载入中…</span>}
-        <button type="button" className="p-btn" onClick={() => void rebuild()}>重建目录</button>
       </div>
       <div className="ed-scroll">
         {error && (
           <div className="ed-placeholder">
             <b>{error}</b>
-            <div>目录过期（catalog_stale）的唯一出路是重建。</div>
-            <div style={{marginTop: 8}}><button type="button" className="p-btn primary" onClick={() => void rebuild()}>重建目录</button></div>
+            <div>目录过期（catalog_stale）的唯一出路是重建 —— 入口已挪到左侧「构建」。</div>
+            <div style={{marginTop: 8}}>
+              <button type="button" className="p-btn primary" onClick={() => patch({tool: 'build'})}>去构建面板重建</button>
+            </div>
           </div>
         )}
         {!error && view === 'grid' && (
           <ItemGrid packId={packId ?? ''} items={items} selectedId={focus?.kind === 'item' ? focus.id : null}
             onSelect={id => setFocus({kind: 'item', id})}
             onQuick={(id, anchor) => setQuick({id, x: anchor.x, y: anchor.y})}
+            onContextMenu={openItemMenu}
             onOpen={id => { setFocus({kind: 'item', id}); patch({mode: 'graph'}); }}/>
         )}
         {quick && (
           <ItemQuickView packId={packId ?? ''} itemId={quick.id} anchor={quick}
             onClose={() => setQuick(null)}
-            onOpenGraph={id => { setFocus({kind: 'item', id}); setQuick(null); patch({mode: 'graph'}); }}/>
+            onOpenGraph={(id, rd) => {
+              /* 焦点 + 透镜 + 方向一次写完，别分两次导航。 */
+              setFocus({kind: 'item', id}, {patch: {mode: 'graph', rd: rd === 'in' ? 'in' : null, r: null, rpath: null}});
+              setQuick(null);
+            }}/>
         )}
         {!error && view === 'table' && (
           <>
-            <table className="ed-table">
+            <table className="ed-table" {...hoverProps()}>
               <thead>
-                <tr><th style={{width: '38%'}}>名称</th><th>ID</th><th style={{width: 120}}>来源</th></tr>
+                <tr>
+                  <th className="ed-th-icon"/>
+                  <th style={{width: '36%'}}>名称</th><th>ID</th><th style={{width: 120}}>来源</th>
+                </tr>
               </thead>
               <tbody>
                 {items.slice(0, cap).map(it => (
-                  <tr key={it.id} className={`click${focus?.kind === 'item' && focus.id === it.id ? ' on' : ''}`}
-                    onClick={() => setFocus({kind: 'item', id: it.id})}>
+                  <tr key={it.id} data-hover-item={it.id}
+                    className={`click${focus?.kind === 'item' && focus.id === it.id ? ' on' : ''}`}
+                    onContextMenu={e => openItemMenu(e, it.id)}
+                    onClick={e => {
+                      setFocus({kind: 'item', id: it.id});
+                      /* 表格里也单击即出速览 —— 和网格同一套手势，不按视图分裂交互。 */
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setQuick({id: it.id, x: r.left, y: r.bottom});
+                    }}>
+                    <td className="ed-td-icon">
+                      {it.iconStatus === 'ready'
+                        ? <img src={iconUrl(it.id)} alt="" loading="lazy"/>
+                        : <span className="ed-td-ph" title={iconReasonText(it.iconReason)}>{it.displayName.slice(0, 1)}</span>}
+                    </td>
                     <td>{it.displayName}</td>
                     <td className="mono">{it.id}</td>
                     <td className="mono">{it.id.split(':')[0]}</td>
@@ -150,6 +246,8 @@ function CatalogTable({q, ns, view}: {q: string; ns: string | null; view: 'grid'
           </div>
         )}
       </div>
+
+      {menu.menu}
     </>
   );
 }

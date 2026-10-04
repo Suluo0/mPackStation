@@ -1,10 +1,15 @@
 import {searchCatalogItems} from './catalogSearch';
-import {useCatalog} from '../app/CatalogContext';
+import {useCatalog} from './CatalogContext';
+import {useUrlState} from './url';
+import {ItemIcon} from './ItemIcon';
+import {hoverProps} from './hoverTarget';
 
 /* ⌘K 的物品命中：与索引态同一套搜索纯函数（多语言 + 命名空间命中 + 相关度排序），
-   数据用 CatalogContext 已缓存的一份（目录加载全站唯一调用点）。 */
+   数据用 CatalogContext 已缓存的一份（目录加载全站唯一调用点）。
+   行首必须带图标 —— 光看名字分不出「橡木木板」和「云杉木板」，图标是这里最快的区分手段。 */
 export function StubItemSearch({query, onPick}: {query: string; onPick: (id: string) => void}) {
   const {catalog, refreshing, error} = useCatalog();
+  const {packId} = useUrlState();
   if (refreshing) return <div className="palette-empty">目录载入中…</div>;
   if (error) return <div className="palette-empty">{error}</div>;
 
@@ -12,9 +17,10 @@ export function StubItemSearch({query, onPick}: {query: string; onPick: (id: str
 
   if (hits.length === 0) return <div className="palette-empty">没有匹配的物品。</div>;
   return (
-    <div>
+    <div {...hoverProps()}>
       {hits.map(({item}) => (
-        <div key={item.id} className="palette-item" onClick={() => onPick(item.id)}>
+        <div key={item.id} className="palette-item" data-hover-item={item.id} onClick={() => onPick(item.id)}>
+          <ItemIcon packId={packId} item={item}/>
           <span>{item.displayName}</span>
           <span className="pi-sub">{item.id}</span>
         </div>

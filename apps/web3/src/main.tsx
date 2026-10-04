@@ -1,19 +1,23 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
-import {ConfigProvider} from 'antd';
-import zhCN from 'antd/locale/zh_CN';
 import {RouterProvider} from 'react-router-dom';
 import {router} from './app/router';
+import {ThemeProvider} from './app/ThemeContext';
+import {initTheme} from './app/theme';
 import './styles/tokens.css';
+import './styles/themes.css';
 import './styles/base.css';
 import './app/frame.css';
+import './ui/ui.css';
 
-/* antd 主题变量引用 tokens.css 同一套值；V3 密排版把圆角降到 4（§5 视觉约定）。
-   改 --mc-primary / --mc-radius 时必须同步改下面两个字面值。 */
+/* 主题必须在渲染前落定：否则首帧会先吃 themes.css 里 :root 的 light 兜底再跳变。
+   之后要切主题走 ThemeProvider（它同时负责把令牌喂给 antd），不要直接动 data-theme。 */
+initTheme();
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ConfigProvider locale={zhCN} theme={{token: {colorPrimary: '#c9783b', borderRadius: 4, fontSize: 13}}}>
+    <ThemeProvider>
       <RouterProvider router={router}/>
-    </ConfigProvider>
+    </ThemeProvider>
   </StrictMode>,
 );

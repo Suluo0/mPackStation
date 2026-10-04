@@ -33,7 +33,7 @@ func p6HTTPFixture(t *testing.T) (*service.API, *sql.DB, string, http.Handler) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return app, db, pack.ID, NewRouterWithService(app, "test", "test")
+	return app, db, pack.ID, NewRouterWithService(app, "test")
 }
 
 type p6ErrorEnvelope struct {
@@ -245,8 +245,17 @@ func TestP6HTTPContentValidationAndErrorEnvelope(t *testing.T) {
 	res = p6HTTPDo(t, handler, http.MethodPost, detailPath+"/apply?revisionId="+created.Revision.ID, "p6-ore-apply", "", true, "")
 	p6RequireError(t, res, http.StatusUnprocessableEntity, "content_invalid", "p6-ore-apply")
 
+	// 无鉴权模式（用户 2026-10-03 定调）：写操作不再要求令牌。这里断言
+	// 「不带令牌也能创建」，同时保留 Content-Type 校验 —— 缺 content-type
+	// 仍应是 415，与鉴权无关。
 	res = p6HTTPDo(t, handler, http.MethodPost, base, "p6-content-no-token", `{"kind":"recipe","slug":"x","title":"X","payload":{}}`, false, "")
-	p6RequireError(t, res, http.StatusUnauthorized, "unauthorized", "p6-content-no-token")
+	if res.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("no content-type = %d, want 415: %s", res.Code, res.Body.String())
+	}
+	res = p6HTTPDo(t, handler, http.MethodPost, base, "p6-content-no-token", `{"kind":"recipe","slug":"y","title":"Y","payload":{}}`, true, "")
+	if res.Code != http.StatusCreated {
+		t.Fatalf("create without token = %d, want 201: %s", res.Code, res.Body.String())
+	}
 }
 
 func p6QuestDraftJSON(edges string, modRefs string) string {

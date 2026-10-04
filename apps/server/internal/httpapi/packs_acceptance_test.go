@@ -197,19 +197,20 @@ func TestP3MissingResourceAndSecurityErrorsAreStable(t *testing.T) {
 	}
 	p3RequireError(t, res, "pack_not_found")
 
-	// Every mutating endpoint must reject requests without the local bootstrap
-	// token. This also guards against treating a desktop-only deployment as a
-	// reason to omit its browser security boundary.
-	req := httptest.NewRequest(http.MethodPost, "/api/packs", bytes.NewReader([]byte(`{}`)))
-	req.Host = "localhost"
-	req.Header.Set("Origin", "http://localhost")
-	req.Header.Set("Content-Type", "application/json")
+	// 无鉴权模式（用户 2026-10-03 定调）：本机单用户工具、后端只监听回环，
+	// 写操作不再需要 bootstrap token。仍然必须守住的一条是「浏览器里的
+	// 跨站网页不能借用户的手写库」—— 同源策略挡不住请求发出，只挡得住读响应，
+	// 所以对跨站 Origin 的拒绝是这里唯一有意义的安全断言。
+	crossSite := httptest.NewRequest(http.MethodPost, "/api/packs", bytes.NewReader([]byte(`{}`)))
+	crossSite.Host = "localhost"
+	crossSite.Header.Set("Origin", "https://evil.example")
+	crossSite.Header.Set("Content-Type", "application/json")
 	res = httptest.NewRecorder()
-	handler.ServeHTTP(res, req)
-	if res.Code != http.StatusUnauthorized {
-		t.Fatalf("P3-HTTP-005 missing token status=%d body=%s", res.Code, res.Body.String())
+	handler.ServeHTTP(res, crossSite)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("P3-HTTP-005 cross-site origin status=%d body=%s", res.Code, res.Body.String())
 	}
-	p3RequireError(t, res, "unauthorized")
+	p3RequireError(t, res, "invalid_origin")
 }
 
 func TestP3SystemAndOnboardingContracts(t *testing.T) {
@@ -248,7 +249,7 @@ func p3Router(t *testing.T) (http.Handler, *sql.DB) {
 	if err != nil {
 		t.Fatalf("open P3 database: %v", err)
 	}
-	return NewRouter(db, "test", "test"), db
+	return NewRouter(db, "test"), db
 }
 
 func p3Request(t *testing.T, method, path string, body io.Reader) *http.Request {

@@ -1,34 +1,22 @@
 import {defineConfig} from 'vite';
 import react from '@vitejs/plugin-react';
-import {readFileSync} from 'node:fs';
-import {resolve} from 'node:path';
 
-/* 写操作令牌注入：机制与 web2 一致（VITE_MPACK_TOKEN 环境变量优先，
-   否则读后端数据目录的 runtime-token）。禁硬编码兜底 —— 注入为空时写请求 401，错误如实抛给界面。 */
-function resolveWriteToken(): string {
-  if (process.env.VITE_MPACK_TOKEN) return process.env.VITE_MPACK_TOKEN;
-  try {
-    return readFileSync(process.env.MPACK_TOKEN_FILE ?? resolve(__dirname, '../../data/runtime-token'), 'utf8').trim();
-  } catch {
-    return '';
-  }
-}
+/* 无鉴权模式（用户 2026-10-03 定调）：本工具是本机单人 IDE，后端只监听
+   127.0.0.1，物理上局域网够不到，所以不需要写令牌，也不需要「前端怎么拿到
+   令牌」这条链路 —— 那条链路本身正是 401 故障的来源（vite 曾读到另一个实例
+   遗留的过期 runtime-token，导致读接口正常、写接口全挂）。
 
-const token = resolveWriteToken();
-if (!token) {
-  console.warn('[web3] 写令牌为空：读接口可用，写接口会被后端 401。注入 VITE_MPACK_TOKEN 后再启动。');
-}
-
+   配套约束：server.host 必须是 127.0.0.1。一旦改回 0.0.0.0，等于把写库
+   后门开给整个局域网，那时必须把鉴权加回来。 */
 export default defineConfig({
   plugins: [react()],
-  define: {__MPACK_WRITE_TOKEN__: JSON.stringify(token)},
   server: {
-    host: '0.0.0.0',
+    // 只监听回环，不对局域网开放。见文件头说明。
+    host: '127.0.0.1',
     // 唯一标准端口（AGENTS.md 定稿）：前端 5271，代理回唯一后端 18872。
     port: 5271,
     proxy: {
-      // changeOrigin 必须为 false：后端用透传的 Host 判定同源（web2 同款约束）。
-      '/api': {target: process.env.VITE_API_TARGET || 'http://127.0.0.1:18872', changeOrigin: false},
+      '/api': {target: process.env.VITE_API_TARGET || 'http://127.0.0.1:18872'},
     },
   },
 });

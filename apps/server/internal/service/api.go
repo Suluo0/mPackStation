@@ -560,6 +560,23 @@ func (a *API) Onboarding(ctx context.Context) (Onboarding, error) {
 	return out, nil
 }
 
+// InstanceIdentity describes which data directory this process actually serves.
+// Scripts that start a server on a port (chain-test, terminal verify) must be
+// able to tell "the instance I just started" from "a different server that
+// already owns this port" — otherwise a port collision silently routes their
+// write cases into someone else's database. See issue-chain-test-port-collision.
+type InstanceIdentity struct {
+	DataDir string `json:"dataDir"`
+	PID     int    `json:"pid"`
+}
+
+// InstanceIdentity reports this process's data directory. It is read-only and
+// needs no token: the path is already implied by the port the caller reached,
+// and the endpoint exists so automation can assert identity, not to leak state.
+func (a *API) InstanceIdentity() InstanceIdentity {
+	return InstanceIdentity{DataDir: a.dataDir, PID: os.Getpid()}
+}
+
 // workbenchRoot anchors every tool path: data dir lives at <root>/data, so
 // the root is its parent. All tool paths stay relative to this root, which
 // keeps the whole workbench portable after distribution.

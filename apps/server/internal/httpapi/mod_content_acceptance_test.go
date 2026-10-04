@@ -45,7 +45,7 @@ func modContentHTTPFixture(t *testing.T) (*service.API, *task.Queue, string, str
 	}
 	app.SetTaskQueue(q)
 	t.Cleanup(func() { _ = db.Close() })
-	return app, q, pack.ID, mod.ID, NewRouterWithService(app, "test", "test-token")
+	return app, q, pack.ID, mod.ID, NewRouterWithService(app, "test")
 }
 
 type fakeHTTPProvider struct {
@@ -347,7 +347,12 @@ func TestModContentIconsHTTPPackBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		pack, token string
 		want        int
-	}{{packID, "", 401}, {"other-pack", "test-token", 404}} {
+	}{
+		// 无鉴权模式（用户 2026-10-03 定调）：写操作不再需要令牌，
+		// 但 pack 边界校验仍在 —— 跨包请求必须是 404 而不是 200。
+		{packID, "", 200},
+		{"other-pack", "test-token", 404},
+	} {
 		req := httptest.NewRequest("POST", "/api/packs/"+tc.pack+"/mods/"+modID+"/content/icons/resolve", bytes.NewBufferString(`{}`))
 		req.Host = "localhost"
 		req.Header.Set("Content-Type", "application/json")

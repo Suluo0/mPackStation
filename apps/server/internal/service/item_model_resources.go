@@ -111,6 +111,10 @@ type modelFace struct {
 	Texture   string    `json:"texture"`
 	Rotation  int       `json:"rotation"`
 	TintIndex *int      `json:"tintindex"`
+	// FixedTint 是合成几何（builtin/entity 家族）专用的固定乘色。JSON 模型的着色
+	// 走 tintindex + 生物群系默认色那条路，这里给手写几何一条直接通路 —— 旗帜的
+	// 白底图要乘染料色，没有别的表达方式。
+	FixedTint *[3]float64 `json:"-"`
 }
 type modelElement struct {
 	From     [3]float64           `json:"from"`
@@ -313,6 +317,14 @@ func lookupVar(ref string, variables map[string]string) string {
 }
 
 func (r *iconResources) texture(ref string, variables map[string]string) image.Image {
+	// 1.21 起面贴图允许把变量名写成不带 # 的裸名字（vanilla 的 block/heavy_core
+	// 就是 "texture": "all"）。不认这一档的话，一个 pure 方块模型会整块判成
+	// missing_texture —— 而这里的其它路径都按 "#var" 处理，差别只在开头那个字符。
+	if !strings.HasPrefix(ref, "#") && !strings.Contains(ref, ":") {
+		if _, ok := variables[ref]; ok {
+			ref = "#" + ref
+		}
+	}
 	seen := map[string]bool{}
 	for strings.HasPrefix(ref, "#") {
 		if seen[ref] || len(seen) > 32 {
@@ -342,6 +354,43 @@ func (r *iconResources) texture(ref string, variables map[string]string) image.I
 	return img
 }
 func (r *iconResources) icon(id string) (image.Image, string) {
+	img, reason := r.iconModel(id)
+	if img != nil {
+		return img, reason
+	}
+	/* builtin/entity 家族（箱子 / 床 / 旗帜 / 潜影盒 / 头颅）：模型 JSON 里没有几何，
+	   只有一句「交给方块实体渲染器」。这里用合成几何补上，形状与配色都是真的。 */
+	if m, ok := r.entityModel(id); ok {
+		entityImg, entityReason := renderBlockModel(m, func(ref string) image.Image { return r.texture(ref, m.Textures) })
+		if entityImg != nil {
+			return entityImg, "entity_model"
+		}
+		if entityReason == "missing_texture" {
+			reason = entityReason
+		}
+	}
+	/* 床 / 旗帜 / 箱子 / 告示牌这类物品用的是 builtin/entity：模型里没有几何，
+	   只有一句「交给方块实体渲染器」。退回同名方块模型 —— 形状和贴图都是真的，
+	   少的只是运行时那部分（旗帜图案、床的枕头朝向）。给不出图的时候才叫真缺。 */
+	for _, alt := range blockModelFallbacks(id) {
+		if altImg, _ := r.iconModel(alt); altImg != nil {
+			return altImg, "block_fallback"
+		}
+	}
+	return nil, reason
+}
+
+// blockModelFallbacks lists the block model candidates for an item model that
+// carries no geometry of its own; beds are split into head/foot models.
+func blockModelFallbacks(id string) []string {
+	if !strings.Contains(id, ":item/") {
+		return nil
+	}
+	base := strings.Replace(id, ":item/", ":block/", 1)
+	return []string{base, base + "_head", base + "_foot"}
+}
+
+func (r *iconResources) iconModel(id string) (image.Image, string) {
 	m, ok := r.model(id, map[string]bool{})
 	if !ok {
 		return nil, "unsupported_model"

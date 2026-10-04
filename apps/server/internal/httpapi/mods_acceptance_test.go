@@ -36,7 +36,7 @@ func TestP5HTTPModChainAndStableProviderErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	app.SetProviderRegistry(provider.NewRegistry(adapter))
-	handler := NewRouterWithService(app, "test", "test")
+	handler := NewRouterWithService(app, "test")
 	pack, err := app.CreatePack(context.Background(), service.CreatePackInput{Name: "P5 HTTP", MCVersion: "1.20.1", Loader: "fabric", LoaderVersion: "0.15"}, "p5-http-pack")
 	if err != nil {
 		t.Fatal(err)

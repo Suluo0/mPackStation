@@ -1,0 +1,1098 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mPackStation · 关系态原型（JEI 能力对等）</title>
+<style>
+/* ── 设计令牌：逐字抄自 apps/web3/src/styles/tokens.css，不得改值 ───────── */
+:root{
+  --mc-radius:4px; --mc-radius-panel:6px; --mc-radius-pill:999px;
+  --mc-sp-xs:6px; --mc-sp-sm:8px; --mc-sp:12px; --mc-sp-lg:16px; --mc-sp-xl:24px;
+  --mc-topbar-h:40px; --mc-railicon-w:44px; --mc-panel-w:320px; --mc-statusbar-h:24px;
+  --mc-text:#252522; --mc-text-2:#5e5a52; --mc-muted:#888278;
+  --mc-bg:#f4f0e8; --mc-fill:#fffdf8; --mc-fill-2:#faf6ee;
+  --mc-line:#e4ded2; --mc-line-strong:#d4ccbc; --mc-hover:#f2eadf;
+  --mc-primary:#c9783b; --mc-primary-deep:#a9562d; --mc-primary-bg:#f7e6d4;
+  --mc-blue:#3b82f6; --mc-blue-bg:#eaf1fe;
+  --mc-success:#16a34a; --mc-success-bg:#e7f8ee;
+  --mc-fail:#e5484d; --mc-fail-bg:#fdecec;
+  --mc-orange:#ea8600; --mc-orange-bg:#fef3e2;
+  --mc-gold:#b45309; --mc-gold-bg:#fff7e8; --mc-gold-line:#f3dfae;
+  --mc-shadow:0 2px 8px rgba(64,50,33,.06);
+  --mc-shadow-lg:0 12px 28px rgba(64,50,33,.12);
+  --mc-ease:cubic-bezier(.2,.6,.3,1); --mc-dur:140ms;
+  --mc-font-size:13px;
+  --mc-font-mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;overflow:hidden;background:var(--mc-bg);color:var(--mc-text);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;
+  font-size:var(--mc-font-size);line-height:1.45;-webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit}
+input{font:inherit}
+*{scrollbar-width:thin;scrollbar-color:var(--mc-line-strong) transparent}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:var(--mc-line-strong);border-radius:5px;border:3px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar-thumb:hover{background-color:var(--mc-muted)}
+.mono{font-family:var(--mc-font-mono);font-size:11.5px;color:var(--mc-text-2)}
+.num{font-variant-numeric:tabular-nums}
+
+/* ── 外壳（V3 §1：顶栏 / 图标轨 + 工具面板 / 编辑区 / 状态条） ───────── */
+.frame{height:100%;display:flex;flex-direction:column;min-height:0}
+.topbar{
+  flex:none;height:var(--mc-topbar-h);display:flex;align-items:center;gap:var(--mc-sp-sm);
+  padding:0 var(--mc-sp);background:var(--mc-fill);border-bottom:1px solid var(--mc-line-strong);
+}
+.brand{display:flex;align-items:center;gap:7px;font-weight:700;letter-spacing:.2px}
+.brand-dot{width:14px;height:14px;border-radius:3px;background:linear-gradient(135deg,#dd9a5a,#b85e32)}
+.pack-chip{
+  display:flex;align-items:center;gap:6px;background:var(--mc-fill-2);border:1px solid var(--mc-line);
+  border-radius:var(--mc-radius);padding:2px 8px;font-size:12.5px;cursor:pointer;
+}
+.pack-chip:hover{background:var(--mc-hover)}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:var(--mc-sp-sm)}
+.tb-btn{border:1px solid var(--mc-line);background:var(--mc-fill);border-radius:var(--mc-radius);padding:2px 9px;cursor:pointer;font-size:12.5px}
+.tb-btn:hover{background:var(--mc-hover)}
+.frame-body{flex:1;min-height:0;display:flex}
+.rail{
+  flex:none;width:var(--mc-railicon-w);background:var(--mc-fill);border-right:1px solid var(--mc-line);
+  display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 0;
+}
+.rail-btn{
+  width:34px;height:34px;border-radius:var(--mc-radius);border:1px solid transparent;background:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;color:var(--mc-text-2);font-size:15px;
+}
+.rail-btn:hover{background:var(--mc-hover)}
+.rail-btn.on{background:var(--mc-primary-bg);border-color:var(--mc-primary);color:var(--mc-primary-deep)}
+.rail .grow{flex:1}
+.toolpanel{
+  flex:none;width:var(--mc-panel-w);background:var(--mc-fill);border-right:1px solid var(--mc-line-strong);
+  display:flex;flex-direction:column;min-height:0;
+}
+.tp-head{
+  flex:none;display:flex;align-items:center;gap:6px;padding:6px var(--mc-sp);border-bottom:1px solid var(--mc-line);
+  background:var(--mc-fill-2);
+}
+.tp-head .title{font-size:12px;font-weight:600;color:var(--mc-text-2);letter-spacing:.3px}
+.tp-body{flex:1;min-height:0;overflow:auto;padding:var(--mc-sp-sm) var(--mc-sp) var(--mc-sp-lg);display:flex;flex-direction:column;gap:var(--mc-sp)}
+.editor{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--mc-bg)}
+.statusbar{
+  flex:none;height:var(--mc-statusbar-h);display:flex;align-items:center;gap:var(--mc-sp);
+  padding:0 var(--mc-sp);background:var(--mc-fill-2);border-top:1px solid var(--mc-line-strong);
+  font-size:11.5px;color:var(--mc-text-2);
+}
+.statusbar .seg{display:flex;align-items:center;gap:5px;white-space:nowrap}
+.statusbar .grow{flex:1}
+.statusbar .hint{color:var(--mc-muted)}
+.statusbar .hash{font-family:var(--mc-font-mono);font-size:11px;color:var(--mc-muted);max-width:38ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── 编辑区头（四透镜=二级能力）+ 工具条 ───────────────────────────── */
+.ed-header{
+  flex:none;display:flex;align-items:center;gap:var(--mc-sp-sm);padding:4px var(--mc-sp);
+  background:var(--mc-primary-bg);border-bottom:1px solid var(--mc-line);min-height:32px;user-select:none;
+}
+.eh-ctx{display:flex;align-items:center;gap:6px;min-width:0}
+.eh-icon{width:18px;height:18px;image-rendering:pixelated;flex:none}
+.eh-name{font-weight:600;color:var(--mc-primary-deep);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eh-kind{color:var(--mc-primary-deep);opacity:.7;font-size:11px;flex:none}
+.eh-lenses{display:flex;align-items:center;gap:2px;margin-left:auto}
+.eh-lens{
+  border:1px solid transparent;background:none;color:var(--mc-primary-deep);opacity:.8;
+  border-radius:var(--mc-radius);padding:2px 10px;cursor:pointer;position:relative;white-space:nowrap;
+}
+.eh-lens:hover{background:rgba(201,120,59,.14);opacity:1}
+.eh-lens.on{background:var(--mc-fill);border-color:var(--mc-primary);opacity:1;font-weight:600;box-shadow:var(--mc-shadow)}
+.eh-key{position:absolute;top:-4px;right:-2px;font-size:9px;color:var(--mc-muted);font-weight:400}
+
+.ed-toolbar{
+  flex:none;display:flex;align-items:center;gap:var(--mc-sp-sm);padding:var(--mc-sp-xs) var(--mc-sp);
+  border-bottom:1px solid var(--mc-line);background:var(--mc-fill);min-height:34px;flex-wrap:wrap;
+}
+.ed-toolbar .grow{flex:1;min-width:8px}
+.p-btn{border:1px solid var(--mc-line);background:var(--mc-fill);border-radius:var(--mc-radius);padding:2px 9px;cursor:pointer;font-size:12.5px;white-space:nowrap;color:var(--mc-text)}
+.p-btn:hover{background:var(--mc-hover)}
+.p-btn.on{background:var(--mc-primary-bg);border-color:var(--mc-primary);color:var(--mc-primary-deep);font-weight:600}
+.p-btn.primary{background:var(--mc-primary);border-color:var(--mc-primary-deep);color:#fff}
+.p-btn.primary:hover{background:var(--mc-primary-deep)}
+.seg-group{display:inline-flex;gap:2px}
+.ed-count{color:var(--mc-text-2);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ed-search{width:230px;border:1px solid var(--mc-line);border-radius:var(--mc-radius);background:var(--mc-fill-2);padding:3px 8px;color:var(--mc-text)}
+.ed-search:focus{outline:1px solid var(--mc-primary);border-color:var(--mc-primary);background:var(--mc-fill)}
+.q-chip{display:inline-flex;align-items:center;gap:4px;background:var(--mc-primary-bg);color:var(--mc-primary-deep);border-radius:var(--mc-radius-pill);padding:2px 10px;font-size:12.5px;white-space:nowrap}
+.fs-kind{flex:none;font-size:11px;font-weight:600;color:var(--mc-text-2);background:var(--mc-fill-2);border:1px solid var(--mc-line);border-radius:var(--mc-radius);padding:2px 6px;font-family:var(--mc-font-mono)}
+.fs-kind.kind-tag{color:var(--mc-gold);background:var(--mc-gold-bg);border-color:var(--mc-gold-line)}
+.fs-kind.kind-ns{color:var(--mc-blue);background:var(--mc-blue-bg);border-color:color-mix(in srgb,var(--mc-blue) 35%,var(--mc-line))}
+
+.ed-scroll{flex:1;min-height:0;overflow:auto;padding:var(--mc-sp)}
+.ed-placeholder{margin:auto;max-width:440px;text-align:center;color:var(--mc-muted);padding:var(--mc-sp-xl) var(--mc-sp);line-height:1.7}
+.ed-placeholder b{color:var(--mc-text-2)}
+
+/* ── 面包屑（下钻路径 = 唯一的位置感来源） ─────────────────────── */
+.crumbs{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:var(--mc-sp-sm);min-height:22px}
+.crumb{
+  display:inline-flex;align-items:center;gap:5px;border:1px solid var(--mc-line);background:var(--mc-fill);
+  border-radius:var(--mc-radius-pill);padding:1px 9px 1px 4px;cursor:pointer;font-size:12px;color:var(--mc-text-2);
+}
+.crumb:hover{background:var(--mc-hover);border-color:var(--mc-line-strong)}
+.crumb.cur{background:var(--mc-primary-bg);border-color:var(--mc-primary);color:var(--mc-primary-deep);font-weight:600;cursor:default}
+.crumb img{width:16px;height:16px;image-rendering:pixelated}
+.crumb-sep{color:var(--mc-line-strong);font-size:11px}
+
+/* ── 配方卡原子（本原型的唯一配方渲染语言，画布/清单共用） ──────── */
+.rc{
+  background:var(--mc-fill);border:1px solid var(--mc-line);border-radius:var(--mc-radius-panel);
+  padding:var(--mc-sp-sm) var(--mc-sp);display:flex;flex-direction:column;gap:var(--mc-sp-sm);min-width:0;
+}
+.rc.main{box-shadow:var(--mc-shadow)}
+.rc.click{cursor:pointer}
+.rc.click:hover{border-color:var(--mc-line-strong);background:var(--mc-fill-2)}
+.rc-head{display:flex;align-items:center;gap:6px;min-width:0}
+.rc-type{
+  flex:none;font-size:11px;font-weight:600;color:var(--mc-text-2);background:var(--mc-fill-2);
+  border:1px solid var(--mc-line);border-radius:var(--mc-radius);padding:1px 7px;
+}
+.rc-id{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mc-font-mono);font-size:11px;color:var(--mc-muted)}
+.rc-page{flex:none;font-size:11.5px;color:var(--mc-text-2);font-variant-numeric:tabular-nums;background:var(--mc-hover);border-radius:8px;padding:0 7px}
+.rc-flags{flex:none;display:flex;gap:4px}
+.flag{font-size:10.5px;border-radius:var(--mc-radius);padding:0 5px;border:1px solid var(--mc-line)}
+.flag.gold{color:var(--mc-gold);background:var(--mc-gold-bg);border-color:var(--mc-gold-line)}
+.flag.blue{color:var(--mc-blue);background:var(--mc-blue-bg);border-color:color-mix(in srgb,var(--mc-blue) 35%,var(--mc-line))}
+.flag.mute{color:var(--mc-muted);background:var(--mc-fill-2)}
+
+.rc-body{display:flex;align-items:center;gap:var(--mc-sp);flex-wrap:wrap}
+.rc-workpad{
+  flex:none;background:var(--mc-fill-2);border:1px solid var(--mc-line);border-radius:var(--mc-radius);
+  padding:6px;display:flex;flex-direction:column;gap:3px;
+}
+.rc-row{display:flex;gap:3px}
+.rc-arrow{flex:none;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--mc-muted);min-width:66px}
+.rc-arrow .machine{font-size:11px;color:var(--mc-text-2);text-align:center;line-height:1.25}
+.rc-arrow .glyph{font-size:15px;color:var(--mc-line-strong)}
+.rc-arrow .meta{font-family:var(--mc-font-mono);font-size:10px;color:var(--mc-muted)}
+.rc-out{flex:none;display:flex;flex-direction:column;align-items:center;gap:3px}
+.rc-out .lbl{font-size:11px;color:var(--mc-text-2);max-width:96px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rc-inline{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.rc-inline .lbl{font-size:11.5px;color:var(--mc-text-2)}
+.rc-foot{font-size:11.5px;color:var(--mc-muted);line-height:1.5}
+.rc-foot .gold{color:var(--mc-gold)}
+
+/* 槽位 */
+.slot{
+  width:30px;height:30px;flex:none;border:1px solid var(--mc-line-strong);border-radius:var(--mc-radius);
+  background:var(--mc-fill);display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer;
+  padding:0;
+}
+.slot:hover{border-color:var(--mc-primary);box-shadow:0 0 0 1px var(--mc-primary)}
+.slot.empty{cursor:default;border-style:dashed;border-color:var(--mc-line);background:transparent}
+.slot.empty:hover{border-color:var(--mc-line);box-shadow:none}
+.slot img{width:26px;height:26px;image-rendering:pixelated;display:block}
+.slot .ph{
+  width:26px;height:26px;display:flex;align-items:center;justify-content:center;
+  font-size:12px;color:var(--mc-muted);background:var(--mc-fill-2);border-radius:3px;
+}
+.slot .corner{
+  position:absolute;right:-3px;bottom:-3px;background:var(--mc-fill-2);border:1px solid var(--mc-line-strong);
+  border-radius:6px;font-size:9px;line-height:1.15;padding:0 3px;color:var(--mc-text-2);font-variant-numeric:tabular-nums;
+}
+.slot .corner.any{color:var(--mc-gold);background:var(--mc-gold-bg);border-color:var(--mc-gold-line);font-weight:600}
+.slot.sel{border-color:var(--mc-primary);box-shadow:0 0 0 1px var(--mc-primary);background:var(--mc-primary-bg)}
+.slot .cnt{position:absolute;left:1px;top:0;font-size:10px;color:#fff;text-shadow:0 0 2px #000,0 0 2px #000;font-variant-numeric:tabular-nums}
+.slot.big{width:44px;height:44px}
+.slot.big img,.slot.big .ph{width:38px;height:38px}
+.slot.plain{cursor:default}
+.slot.plain:hover{border-color:var(--mc-line-strong);box-shadow:none}
+
+/* 规则卡（special / 无法用网格表达的配方，其真正形态是规则不是网格） */
+.rc-rule{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.rc-rule .txt{font-size:12.5px;color:var(--mc-text)}
+.rc-rule .op{color:var(--mc-muted);font-size:12px}
+
+/* ── 画布视图：左主卡（下钻）+ 右侧同目标配方（翻页的可见入口） ── */
+.canvas-cols{display:grid;grid-template-columns:minmax(320px,680px) minmax(268px,1fr);gap:var(--mc-sp-lg);align-items:start}
+@media (max-width:1240px){.canvas-cols{grid-template-columns:1fr}}
+.side-list{display:flex;flex-direction:column;gap:2px;background:var(--mc-fill);border:1px solid var(--mc-line);border-radius:var(--mc-radius-panel);padding:var(--mc-sp-xs);max-height:calc(100vh - 260px);overflow:auto}
+.canvas-foot{display:flex;align-items:center;gap:var(--mc-sp-sm);flex-wrap:wrap}
+
+/* ── 清单视图：同一个原子的密铺 ─────────────────────────────── */
+.list-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:var(--mc-sp-sm);align-items:start}
+.items-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(62px,1fr));gap:4px;margin-bottom:var(--mc-sp-sm)}
+.ig-tile{
+  border:1px solid var(--mc-line);background:var(--mc-fill);border-radius:var(--mc-radius);padding:5px 3px 3px;
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;
+}
+.ig-tile:hover{background:var(--mc-hover)}
+.ig-tile.on{border-color:var(--mc-primary);background:var(--mc-primary-bg);box-shadow:0 0 0 1px var(--mc-primary)}
+.ig-icon{width:32px;height:32px;display:flex;align-items:center;justify-content:center}
+.ig-icon img{width:32px;height:32px;image-rendering:pixelated}
+.ig-ph{width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:var(--mc-fill-2);border-radius:var(--mc-radius);color:var(--mc-muted);font-size:14px;border:1px dashed var(--mc-line)}
+.ig-name{font-size:11px;color:var(--mc-text-2);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.more-row{padding:var(--mc-sp) 0;color:var(--mc-muted);font-size:12.5px;display:flex;align-items:center;gap:var(--mc-sp-sm)}
+
+/* ── 焦点面板 ──────────────────────────────────────────────── */
+.focus-card{display:flex;gap:var(--mc-sp-sm);align-items:flex-start}
+.focus-card .bigimg{width:44px;height:44px;image-rendering:pixelated;flex:none}
+.focus-card .nm{font-weight:600;font-size:13.5px;line-height:1.3}
+.p-title{font-size:12px;font-weight:600;color:var(--mc-text-2);letter-spacing:.3px;display:flex;align-items:center;gap:6px}
+.p-title .count{background:var(--mc-hover);color:var(--mc-text-2);border-radius:8px;padding:0 6px;font-size:11px;font-variant-numeric:tabular-nums}
+.p-section{display:flex;flex-direction:column;gap:4px}
+.p-row{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:var(--mc-radius);min-height:24px;font-size:13px;min-width:0}
+.p-row.click{cursor:pointer}
+.p-row.click:hover{background:var(--mc-hover)}
+.p-row.on{background:var(--mc-primary-bg);color:var(--mc-primary-deep)}
+.p-row .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.p-row .sub{color:var(--mc-muted);font-size:12px}
+.p-empty{color:var(--mc-muted);font-size:12.5px;padding:6px 2px;line-height:1.5}
+.tag-chip{font-family:var(--mc-font-mono);font-size:11px;color:var(--mc-text-2);background:var(--mc-fill-2);border:1px solid var(--mc-line);border-radius:var(--mc-radius);padding:1px 6px;display:inline-block;margin:0 3px 3px 0}
+.stat-line{display:flex;gap:var(--mc-sp);font-size:12px;color:var(--mc-text-2);font-variant-numeric:tabular-nums}
+.act-line{display:flex;gap:4px;flex-wrap:wrap}
+.kv{display:flex;gap:8px;font-size:12px;color:var(--mc-text-2)}
+.kv .k{color:var(--mc-muted);flex:none;width:52px}
+.note{
+  font-size:11.5px;color:var(--mc-muted);line-height:1.5;background:var(--mc-fill-2);
+  border:1px dashed var(--mc-line);border-radius:var(--mc-radius);padding:6px 8px;
+}
+.star{color:var(--mc-primary);flex:none}
+kbd{font-family:var(--mc-font-mono);font-size:10.5px;background:var(--mc-fill-2);border:1px solid var(--mc-line-strong);border-bottom-width:2px;border-radius:3px;padding:0 4px}
+
+/* ── 浮动提示（Hover 物品名 / id / 模组，JEI 的 tooltip 对等物） ── */
+#tip{
+  position:fixed;z-index:90;pointer-events:none;display:none;max-width:280px;
+  background:var(--mc-fill);border:1px solid var(--mc-line-strong);border-radius:var(--mc-radius);
+  box-shadow:var(--mc-shadow-lg);padding:5px 8px;font-size:12px;line-height:1.45;
+}
+#tip .t-nm{font-weight:600}
+#tip .t-id{font-family:var(--mc-font-mono);font-size:11px;color:var(--mc-muted);word-break:break-all}
+#tip .t-tag{font-family:var(--mc-font-mono);font-size:10.5px;color:var(--mc-gold)}
+
+/* ── 帮助浮层 ──────────────────────────────────────────────── */
+#help{
+  position:fixed;inset:0;z-index:99;background:rgba(37,37,34,.34);display:none;
+  align-items:center;justify-content:center;padding:var(--mc-sp-xl);
+}
+#help.open{display:flex}
+.help-box{
+  width:560px;max-height:80vh;overflow:auto;background:var(--mc-fill);border:1px solid var(--mc-line-strong);
+  border-radius:var(--mc-radius-panel);box-shadow:var(--mc-shadow-lg);padding:var(--mc-sp-lg);
+}
+.help-box h2{margin:0 0 4px;font-size:16px}
+.help-box table{width:100%;border-collapse:collapse;margin-top:var(--mc-sp-sm)}
+.help-box th{text-align:left;font-size:11.5px;color:var(--mc-muted);font-weight:600;padding:4px 6px;border-bottom:1px solid var(--mc-line)}
+.help-box td{padding:4px 6px;border-bottom:1px solid var(--mc-line);font-size:12.5px}
+.help-box kbd{
+  font-family:var(--mc-font-mono);font-size:11px;background:var(--mc-fill-2);border:1px solid var(--mc-line-strong);
+  border-bottom-width:2px;border-radius:4px;padding:0 5px;
+}
+</style>
+</head>
+<body>
+<div class="frame">
+  <header class="topbar">
+    <div class="brand"><span class="brand-dot"></span>mPackStation</div>
+    <div class="pack-chip" id="packChip">▾ 载入中…</div>
+    <div class="tb-right">
+      <button class="tb-btn" id="helpBtn">? 快捷键</button>
+      <button class="tb-btn">⌘K</button>
+    </div>
+  </header>
+
+  <div class="frame-body">
+    <nav class="rail" id="rail"></nav>
+    <aside class="toolpanel">
+      <div class="tp-head"><span class="title">焦点</span><span class="grow" style="flex:1"></span><span class="ed-count" id="tpCount"></span></div>
+      <div class="tp-body" id="tpBody"></div>
+    </aside>
+    <main class="editor">
+      <div class="ed-header" id="edHeader"></div>
+      <div class="ed-toolbar" id="edToolbar"></div>
+      <div class="ed-scroll" id="stage"></div>
+    </main>
+  </div>
+
+  <footer class="statusbar">
+    <span class="seg"><span style="width:8px;height:8px;border-radius:50%;background:var(--mc-success);display:inline-block"></span><span id="sbHealth">健康</span></span>
+    <span class="seg" id="sbPack">—</span>
+    <span class="seg" id="sbStats">—</span>
+    <span class="grow"></span>
+    <span class="hint" id="sbHint">R 制作 · U 用途 · ←→ 换配方 · [ ] 轮换候选 · ? 帮助</span>
+    <span class="hash" id="sbHash"></span>
+  </footer>
+</div>
+
+<div id="tip"></div>
+<div id="help"><div class="help-box">
+  <h2>快捷键（与 JEI 对齐）</h2>
+  <div style="font-size:12px;color:var(--mc-text-2)">输入框内不劫持字母键；与透镜键位冲突处已让位（见下）。</div>
+  <table>
+    <thead><tr><th style="width:120px">键</th><th>行为</th></tr></thead>
+    <tbody id="helpRows"></tbody>
+  </table>
+</div></div>
+
+<script src="catalog.js"></script>
+<script>
+'use strict';
+const D = window.JEI_MVP;
+const ITEMS = D.items, RECIPES = D.recipes, TAGS = D.tags || {};
+
+/* ── 索引：与 CatalogContext 同口径，全量只算一次 ───────────────── */
+const itemById = new Map(), nameOf = new Map(), iconOf = new Map();
+for (const it of ITEMS){ itemById.set(it.id,it); nameOf.set(it.id,it.name||it.id); iconOf.set(it.id, it.icon && it.icon.startsWith('data:') ? it.icon : null); }
+const itemTags = new Map();
+for (const [t, members] of Object.entries(TAGS)) for (const m of members){ if(!itemTags.has(m)) itemTags.set(m,[]); itemTags.get(m).push(t); }
+const NS = i => i.includes(':') ? i.split(':')[0] : '(无命名空间)';
+const shortId = i => i.includes(':') ? i.split(':')[1] : i;
+const shortTag = t => t.includes(':') ? t.split(':')[1] : t;
+
+const MACHINE = {
+  'minecraft:crafting_shaped':'工作台','minecraft:crafting_shapeless':'工作台',
+  'minecraft:stonecutting':'切石机','minecraft:smelting':'熔炉','minecraft:blasting':'高炉',
+  'minecraft:smoking':'烟熏炉','minecraft:campfire_cooking':'营火',
+  'minecraft:smithing_transform':'锻造台','minecraft:smithing_trim':'锻造台',
+  'minecraft:crafting_decorated_pot':'陶罐',
+};
+const machineOf = t => MACHINE[t] || (String(t).includes('crafting_special') ? '工作台·特殊' : '未知设备');
+
+/* 槽位：item / tag（多候选）/ 任意 */
+function slotFrom(ref){
+  if (!ref) return null;
+  if (ref.item) return {kind:'item', id:ref.item, candidates:[ref.item], count:ref.count};
+  if (ref.tag){ const c = TAGS[ref.tag]||[]; return {kind:'tag', tag:ref.tag, candidates:c, label:'#'+shortTag(ref.tag)}; }
+  return null;
+}
+function resultSlot(res){
+  if (!res || !res.id) return null;
+  return {kind:'item', id:res.id, candidates:[res.id], count:res.count===undefined?1:res.count, derived:false};
+}
+
+/* 规则卡模板：special 类配方在数据里只有 type+category，没有网格。
+   它们本来就不是网格而是规则 —— 但槽位仍要用真实 catalog 图标，不能退化成方括号文字。
+   pick 支持三种写法：精确 id / ['id',…] / '$后缀' / '#标签'；broad=true 表示这条规则
+   的适用范围比 pick 出来的候选大（例如「任意同类工具」），此时不把它登记进物品的反查索引。 */
+function pick(spec){
+  if (Array.isArray(spec)) return spec.filter(id => itemById.has(id));
+  if (typeof spec !== 'string') return [];
+  if (spec[0] === '#') return (TAGS[spec.slice(1)] || []).slice();
+  if (spec[0] === '$'){ const suf = spec.slice(1); return ITEMS.filter(i => shortId(i.id).endsWith(suf)).map(i => i.id); }
+  return itemById.has(spec) ? [spec] : [];
+}
+const RULE = {
+  'minecraft:crafting_special_armordye': {
+    inputs:[{label:'任意皮革盔甲', pick:['minecraft:leather_helmet','minecraft:leather_chestplate','minecraft:leather_leggings','minecraft:leather_boots']},
+            {label:'任意染料', pick:'$_dye'}],
+    out:{label:'染色盔甲', pick:['minecraft:leather_chestplate']},
+    note:'可多色混染；染料只改颜色，不改属性'},
+  'minecraft:crafting_special_bannerduplicate': {
+    inputs:[{label:'任意旗帜', pick:'$_banner'}, {label:'同款旗帜', pick:'$_banner'}],
+    out:{label:'同款旗帜', pick:'$_banner', count:2},
+    note:'图案一并复制；染料颜色不改外观'},
+  'minecraft:crafting_special_bookcloning': {
+    inputs:[{label:'书与笔', pick:'minecraft:writable_book'}, {label:'已写成的书', pick:'minecraft:written_book'}],
+    out:{label:'已写成的书', pick:'minecraft:written_book', count:2},
+    note:'按原标题份数递增；反复复制消耗墨水'},
+  'minecraft:crafting_special_firework_rocket': {
+    inputs:[{label:'纸', pick:'minecraft:paper'}, {label:'火药…', pick:'minecraft:gunpowder'}, {label:'烟火之星?', pick:'minecraft:firework_star'}],
+    out:{label:'烟花', pick:'minecraft:firework_rocket'},
+    note:'火药数量决定飞行时间；烟火之星决定爆炸效果'},
+  'minecraft:crafting_special_firework_star': {
+    inputs:[{label:'火药', pick:'minecraft:gunpowder'}, {label:'任意染料…', pick:'$_dye'}],
+    out:{label:'烟火之星', pick:'minecraft:firework_star'},
+    note:'可再叠加形状与附加效果材料'},
+  'minecraft:crafting_special_firework_star_fade': {
+    inputs:[{label:'烟火之星', pick:'minecraft:firework_star'}, {label:'任意染料…', pick:'$_dye'}],
+    out:{label:'褪色烟火之星', pick:'minecraft:firework_star'},
+    note:'追加褪色渐变'},
+  'minecraft:crafting_special_mapcloning': {
+    inputs:[{label:'已探索地图', pick:'minecraft:filled_map'}, {label:'空地图', pick:'minecraft:map'}],
+    out:{label:'地图', pick:'minecraft:filled_map', count:2},
+    note:''},
+  'minecraft:crafting_special_mapextending': {
+    inputs:[{label:'地图', pick:'minecraft:filled_map'}, {label:'纸…', pick:'minecraft:paper'}],
+    out:{label:'更大比例地图', pick:'minecraft:filled_map'},
+    note:''},
+  'minecraft:crafting_special_repairitem': {
+    inputs:[{label:'同类工具 A', pick:'$_pickaxe', broad:true}, {label:'同类工具 B', pick:'$_pickaxe', broad:true}],
+    out:{label:'合并耐久', pick:'$_pickaxe', broad:true},
+    note:'适用范围：任意两个同类可修复物品；耐久合并并附加少量额外耐久'},
+  'minecraft:crafting_special_shielddecoration': {
+    inputs:[{label:'盾', pick:'minecraft:shield'}, {label:'任意旗帜', pick:'$_banner'}],
+    out:{label:'带图案盾', pick:'minecraft:shield'},
+    note:'图案取自旗帜'},
+  'minecraft:crafting_special_shulkerboxcoloring': {
+    inputs:[{label:'潜影盒', pick:'$_shulker_box'}, {label:'任意染料', pick:'$_dye'}],
+    out:{label:'同色潜影盒', pick:'$_shulker_box'},
+    note:'保留盒内物品'},
+  'minecraft:crafting_special_suspiciousstew': {
+    inputs:[{label:'碗', pick:'minecraft:bowl'}, {label:'红蘑菇', pick:'minecraft:red_mushroom'},
+            {label:'棕蘑菇', pick:'minecraft:brown_mushroom'}, {label:'任意花?', pick:'#minecraft:flowers'}],
+    out:{label:'迷之炖菜', pick:'minecraft:suspicious_stew'},
+    note:'效果由所用花决定；不加花则为默认效果'},
+  'minecraft:crafting_special_tippedarrow': {
+    inputs:[{label:'箭', pick:'minecraft:arrow', count:8}, {label:'滞留药水', pick:'minecraft:lingering_potion'}],
+    out:{label:'药箭', pick:'minecraft:tipped_arrow', count:8},
+    note:'药水效果与时长写入箭矢'},
+  'minecraft:crafting_decorated_pot': {
+    inputs:[{label:'陶片 ×4', pick:'#minecraft:decorated_pot_sherds'}, {label:'红砖', pick:'minecraft:brick'}],
+    out:{label:'装饰陶罐', pick:'minecraft:decorated_pot'},
+    note:'四面图案由所用陶片决定'},
+};
+/* 纹饰无固定产物 id：产物是 base 装备本身，按规则卡处理且不登记反查 */
+const SMITHING_TRIM_RULE = {
+  inputs:[{label:'纹饰模板', pick:'$_smithing_template'}, {label:'可装饰盔甲', pick:'#minecraft:trimmable_armor'},
+          {label:'纹饰材料', pick:'#minecraft:trim_materials'}],
+  out:{label:'带纹饰盔甲', pick:'#minecraft:trimmable_armor', broad:true},
+  note:'产物沿用 base 装备，只加纹饰；目录里没有固定的结果 id',
+};
+
+/* ── 配方归一化（一次） ─────────────────────────────────────── */
+const NORM = RECIPES.map(r => normalize(r));
+function normalize(r){
+  const p = r.payload || {}, t = r.type;
+  const n = {id:r.id, type:t, machine:machineOf(t), kind:'unknown', grid:null,
+             inputs:[], output:null, extra:{}, rule:null, flags:[]};
+  if (t === 'minecraft:crafting_shaped' && p.pattern){
+    /* grid 一律扁平 9 格（与渲染端 y*3+x 同口径），行/列都按 3 截断 */
+    n.kind = 'grid'; n.grid = new Array(9).fill(null);
+    p.pattern.slice(0,3).forEach((row,y) => [...row].slice(0,3).forEach((ch,x) => {
+      n.grid[y*3+x] = ch === ' ' ? null : slotFrom(p.key?.[ch]);
+    }));
+    n.output = resultSlot(p.result);
+    n.flags.push('有序');
+    if (p.pattern.length < 3 || Math.max(...p.pattern.map(s=>s.length)) < 3)
+      n.flags.push(p.pattern.length+'×'+Math.max(...p.pattern.map(s=>s.length)));
+  } else if (t === 'minecraft:crafting_shapeless' && p.ingredients){
+    n.kind = 'grid'; n.grid = new Array(9).fill(null);
+    p.ingredients.slice(0,9).forEach((ing,i) => { n.grid[i] = slotFrom(ing); });
+    n.output = resultSlot(p.result); n.flags.push('无序');
+    if (p.ingredients.length > 9) n.flags.push('输入 '+p.ingredients.length+' 种');
+  } else if (t === 'minecraft:stonecutting'){
+    n.kind = 'single'; n.inputs = [slotFrom(p.ingredient)]; n.output = resultSlot(p.result);
+  } else if (/smelting|blasting|smoking|campfire_cooking/.test(t)){
+    n.kind = 'single'; n.inputs = [slotFrom(p.ingredient)]; n.output = resultSlot(p.result);
+    n.extra = {time:p.cookingtime, xp:p.experience};
+  } else if (t === 'minecraft:smithing_transform'){
+    n.kind = 'smithing';
+    n.inputs = [slotFrom(p.template), slotFrom(p.base), slotFrom(p.addition)];
+    n.output = resultSlot(p.result);
+  } else if (t === 'minecraft:smithing_trim'){
+    n.kind = 'rule'; n.rule = SMITHING_TRIM_RULE;
+  } else if (RULE[t]){
+    n.kind = 'rule'; n.rule = RULE[t];
+  }
+  if (n.kind === 'rule') attachRule(n);
+  return n;
+}
+/* 规则卡也要有真实槽位：把模板里的 pick 解析成 catalog 里的具体候选 */
+function attachRule(n){
+  const r = n.rule;
+  n.ruleInputs = (r.inputs || []).map(s => {
+    const c = pick(s.pick);
+    return {slot:{kind: c.length > 1 ? 'tag' : 'item', candidates:c, id:c[0], label:s.label, broad:!!s.broad, count:s.count},
+            label:s.label, count:s.count};
+  });
+  const oc = pick(r.out && r.out.pick);
+  if (oc.length){
+    n.output = {kind: oc.length>1 ? 'tag' : 'item', id:oc[0], candidates:oc,
+                count: r.out.count === undefined ? 1 : r.out.count, fromRule:true};
+    /* broad 的产物不登记反查：那是「任意同类物品」的泛指，不是具体产物 */
+    n.ruleOutAll = (r.out.broad ? [] : oc);
+  }
+}
+
+/* 反查索引：作为产物 / 作为原料（tag 展开到成员，这才和 JEI 的 R/U 一致） */
+const byOutput = new Map(), byInput = new Map();
+function push(map,k,v){ if(!map.has(k)) map.set(k,[]); map.get(k).push(v); }
+for (const n of NORM){
+  if (n.output){
+    /* 规则配方的产物若是精确集合（例如「任意旗帜 → 同款旗帜×2」），
+       则每个候选都算它的产物 —— 这才是 JEI 的行为，否则搜「旗帜」翻不到这条规则。 */
+    const outs = n.ruleOutAll && n.ruleOutAll.length ? n.ruleOutAll : [n.output.id];
+    for (const o of outs) push(byOutput, o, n);
+  }
+  const refs = n.kind === 'grid' ? (n.grid||[]).filter(Boolean) : n.inputs.filter(Boolean);
+  const seen = new Set();
+  for (const s of refs) for (const c of s.candidates){ if(!c||seen.has(c)) continue; seen.add(c); push(byInput, c, n); }
+  for (const ri of (n.ruleInputs || [])) for (const c of ri.slot.candidates){
+    if (!c || ri.slot.broad || seen.has(c)) continue; seen.add(c); push(byInput, c, n);
+  }
+}
+const outputsOf = id => byOutput.get(id) || [];
+const inputsOf  = id => byInput.get(id) || [];
+
+/* 类型分段（结构化筛选器：能力必须在 UI 上被看见，不藏进语法） */
+const SEGMENTS = [
+  {key:'all', label:'全部'},
+  {key:'minecraft:crafting_shaped', label:'工作台', test:t=>t==='minecraft:crafting_shaped'||t==='minecraft:crafting_shapeless'},
+  {key:'minecraft:stonecutting', label:'切石机', test:t=>t==='minecraft:stonecutting'},
+  {key:'cooking', label:'熔炼类', test:t=>/smelting|blasting|smoking|campfire_cooking/.test(t)},
+  {key:'smithing', label:'锻造台', test:t=>/smithing/.test(t)},
+  {key:'special', label:'特殊/规则', test:t=>String(t).includes('crafting_special')||t==='minecraft:crafting_decorated_pot'},
+];
+const segTest = k => (SEGMENTS.find(s=>s.key===k)||SEGMENTS[0]).test || ((t)=>true);
+function segCount(seg){ if(seg.key==='all') return NORM.length; const f=seg.test; return NORM.filter(n=>f(n.type)).length; }
+
+/* ── 状态：URL 是单一事实源（V3 §2）。原型用 hash 模拟 ?query= ───── */
+const LS = {fav:'mpack.prototype.relation-lens.fav', hist:'mpack.prototype.relation-lens.hist'};
+const state = {
+  mode:'recipes',          // recipes(R) | uses(U)
+  view:'canvas',           // canvas | list
+  focus:null,
+  path:[],                 // 下钻路径
+  rIdx:0,                  // 当前产物/用途下第几条配方
+  slotSel:null,            // 选中的槽位（用于 [ ] 轮换）
+  cycle:{},                // 槽位候选游标
+  seg:'all',
+  q:'',
+  listCount:60,
+  lens:'graph',
+  fav:JSON.parse(localStorage.getItem(LS.fav) || '[]'),
+  hist:JSON.parse(localStorage.getItem(LS.hist) || '[]'),
+};
+const saveFav = () => localStorage.setItem(LS.fav, JSON.stringify(state.fav));
+const saveHist = () => localStorage.setItem(LS.hist, JSON.stringify(state.hist.slice(0,50)));
+
+function readHash(){
+  const p = new URLSearchParams(location.hash.replace(/^#/,''));
+  /* 参数名严格对齐 web3 的 url.ts：?mode= 是透镜（index|graph|chain|edit|quest），
+     ?item= 是焦点。R/U 另起 ?rmode=，绝不与透镜复用同义参数。 */
+  const it = p.get('item'); if (it && itemById.has(it)) { state.focus = it; }
+  const m = p.get('mode'); if (m && LENSES.some(l=>l.k===m)) state.lens = m;
+  const rm = p.get('rmode'); if (rm === 'uses' || rm === 'recipes') state.mode = rm;
+  const v = p.get('view'); if (v === 'list' || v === 'canvas') state.view = v;
+  const g = p.get('seg'); if (g) state.seg = g;
+  const q = p.get('q'); if (q !== null) state.q = q;
+  const r = Number(p.get('r')); if (Number.isFinite(r) && r >= 0) state.rIdx = r;
+  const path = p.get('path'); state.path = path ? path.split(',').filter(x=>itemById.has(x)) : (state.focus ? [state.focus] : []);
+}
+function writeHash(){
+  const p = new URLSearchParams();
+  if (state.focus) p.set('item', state.focus);
+  if (state.lens !== 'graph') p.set('mode', state.lens);
+  if (state.mode !== 'recipes') p.set('rmode', state.mode);
+  p.set('view', state.view);
+  if (state.seg !== 'all') p.set('seg', state.seg);
+  if (state.q) p.set('q', state.q);
+  if (state.rIdx) p.set('r', String(state.rIdx));
+  if (state.path.length > 1) p.set('path', state.path.join(','));
+  const h = '#' + p.toString();
+  if (location.hash !== h) history.replaceState(null, '', h);
+}
+
+/* 焦点/下钻/历史 */
+function setFocus(id, pushPath){
+  if (!itemById.has(id)) return;
+  state.focus = id; state.rIdx = 0; state.slotSel = null; state.cycle = {};
+  if (pushPath === false) state.path = [id];
+  else { const i = state.path.indexOf(id); state.path = i >= 0 ? state.path.slice(0,i+1) : [...state.path, id]; }
+  if (state.hist[0]?.id !== id) { state.hist = [{id, at:Date.now()}, ...state.hist.filter(h=>h.id!==id)]; saveHist(); }
+  state.slotSel = null;
+  render();
+}
+function back(){
+  if (state.path.length <= 1) return;
+  state.path = state.path.slice(0,-1);
+  state.focus = state.path[state.path.length-1];
+  state.rIdx = 0; state.slotSel = null; state.cycle = {};
+  render();
+}
+function toggleFav(id){
+  const i = state.fav.indexOf(id);
+  if (i >= 0) state.fav.splice(i,1); else state.fav.unshift(id);
+  saveFav(); render();
+}
+
+/* ── 搜索语法：结构化筛选器为主，字符串语法为快捷输入，共享同一份状态 ── */
+function parseQuery(q){
+  const c = {ns:[], tag:[], suffix:[], text:[]};
+  for (const p of String(q||'').trim().split(/\s+/).filter(Boolean)){
+    if (p[0] === '@') c.ns.push(p.slice(1).toLowerCase());
+    else if (p[0] === '#') c.tag.push(p.slice(1).toLowerCase());
+    else if (p[0] === '$') c.suffix.push(p.slice(1).toLowerCase());
+    else c.text.push(p.toLowerCase());
+  }
+  return c;
+}
+function itemMatches(it, c){
+  const id = it.id.toLowerCase(), nm = String(it.name||'').toLowerCase();
+  if (c.ns.length && !c.ns.every(x=>NS(id).includes(x))) return false;
+  if (c.text.length && !c.text.every(x=>id.includes(x)||nm.includes(x))) return false;
+  if (c.suffix.length && !c.suffix.every(x=>shortId(id).endsWith(x))) return false;
+  if (c.tag.length){
+    const mine = (itemTags.get(it.id)||[]).map(t=>t.toLowerCase());
+    if (!c.tag.every(x=>mine.some(t=>t===x||t.endsWith(':'+x)||t.includes(x)))) return false;
+  }
+  return true;
+}
+const hasQuery = c => !!(c.ns.length||c.tag.length||c.suffix.length||c.text.length);
+
+/* ── 渲染：槽位 ──────────────────────────────────────────────── */
+function slotHTML(s, key, opts){
+  opts = opts || {};
+  if (!s) return '<div class="slot empty"></div>';
+  let id = s.id, corner = '', cyc = false;
+  if (s.kind === 'tag'){
+    const cands = s.candidates || [];
+    const ci = state.cycle[key] || 0;
+    id = cands.length ? cands[ci % cands.length] : null;
+    cyc = true;
+    if (cands.length > 1 && !s.broad) corner = '<span class="corner any">'+(ci%cands.length+1)+'/'+cands.length+'</span>';
+    else corner = '<span class="corner any">任</span>';
+  }
+  const ic = id ? iconOf.get(id) : null;
+  const nm = id ? nameOf.get(id) : null;
+  const inner = ic ? '<img src="'+ic+'" alt="">' : '<span class="ph">'+(nm ? nm[0] : '?')+'</span>';
+  const cnt = s.count && s.count > 1 ? '<span class="cnt">'+s.count+'</span>' : '';
+  const sel = state.slotSel === key ? ' sel' : '';
+  const cls = 'slot' + sel + (opts.big ? ' big' : '') + (opts.plain ? ' plain' : '');
+  const bits = [];
+  if (s.label) bits.push(s.label);
+  if (nm) bits.push(nm);
+  if (id) bits.push(id);
+  if (s.kind === 'tag' && s.tag) bits.push('来自标签 '+s.tag);
+  if (cyc && !s.broad && (s.candidates||[]).length > 1) bits.push('点一下轮换候选（'+(s.candidates||[]).length+' 个）');
+  if (s.broad) bits.push('泛指一类物品，点开是代表项');
+  const title = bits.length ? bits.join(' · ') : '空槽';
+  const attrs = opts.plain ? '' : ' data-act="slot" data-key="'+key+'" data-id="'+(id||'')+'" data-cyc="'+(cyc?'1':'')+'" data-n="'+((s.candidates||[]).length)+'"';
+  return '<button class="'+cls+'" title="'+esc(title)+'"'+attrs+'>'+inner+cnt+corner+'</button>';
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+/* ── 渲染：配方卡（唯一原子，画布与清单共用） ────────────────── */
+function recipeCard(n, i, total, opts){
+  opts = opts || {};
+  const head = '<div class="rc-head">'
+    + '<span class="rc-type">'+esc(n.machine)+'</span>'
+    + '<span class="rc-id" title="'+esc(n.id)+'">'+esc(n.id)+'</span>'
+    + n.flags.map(f=>'<span class="flag mute">'+esc(f)+'</span>').join('')
+    + (n.kind==='rule' ? '<span class="flag gold">规则</span>' : '')
+    + (total > 1 ? '<span class="rc-page">'+(i+1)+'/'+total+'</span>' : '')
+    + '</div>';
+
+  let body = '';
+  if (n.kind === 'grid'){
+    const rows = [];
+    const g = n.grid.length ? n.grid : [];
+    /* grid 是扁平 9 格 → 行数 = ceil(9/3) = 3，别拿 length 当行数 */
+    const h = Math.max(1, Math.ceil(g.length/3));
+    for (let y=0; y<h; y++){
+      const row = [];
+      for (let x=0; x<3; x++) row.push(slotHTML(g[y*3+x] || null, 's'+y+'-'+x));
+      rows.push('<div class="rc-row">'+row.join('')+'</div>');
+    }
+    body = '<div class="rc-workpad">'+rows.join('')+'</div>'
+      + arrowHTML(n) + outHTML(n);
+  } else if (n.kind === 'single' || n.kind === 'smithing'){
+    body = '<div class="rc-workpad" style="flex-direction:row;gap:3px">'
+      + n.inputs.map((s,k)=>slotHTML(s,'i'+k)).join('') + '</div>'
+      + arrowHTML(n) + outHTML(n);
+  } else if (n.kind === 'rule' && n.ruleInputs && n.ruleInputs.length){
+    const inputs = n.ruleInputs.map((ri,k) => {
+      const s = Object.assign({}, ri.slot);
+      if (ri.count && ri.count > 1) s.count = ri.count;
+      return slotHTML(s, 'r'+k);
+    }).join('');
+    body = '<div class="rc-workpad" style="flex-direction:row;gap:3px">'+inputs+'</div>'+arrowHTML(n)+outHTML(n);
+  } else if (n.kind === 'rule'){
+    body = '<div class="rc-rule"><span class="txt" style="color:var(--mc-gold)">这条规则没有被收录成模板，只登记了类型。</span></div>';
+  } else {
+    body = '<div class="rc-rule"><span class="txt" style="color:var(--mc-gold)">这条配方的类型目录里没有结构化定义，读不出输入输出边。</span></div>';
+  }
+
+  const foot = [];
+  if (n.kind === 'rule'){
+    foot.push('<div class="rc-foot">规则类配方：由运行时匹配，不是固定网格；槽位给的是候选与代表项，不是唯一解。</div>');
+    if (n.rule.note) foot.push('<div class="rc-foot">'+esc(n.rule.note)+'</div>');
+  }
+  if (n.output && n.output.count > 1) foot.push('<div class="rc-foot">产出 ×'+n.output.count+'</div>');
+  if (opts.hint !== false && (n.kind==='grid'||n.kind==='single'||n.kind==='smithing'))
+    foot.push('<div class="rc-foot">点材料槽下钻 · 右键看它的用途 · [ ] 轮换标签候选</div>');
+
+  const cls = 'rc' + (opts.main ? ' main' : '') + (opts.click ? ' click' : '');
+  const attrs = opts.click ? ' data-act="pick-recipe" data-out="'+esc(n.output?n.output.id:'')+'"' : '';
+  return '<div class="'+cls+'"'+attrs+'>'+head+'<div class="rc-body">'+body+'</div>'+foot.join('')+'</div>';
+}
+function arrowHTML(n){
+  const meta = n.extra && n.extra.time ? ((n.extra.time/20).toFixed(1)+'s · '+(n.extra.xp||0)+'xp') : '';
+  return '<div class="rc-arrow"><span class="machine">'+esc(n.machine)+'</span><span class="glyph">→</span>'
+    + (meta?'<span class="meta">'+esc(meta)+'</span>':'') + '</div>';
+}
+function outHTML(n){
+  if (!n.output) return '<div class="rc-out"><span class="lbl" style="color:var(--mc-gold)">产物由规则决定</span></div>';
+  return '<div class="rc-out">'+slotHTML(n.output,'out',{big:true})+'<span class="lbl">'+esc(nameOf.get(n.output.id)||n.output.id)+'</span></div>';
+}
+
+/* ── 渲染：画布视图（焦点 + 下钻） ──────────────────────────── */
+function renderCanvas(){
+  if (!state.focus){
+    return '<div class="ed-placeholder">先选一个焦点：在索引里点一个物品，或按 <b>⌘K</b> 搜一个名字 / id。<br>'
+      + '<span style="font-size:12px">关系态不是独立页面 —— 它是编辑区的一个透镜，和索引/链路/魔改共用同一个焦点。</span></div>';
+  }
+  const id = state.focus;
+  const list = state.mode === 'recipes' ? outputsOf(id) : inputsOf(id);
+  const idx = Math.min(state.rIdx, Math.max(0, list.length-1));
+  const dir = state.mode === 'recipes' ? '产物' : '原料';
+
+  let main = '';
+  if (list.length){
+    main = recipeCard(list[idx], idx, list.length, {main:true, hint:false});
+  } else {
+    const other = state.mode === 'recipes' ? inputsOf(id).length : outputsOf(id).length;
+    main = '<div class="rc"><div class="rc-head"><span class="rc-type">'+esc(state.mode==='recipes'?'制作':'用途')+'</span>'
+      + '<span class="rc-id">作为'+dir+' · 0 条</span></div>'
+      + '<div class="rc-foot">目录里没有以它为'+dir+'的配方。'
+      + (other ? '它在另一个方向有 '+other+' 条 —— 按 <b>'+(state.mode==='recipes'?'U':'R')+'</b> 切过去。' : '这是采集类物品（原版没有配方）。')
+      + '</div></div>';
+  }
+
+  const sideRows = list.map((n,i) =>
+    '<div class="p-row click'+(i===idx?' on':'')+'" data-act="ridx" data-i="'+i+'" title="'+esc(n.id)+'">'
+    + '<span class="rc-type">'+esc(n.machine)+'</span>'
+    + '<span class="grow mono">'+esc(n.id)+'</span>'
+    + (n.output && n.output.count>1 ? '<span class="sub num">×'+n.output.count+'</span>' : '')
+    + (n.kind==='rule' ? '<span class="flag gold">规则</span>' : '')
+    + '</div>').join('');
+
+  const foot = '<div class="canvas-foot">'
+    + '<span class="ed-count">作为'+dir+' '+list.length+' 条 · 位置 '+(list.length?idx+1:0)+'/'+list.length+'</span>'
+    + (list.length>1
+        ? '<button class="p-btn" data-act="ridx" data-i="'+((idx-1+list.length)%list.length)+'">← 上一条</button>'
+          + '<button class="p-btn" data-act="ridx" data-i="'+((idx+1)%list.length)+'">下一条 →</button>'
+        : '')
+    + '</div>';
+
+  return '<div class="crumbs">'+state.path.map((p,i)=>{
+      const cur = i === state.path.length-1;
+      const ic = iconOf.get(p);
+      return '<button class="crumb'+(cur?' cur':'')+'" data-act="crumb" data-id="'+esc(p)+'">'
+        + (ic?'<img src="'+ic+'" alt="">':'')
+        + '<span>'+esc(nameOf.get(p)||p)+'</span></button>' + (cur?'':'<span class="crumb-sep">›</span>');
+    }).join('')
+    + (state.path.length>1 ? '<button class="p-btn" data-act="back" style="margin-left:6px">↰ 返回上层</button>' : '')
+    + '</div>'
+    + '<div class="canvas-cols">'
+      + '<div style="display:flex;flex-direction:column;gap:var(--mc-sp-sm);min-width:0">'+main+foot+'</div>'
+      + '<aside class="side-list">'
+        + '<div class="p-title" style="padding:2px 6px">同'+dir+'的配方 <span class="count">'+list.length+'</span></div>'
+        + (sideRows || '<div class="p-empty">没有其它配方。</div>')
+        + '<div class="note" style="margin-top:6px">点材料槽下钻 · 右键材料槽看它的用途 · <kbd>[</kbd> <kbd>]</kbd> 轮换标签候选 · 这里点一条即换主卡片。</div>'
+      + '</aside>'
+    + '</div>';
+}
+
+/* ── 渲染：清单视图（浏览） ─────────────────────────────────── */
+function renderList(){
+  const c = parseQuery(state.q);
+  const q = hasQuery(c);
+  const t = segTest(state.seg);
+  let rows = NORM.filter(n => t(n.type));
+  if (q) rows = rows.filter(n => {
+    if (n.output && itemMatches(itemById.get(n.output.id)||{id:n.output.id}, c)) return true;
+    const refs = n.kind==='grid' ? (n.grid||[]).filter(Boolean) : n.inputs.filter(Boolean);
+    for (const s of refs) for (const cid of s.candidates){ const it = itemById.get(cid); if (it && itemMatches(it,c)) return true; }
+    return false;
+  });
+
+  let itemStrip = '';
+  if (q){
+    const hit = ITEMS.filter(it => itemMatches(it,c)).slice(0,24);
+    itemStrip = '<div class="p-title">匹配物品 <span class="count">'+ITEMS.filter(it=>itemMatches(it,c)).length+'</span></div>'
+      + (hit.length ? '<div class="items-strip" style="margin-top:4px">'+hit.map(it=>
+          '<button class="ig-tile'+(state.focus===it.id?' on':'')+'" data-act="focus" data-id="'+esc(it.id)+'" title="'+esc(it.name+' · '+it.id)+'">'
+          + '<span class="ig-icon">'+(iconOf.get(it.id)?'<img src="'+iconOf.get(it.id)+'" alt="">':'<span class="ig-ph">'+(it.name||it.id)[0]+'</span>')+'</span>'
+          + '<span class="ig-name">'+esc(it.name||it.id)+'</span></button>').join('')+'</div>'
+        : '<div class="p-empty">没有匹配的物品。</div>');
+  }
+
+  const shown = rows.slice(0, state.listCount);
+  return itemStrip
+    + '<div class="crumbs"><span class="ed-count">配方 '+rows.length+' 条'
+      + (rows.length>shown.length ? '（显示 '+shown.length+'）' : '')
+      + (state.seg!=='all' ? ' · '+(SEGMENTS.find(s=>s.key===state.seg)||{}).label : '')
+      + (q ? ' · 关键词筛选生效' : '')+'</span></div>'
+    + (rows.length ? '<div class="list-grid">'+shown.map(n=>recipeCard(n,0,1,{click:true,hint:false})).join('')+'</div>'
+        : '<div class="ed-placeholder">这个筛选组合下没有配方。<br><span style="font-size:12px">换个类型分段，或清掉搜索词。搜 <b>@minecraft</b> / <b>#planks</b> / <b>$stairs</b> 试试前缀语法。</span></div>')
+    + (rows.length > shown.length
+        ? '<div class="more-row"><button class="p-btn" data-act="more">再显示 '+Math.min(60, rows.length-shown.length)+' 条</button>'
+          + '<span class="ed-count">已显示 '+shown.length+' / '+rows.length+'</span></div>'
+        : '');
+}
+
+/* ── 渲染：编辑区头 / 工具条 / 右面板 ───────────────────────── */
+const LENSES = [
+  {k:'index',label:'索引',key:''},
+  {k:'graph',label:'关系',key:'Enter'},
+  {k:'chain',label:'链路',key:'C'},
+  {k:'edit',label:'魔改',key:'E'},
+  {k:'quest',label:'编排',key:'Q'},
+];
+function renderHeader(){
+  const id = state.focus;
+  const ctx = id
+    ? (iconOf.get(id)?'<img class="eh-icon" src="'+iconOf.get(id)+'" alt="">':'<span class="eh-icon" style="display:inline-block;background:var(--mc-fill-2);border-radius:3px"></span>')
+      + '<span class="eh-name">'+esc(nameOf.get(id)||id)+'</span><span class="eh-kind">物品</span>'
+      + '<span class="mono" style="font-family:var(--mc-font-mono);font-size:11px;color:var(--mc-primary-deep);opacity:.75">'+esc(id)+'</span>'
+    : '<span class="eh-kind">未选焦点</span>';
+  document.getElementById('edHeader').innerHTML =
+    '<div class="eh-ctx">'+ctx+'</div>'
+    + '<div class="eh-lenses">'+LENSES.map(l=>
+        '<button class="eh-lens'+(state.lens===l.k?' on':'')+'" data-act="lens" data-k="'+l.k+'">'+l.label
+        + (l.key?'<span class="eh-key">'+l.key+'</span>':'')+'</button>').join('')+'</div>';
+}
+function renderToolbar(){
+  const c = parseQuery(state.q);
+  const chips = [];
+  if (c.ns.length) chips.push(c.ns.map(x=>'<span class="fs-kind kind-ns">@'+esc(x)+'</span>').join(''));
+  if (c.tag.length) chips.push(c.tag.map(x=>'<span class="fs-kind kind-tag">#'+esc(x)+'</span>').join(''));
+  if (c.suffix.length) chips.push(c.suffix.map(x=>'<span class="fs-kind">$'+esc(x)+'</span>').join(''));
+  if (c.text.length) chips.push(c.text.map(x=>'<span class="fs-kind">'+esc(x)+'</span>').join(''));
+
+  document.getElementById('edToolbar').innerHTML =
+    '<span class="seg-group">'
+      + '<button class="p-btn'+(state.view==='canvas'?' on':'')+'" data-act="view" data-v="canvas">画布 · 下钻</button>'
+      + '<button class="p-btn'+(state.view==='list'?' on':'')+'" data-act="view" data-v="list">清单 · 浏览</button>'
+    + '</span>'
+    + '<span class="seg-group">'
+      + SEGMENTS.map(s=>{
+          const n = segCount(s);
+          if (s.key!=='all' && n===0) return '';
+          return '<button class="p-btn'+(state.seg===s.key?' on':'')+'" data-act="seg" data-k="'+s.key+'">'+s.label+' <span class="ed-count">'+n+'</span></button>';
+        }).join('')
+    + '</span>'
+    + '<span class="grow"></span>'
+    + '<span class="seg-group">'
+      + '<button class="p-btn'+(state.mode==='recipes'?' on':'')+'" data-act="mode" data-m="recipes" title="JEI 的 R">制作 R</button>'
+      + '<button class="p-btn'+(state.mode==='uses'?' on':'')+'" data-act="mode" data-m="uses" title="JEI 的 U">用途 U</button>'
+    + '</span>'
+    + '<input class="ed-search" id="qBox" placeholder="搜名称/id，支持 @命名空间 #标签 $后缀" value="'+esc(state.q)+'">'
+    + (chips.length ? chips.join('') : '')
+    + (state.q ? '<button class="p-btn" data-act="clearq">✕ 清空</button>' : '')
+    + '<button class="p-btn'+(state.focus&&state.fav.includes(state.focus)?' on':'')+'" data-act="fav" title="JEI 的 F">'
+      + (state.focus&&state.fav.includes(state.focus)?'★ 已收藏':'☆ 收藏 F')+'</button>';
+}
+function renderPanel(){
+  const id = state.focus;
+  const out = id ? outputsOf(id).length : 0, inp = id ? inputsOf(id).length : 0;
+  const tags = id ? (itemTags.get(id)||[]) : [];
+  const noIcon = ITEMS.filter(i=>!iconOf.get(i.id)).length;
+
+  let focusBlock;
+  if (!id){
+    focusBlock = '<div class="p-empty">没有焦点。在清单里搜一个物品，或在索引态里点一个。</div>';
+  } else {
+    const ic = iconOf.get(id);
+    focusBlock =
+      '<div class="focus-card">'
+        + (ic ? '<img class="bigimg" src="'+ic+'" alt="">' : '<span class="bigimg ig-ph" style="width:44px;height:44px;font-size:18px">'+(nameOf.get(id)||id)[0]+'</span>')
+        + '<div style="min-width:0;display:flex;flex-direction:column;gap:2px">'
+          + '<span class="nm">'+esc(nameOf.get(id)||id)+'</span>'
+          + '<span class="mono" style="font-family:var(--mc-font-mono);font-size:11px;word-break:break-all">'+esc(id)+'</span>'
+          + '<span class="ed-count">'+esc(NS(id))+(ic?'':' · 无图标')+'</span>'
+        + '</div>'
+      + '</div>'
+      + '<div class="stat-line"><span>作为产物 <b>'+out+'</b></span><span>作为原料 <b>'+inp+'</b></span><span>标签 <b>'+tags.length+'</b></span></div>'
+      + '<div class="act-line">'
+        + '<button class="p-btn'+(state.mode==='recipes'?' on':'')+'" data-act="mode" data-m="recipes">制作 R</button>'
+        + '<button class="p-btn'+(state.mode==='uses'?' on':'')+'" data-act="mode" data-m="uses">用途 U</button>'
+        + '<button class="p-btn'+(state.fav.includes(id)?' on':'')+'" data-act="fav">'+(state.fav.includes(id)?'★ 取消收藏':'☆ 收藏')+'</button>'
+      + '</div>'
+      + (tags.length ? '<div class="p-section"><div class="p-title">标签 <span class="count">'+tags.length+'</span></div><div>'
+          + tags.slice(0,14).map(t=>'<span class="tag-chip">#'+esc(shortTag(t))+'</span>').join('')
+          + (tags.length>14?'<span class="p-empty">…另有 '+(tags.length-14)+'</span>':'')+'</div></div>'
+        : '<div class="p-empty">这个物品没有登记标签。</div>')
+      + '<div class="note">原型说明：收藏与最近访问按项目准则应落后端 + URL（换浏览器不丢），此处暂存 localStorage 仅用于演示交互。</div>';
+  }
+
+  const favs = state.fav.length
+    ? state.fav.map(fid=>'<div class="p-row click" data-act="focus" data-id="'+esc(fid)+'">'
+        + '<span class="star">★</span>'
+        + (iconOf.get(fid)?'<img src="'+iconOf.get(fid)+'" style="width:18px;height:18px;image-rendering:pixelated">':'')
+        + '<span class="grow">'+esc(nameOf.get(fid)||fid)+'</span>'
+        + '<button class="p-btn" data-act="unfav" data-id="'+esc(fid)+'" style="padding:0 5px">✕</button></div>').join('')
+    : '<div class="p-empty">尚未收藏。选中物品按 F。</div>';
+
+  const hist = state.hist.length
+    ? state.hist.slice(0,12).map(h=>'<div class="p-row click" data-act="focus" data-id="'+esc(h.id)+'" title="'+esc(h.id)+'">'
+        + (iconOf.get(h.id)?'<img src="'+iconOf.get(h.id)+'" style="width:18px;height:18px;image-rendering:pixelated">':'')
+        + '<span class="grow">'+esc(nameOf.get(h.id)||h.id)+'</span>'
+        + '<span class="sub num">'+new Date(h.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})+'</span></div>').join('')
+      + '<div style="display:flex;gap:4px;margin-top:4px"><button class="p-btn" data-act="clearhist">清空最近</button></div>'
+    : '<div class="p-empty">还没有访问记录。</div>';
+
+  document.getElementById('tpBody').innerHTML =
+    '<div class="p-section">'+focusBlock+'</div>'
+    + '<div class="p-section"><div class="p-title">收藏 <span class="count">'+state.fav.length+'</span></div>'+favs+'</div>'
+    + '<div class="p-section"><div class="p-title">最近访问 <span class="count">'+state.hist.length+'</span></div>'+hist+'</div>'
+    + '<div class="note">数据：'+ITEMS.length+' 物品 · '+RECIPES.length+' 配方 · '+Object.keys(TAGS).length+' 标签 · MC '+D.mcVersion
+      + '<br>图标缺失 '+noIcon+' 项（树叶/床/旗帜/潜影盒等需要方块模型或实体渲染，静态导图拿不到）—— 一律用首字占位，不做假图标。'
+      + '<br>命名空间：全部为 <span class="mono">minecraft</span>，所以 @ 前缀在本数据集里不产生区分度（真实整合包会有多命名空间）。</div>';
+}
+function renderRail(){
+  const tools = [{k:'sources',i:'◱',t:'来源'},{k:'quest',i:'☰',t:'章节'},{k:'store',i:'▤',t:'商店'},{k:'build',i:'⛏',t:'构建'},{k:'run',i:'▶',t:'运行'}];
+  document.getElementById('rail').innerHTML =
+    tools.map(t=>'<button class="rail-btn" title="'+t.t+'">'+t.i+'</button>').join('')
+    + '<span class="grow"></span><button class="rail-btn" title="设置">⚙</button>';
+}
+function renderStatus(){
+  const p = new URLSearchParams(location.hash.replace(/^#/,''));
+  document.getElementById('sbPack').textContent = 'pack-35c7e82a · MC ' + D.mcVersion + ' · forge';
+  document.getElementById('sbStats').textContent = ITEMS.length + ' 物品 · ' + RECIPES.length + ' 配方' + (state.focus ? ' · 焦点 ' + state.focus : '');
+  document.getElementById('sbHash').textContent = location.hash || '#';
+}
+
+/* ── 总渲染 ─────────────────────────────────────────────────── */
+function render(){
+  writeHash();
+  renderHeader(); renderToolbar();
+  document.getElementById('stage').innerHTML = state.lens !== 'graph'
+    ? '<div class="ed-placeholder">本原型只实现 <b>关系态</b>。透镜「'+LENSES.find(l=>l.k===state.lens).label+'」是二级能力，切回去看关系态。<br>'
+      + '<span style="font-size:12px">这正说明关系态不是独立页面：它和索引/链路/魔改共用同一个焦点、同一套 URL。</span></div>'
+    : (state.view === 'canvas' ? renderCanvas() : renderList());
+  renderPanel(); renderRail(); renderStatus();
+}
+
+/* ── 交互 ───────────────────────────────────────────────────── */
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const act = el.getAttribute('data-act');
+  if (act === 'focus'){ setFocus(el.getAttribute('data-id'), false); return; }
+  if (act === 'crumb'){ const id = el.getAttribute('data-id'); const i = state.path.indexOf(id); if (i>=0){ state.path = state.path.slice(0,i+1); state.focus = id; state.rIdx=0; render(); } return; }
+  if (act === 'back'){ back(); return; }
+  if (act === 'ridx'){ const i = Number(el.getAttribute('data-i')); if (Number.isFinite(i)){ state.rIdx = i; render(); } return; }
+  if (act === 'mode'){ state.mode = el.getAttribute('data-m'); state.rIdx = 0; render(); return; }
+  if (act === 'view'){ state.view = el.getAttribute('data-v'); render(); return; }
+  if (act === 'seg'){ state.seg = el.getAttribute('data-k'); state.listCount = 60; render(); return; }
+  if (act === 'more'){ state.listCount += 60; render(); return; }
+  if (act === 'clearq'){ state.q = ''; state.listCount = 60; render(); return; }
+  if (act === 'fav'){ if (state.focus) toggleFav(state.focus); return; }
+  if (act === 'unfav'){ toggleFav(el.getAttribute('data-id')); return; }
+  if (act === 'clearhist'){ state.hist = []; saveHist(); render(); return; }
+  if (act === 'lens'){ state.lens = el.getAttribute('data-k'); render(); return; }
+  if (act === 'pick-recipe'){ const o = el.getAttribute('data-out'); if (o && itemById.has(o)) setFocus(o, false); else { state.view='canvas'; render(); } return; }
+  if (act === 'slot'){
+    const key = el.getAttribute('data-key'), id = el.getAttribute('data-id');
+    const cyc = el.getAttribute('data-cyc') === '1', n = Math.max(1, Number(el.getAttribute('data-n')) || 1);
+    state.slotSel = key;
+    if (cyc){ state.cycle[key] = ((state.cycle[key]||0) + 1) % n; render(); }
+    else if (id){ setFocus(id); }   // 物品槽：下钻
+    return;
+  }
+});
+document.addEventListener('contextmenu', e => {
+  const el = e.target.closest('[data-act="slot"]');
+  if (!el) return;
+  const id = el.getAttribute('data-id'); if (!id) return;
+  e.preventDefault();
+  if (!itemById.has(id)) return;
+  state.focus = id; state.mode = 'uses'; state.rIdx = 0;
+  state.path = [id];
+  render();
+});
+document.addEventListener('input', e => {
+  if (e.target.id !== 'qBox') return;
+  state.q = e.target.value; state.listCount = 60;
+  const keep = e.target.selectionStart;
+  render();
+  const box = document.getElementById('qBox');
+  if (box){ box.focus(); try { box.setSelectionRange(keep, keep); } catch(_){} }
+});
+
+/* Hover 提示：JEI tooltip 的对等物（名称 / id / 命名空间 / 标签） */
+const tip = document.getElementById('tip');
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest('[data-act="slot"], .ig-tile, .crumb');
+  if (!el) return;
+  const id = el.getAttribute('data-id');
+  if (!id || !itemById.has(id)) return;
+  const tags = (itemTags.get(id)||[]).slice(0,4).map(t=>'#'+shortTag(t)).join(' ');
+  tip.innerHTML = '<div class="t-nm">'+esc(nameOf.get(id)||id)+'</div><div class="t-id">'+esc(id)+'</div>'
+    + (tags ? '<div class="t-tag">'+esc(tags)+'</div>' : '');
+  tip.style.display = 'block';
+});
+document.addEventListener('mousemove', e => {
+  if (tip.style.display !== 'block') return;
+  const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = e.clientX + pad, y = e.clientY + pad;
+  if (x + w > innerWidth - 8) x = e.clientX - w - pad;
+  if (y + h > innerHeight - 8) y = e.clientY - h - pad;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+});
+document.addEventListener('mouseout', e => { if (e.target.closest('[data-act="slot"], .ig-tile, .crumb')) tip.style.display = 'none'; });
+
+/* 快捷键：输入框内不劫持字母（与 JEI 文档 §8 一致） */
+const HOTKEYS = [
+  ['R','制作（Recipes）'], ['U','用途（Uses）'],
+  ['← / →','同一目标的多条配方翻页'],
+  ['[ / ]','轮换标签槽候选（JEI 的 C 已被透镜占用，故让位）'],
+  ['点材料槽','下钻：该材料成为新焦点'],
+  ['右键材料槽','直接看它的用途'],
+  ['V','画布（下钻）/ 清单（浏览）切换'],
+  ['/','聚焦搜索框'],
+  ['Enter（搜索框）','跳到最佳匹配物品'],
+  ['Esc','退回上一层'],
+  ['F','收藏 / 取消收藏焦点'],
+  ['?','本帮助'],
+];
+document.getElementById('helpRows').innerHTML = HOTKEYS.map(([k,v])=>'<tr><td><kbd>'+esc(k)+'</kbd></td><td>'+esc(v)+'</td></tr>').join('');
+const help = document.getElementById('help');
+document.getElementById('helpBtn').onclick = () => help.classList.toggle('open');
+help.onclick = e => { if (e.target === help) help.classList.remove('open'); };
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape'){ help.classList.remove('open'); if (state.path.length>1) back(); else { state.slotSel=null; render(); } return; }
+  const tag = (e.target.tagName||'').toLowerCase();
+  if (tag === 'input' || tag === 'textarea'){
+    if (e.key === 'Enter'){
+      const c = parseQuery(state.q);
+      const hit = ITEMS.find(it => itemMatches(it,c));
+      if (hit){ setFocus(hit.id, false); state.view = 'canvas'; render(); }
+    }
+    return;
+  }
+  if (e.key === '?' || (e.key === '/' && e.shiftKey)){ help.classList.toggle('open'); e.preventDefault(); return; }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'r'){ state.mode='recipes'; state.rIdx=0; render(); e.preventDefault(); return; }
+  if (k === 'u'){ state.mode='uses'; state.rIdx=0; render(); e.preventDefault(); return; }
+  if (k === 'v'){ state.view = state.view==='canvas'?'list':'canvas'; render(); e.preventDefault(); return; }
+  if (k === 'f'){ if (state.focus) toggleFav(state.focus); e.preventDefault(); return; }
+  if (e.key === '/'){ const b=document.getElementById('qBox'); if(b){ b.focus(); b.select(); } e.preventDefault(); return; }
+  if (state.view === 'canvas'){
+    const list = state.focus ? (state.mode==='recipes'?outputsOf(state.focus):inputsOf(state.focus)) : [];
+    if (e.key === 'ArrowRight' && list.length){ state.rIdx = (state.rIdx+1) % list.length; render(); e.preventDefault(); return; }
+    if (e.key === 'ArrowLeft' && list.length){ state.rIdx = (state.rIdx-1+list.length) % list.length; render(); e.preventDefault(); return; }
+    if (e.key === '[' || e.key === ']'){
+      const key = state.slotSel;
+      if (key){
+        const holder = document.querySelector('[data-key="'+key+'"]');
+        if (holder && holder.getAttribute('data-cyc') === '1'){
+          const n = Math.max(1, Number(holder.getAttribute('data-n')) || 1);
+          state.cycle[key] = ((state.cycle[key]||0) + (e.key===']'?1:-1) + n) % n;
+          render();
+        }
+      }
+      e.preventDefault(); return;
+    }
+  }
+});
+
+/* ── 启动 ───────────────────────────────────────────────────── */
+document.getElementById('packChip').textContent = '▾ Antimatter Pack · forge 1.21.1';
+readHash();
+/* 默认焦点挑一个信息量足的：金锭有 10 条配方、跨 4 种设备（熔炉/高炉/工作台有序/无序），
+   一进来就能看到翻页、设备差异和「位置 n/m」——JEI 最核心的那套。 */
+if (!state.focus){
+  const prefer = ['minecraft:gold_ingot','minecraft:barrel','minecraft:andesite_stairs'];
+  const start = prefer.map(x=>ITEMS.find(i=>i.id===x)).find(Boolean) || ITEMS[0];
+  state.focus = start.id; state.path = [start.id];
+  state.hist = [{id:start.id, at:Date.now()}];
+}
+render();
+window.__ready = true;
+console.log('[prototype] items='+ITEMS.length+' recipes='+RECIPES.length+' tags='+Object.keys(TAGS).length+' normalized='+NORM.length+' rules='+NORM.filter(n=>n.kind==='rule').length);
+</script>
+</body>
+</html>

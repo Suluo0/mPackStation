@@ -76,3 +76,63 @@ func TestCatalogRevisionChangesWithSources(t *testing.T) {
 		t.Fatalf("source revision %d, want 2", revision)
 	}
 }
+
+// 回归（0028）：纯展示字段不该让目录作废。
+// 0013 的触发器是 `AFTER UPDATE ON pack_mods`（不带列名），所以改一次分类标签
+// 就会把整个物品目录打成 pending，用户看到的是 409 catalog_stale + 要重建 13000 个文件。
+// 这里把「哪些列改了算数」钉死：category 不算，status 算。
+func TestCatalogRevisionIgnoresDisplayOnlyModFields(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "category.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err = db.Exec(`INSERT INTO packs(id,name,mc_version,loader,status,created_at,updated_at,last_edited_at) VALUES('p','Pack','1.21.1','fabric','active',1,1,1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`INSERT INTO pack_mods(id,pack_id,source,display_name,status,added_at,updated_at) VALUES('m','p','local','Mod','installed',1,1)`); err != nil {
+		t.Fatal(err)
+	}
+	revision := func() int {
+		t.Helper()
+		var v int
+		if e := db.QueryRow(`SELECT source_revision FROM pack_catalog_state WHERE pack_id='p'`).Scan(&v); e != nil {
+			t.Fatal(e)
+		}
+		return v
+	}
+	base := revision()
+
+	// 分类：搬来搬去、改名、清空 —— 一次都不该动目录版本。
+	for _, category := range []string{"优化", "科技", "主线", ""} {
+		if _, err = db.Exec(`UPDATE pack_mods SET category=?, updated_at=updated_at+1 WHERE pack_id='p' AND id='m'`, category); err != nil {
+			t.Fatal(err)
+		}
+		if got := revision(); got != base {
+			t.Fatalf("category=%q 把目录版本从 %d 抬到 %d —— 分类是纯展示字段，不该让目录作废", category, base, got)
+		}
+	}
+	// 同值空写也不该动（`UPDATE OF` 只看语句提到哪些列，守卫才能拦住这种）。
+	if _, err = db.Exec(`UPDATE pack_mods SET status=status WHERE pack_id='p' AND id='m'`); err != nil {
+		t.Fatal(err)
+	}
+	if got := revision(); got != base {
+		t.Fatalf("空写把目录版本从 %d 抬到 %d", base, got)
+	}
+	// 启停是会改变目录成员的（重建时 Status != "installed" 会被跳过），必须仍然算数。
+	if _, err = db.Exec(`UPDATE pack_mods SET status='disabled' WHERE pack_id='p' AND id='m'`); err != nil {
+		t.Fatal(err)
+	}
+	if got := revision(); got != base+1 {
+		t.Fatalf("停用模组后目录版本 = %d, want %d —— 停用会改变目录成员，必须让目录失效", got, base+1)
+	}
+	// 换版本同理（sha1 有 FK 指向 jar_index，这里用没有 FK 的 version_id，
+	// 反正两者都是「换了一个 mod 文件」的信号，触发器同一档）。
+	base = revision()
+	if _, err = db.Exec(`UPDATE pack_mods SET version_id='v-2' WHERE pack_id='p' AND id='m'`); err != nil {
+		t.Fatal(err)
+	}
+	if got := revision(); got != base+1 {
+		t.Fatalf("换 version_id 后目录版本 = %d, want %d", got, base+1)
+	}
+}

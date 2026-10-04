@@ -1,10 +1,13 @@
 import {useEffect, useRef, useState} from 'react';
 import {fetchDashboard, type DashboardPack} from '../api/dashboard';
+import {loaderLabel} from '../api/packs';
 import {useUrlPatch, useUrlState} from '../app/url';
 import {usePackSummary} from '../app/PackSummaryContext';
+import {Icon} from '../ui/Icon';
 
 /* 左上角包名菜单（现代 IDEA 的项目名位置，取代品牌字样 + 右上角⚙）：
-   包列表（健康点）+ 只看待处理 + 新建/导入 + 编辑器设置。 */
+   包列表（健康点）+ 只看待处理 + 新建/导入 + 编辑器设置。
+   按钮文案 = 包名 · MC 版本 · 加载器（如「验证包-0025 · 1.21.1 · Fabric」）。 */
 export function PackMenu() {
   const {packId} = useUrlState();
   const patch = useUrlPatch();
@@ -35,11 +38,15 @@ export function PackMenu() {
   return (
     <div ref={ref} style={{position: 'relative'}}>
       <button type="button" className="pack-switcher" onClick={() => setOpen(v => !v)}
-        title={current ? `${current.name} · MC ${current.mcVersion} · ${current.loader}` : '选择整合包'}>
-        <span className="glyph" style={{color: 'var(--mc-primary)'}}>◆</span>
+        title={current
+          ? `${current.name} · ${current.mcVersion} · ${loaderLabel(current.loader)}`
+          : '选择整合包'}>
         <span className="ps-name">{current ? current.name : '选择整合包'}</span>
-        {current && <span className="ps-sub">MC {current.mcVersion}</span>}
-        <span style={{color: 'var(--mc-muted)'}}>▾</span>
+        {current && <span className="ps-sep">·</span>}
+        {current && <span className="ps-sub">{current.mcVersion}</span>}
+        {current && <span className="ps-sep">·</span>}
+        {current && <span className="ps-sub">{loaderLabel(current.loader)}</span>}
+        <Icon name="caretDown" size={14}/>
       </button>
       {open && (
         <div className="ps-menu">

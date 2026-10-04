@@ -11,6 +11,7 @@ import {StatusBar} from './StatusBar';
 import {SettingsModal} from './SettingsModal';
 import {OnboardingChecklist} from './OnboardingChecklist';
 import {CommandPalette} from './CommandPalette';
+import {GlobalContextMenu} from './GlobalContextMenu';
 import {useHotkeys} from './useHotkeys';
 import {useUrlState} from './url';
 
@@ -40,10 +41,12 @@ export function AppFrame() {
               <EditorArea/>
             </div>
             <BottomDock/>
-            <StatusBar onOpenPalette={() => openPalette(true)}/>
+            <StatusBar/>
             <OnboardingChecklist/>
             <CommandPalette open={paletteOpen} onOpenChange={openPalette}/>
             <SettingsModal open={settings}/>
+            {/* 全局右键：关掉浏览器原生菜单，换成应用自己的（见组件注释里的两条例外） */}
+            <GlobalContextMenu onOpenPalette={() => openPalette(true)}/>
           </div>
         </CatalogProvider>
       </PackSummaryProvider>

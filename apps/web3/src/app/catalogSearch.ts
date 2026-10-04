@@ -175,6 +175,16 @@ export function encodeFilterSpec(conds: FilterCond[]): string {
 export function textMatchItem(item: CatalogItem, q: string): boolean {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
+  // /pattern → 正则匹配（JEI 常见搜索方式）
+  if (needle.startsWith('/')) {
+    try {
+      const re = new RegExp(needle.slice(1), 'i');
+      return re.test(item.id) || re.test(item.displayName)
+        || (item.names ?? []).some(n => re.test(n.name));
+    } catch {
+      return false; // 非法正则当无匹配
+    }
+  }
   return item.id.toLowerCase().includes(needle)
     || item.displayName.toLowerCase().includes(needle)
     || (item.names ?? []).some(n => n.name.toLowerCase().includes(needle));

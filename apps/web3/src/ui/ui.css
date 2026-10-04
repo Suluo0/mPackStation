@@ -1,0 +1,300 @@
+/* ui/ 基础组件的样式。
+   规则：颜色一律 var(--mc-*)，不写字面量 —— 换主题只改 styles/themes.css。 */
+
+.ui-search {
+  display: flex;
+  align-items: center;
+  gap: var(--mc-sp-xs);
+  min-width: 0;
+}
+
+/* 输入框与按钮之间夹一层 field：spinner 要落在**输入框内部**的右端，
+   而按钮是 input 的兄弟节点 —— 没有这层 relative 容器就定位不进去。 */
+.ui-search-field {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.ui-search .p-input {
+  flex: 1;
+  min-width: 0;
+  /* 常留 spinner 的位置：不然忙起来文字会往左跳一下。 */
+  padding-right: 22px;
+}
+
+.ui-search-spin {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+/* ── 按钮（ui/Button.tsx）─────────────────────────────────
+   皮肤仍是 .p-btn / .tp-icon-btn（在 app/frame.css、panels/panels.css），
+   这里只补组件带来的两种新形态：带图标的混排、危险动作。 */
+.ui-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 类名带 ui- 前缀：frame.css 里已有 .p-btn.primary，同名的自定义变体容易撞车。 */
+.p-btn.ui-danger {
+  color: var(--mc-fail);
+  border-color: var(--mc-fail);
+}
+.p-btn.ui-danger:hover:not(:disabled) { background: var(--mc-fail-bg); }
+.p-btn.ui-danger:disabled { color: var(--mc-muted); border-color: var(--mc-line); }
+
+/* ── 弹层（ui/Modal.tsx）───────────────────────────────────
+   从 panels/panels.css 迁来 —— 弹层是基础组件，样式跟着组件走，
+   不该躺在某个面板的样式表里。类名未改，老调用点不用动。 */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(45, 36, 26, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.mini-modal {
+  width: min(320px, calc(100vw - 32px));
+  background: var(--mc-fill);
+  border: 1px solid var(--mc-line-strong);
+  border-radius: var(--mc-radius-panel);
+  box-shadow: var(--mc-shadow-lg);
+  padding: var(--mc-sp);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mini-modal .mm-actions { display: flex; justify-content: flex-end; gap: 6px; }
+
+/* ── 加载指示（ui/Spinner.tsx）─────────────────────────────
+   三段等距弧匀速转。0.9s 一圈：再快看着慌，再慢像卡住。 */
+.ui-spin {
+  display: inline-flex;
+  align-items: center;
+  color: var(--mc-primary);
+  animation: ui-spin-rotate 0.9s linear infinite;
+}
+
+@keyframes ui-spin-rotate {
+  to { transform: rotate(360deg); }
+}
+
+/* 关掉动效偏好的用户：不转会让人以为卡死了，所以只放慢不停止。 */
+@media (prefers-reduced-motion: reduce) {
+  .ui-spin { animation-duration: 2.4s; }
+}
+
+/* 搜索提交键：必须是放大镜图标而不是文字。
+   中文「搜」挤得下、英文 search 放不下，同一个组件不能在两种语言下换长度。 */
+.ui-search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--mc-line-strong);
+  border-radius: var(--mc-radius);
+  background: var(--mc-fill);
+  color: var(--mc-text-2);
+  cursor: pointer;
+  transition: background var(--mc-dur) var(--mc-ease), color var(--mc-dur) var(--mc-ease);
+}
+
+.ui-search-btn:hover:not(:disabled) {
+  background: var(--mc-hover);
+  color: var(--mc-text);
+}
+
+.ui-search-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── 右键菜单（全站唯一实现，见 ui/ContextMenu.tsx）──────────
+   从 panels/panels.css 迁来 —— 菜单是基础组件，样式跟着组件走，
+   不该躺在某个面板的样式表里。 */
+
+.ctx-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 160px;
+  background: var(--mc-fill);
+  border: 1px solid var(--mc-line-strong);
+  border-radius: var(--mc-radius);
+  box-shadow: var(--mc-shadow-lg);
+  padding: 3px;
+}
+
+/* flex 而不是 block：项可以带图标，图标与文字要对齐。 */
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  color: var(--mc-text);
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: var(--mc-radius);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.ctx-menu-item:hover:not(:disabled) { background: var(--mc-hover); }
+.ctx-menu-item.danger { color: var(--mc-fail); }
+.ctx-menu-item.danger:hover:not(:disabled) { background: var(--mc-fail-bg); }
+.ctx-menu-item:disabled { color: var(--mc-muted); cursor: not-allowed; }
+.ctx-menu-item .grow { flex: 1; }
+.ctx-menu-sep { height: 1px; background: var(--mc-line); margin: 3px 0; }
+
+/* 带子菜单的项：右侧一个 chevron，子菜单贴在它右边；
+   主菜单被翻到左侧时（贴着视口右缘），子菜单要翻到左边去，否则出视口。 */
+.ctx-sub-wrap { position: relative; }
+.ctx-menu-item.ctx-has-sub.open { background: var(--mc-hover); }
+.ctx-menu-sub {
+  position: absolute;
+  left: calc(100% - 2px);
+  top: -4px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+.ctx-menu-sub.flip { left: auto; right: calc(100% - 2px); }
+
+/* ── 主-从布局（ui/MasterDetail.tsx）───────────────────────
+   骨架不定高不定宽：底边栏传 .dock（固定高度），面板内的自己给 flex:1。
+   组件只提供方向与滚动，尺寸交回调用方 —— 这样同一个骨架能同时嵌在
+   200px 高的底边栏和整屏的编辑区里。 */
+.md {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.md-head {
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--mc-sp-sm);
+  border-bottom: 1px solid var(--mc-line);
+}
+
+.md-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--mc-text);
+}
+
+.md-extra {
+  font-size: 11.5px;
+  color: var(--mc-text-2);
+}
+
+.md-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.md-list {
+  flex: none;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--mc-sp-xs);
+}
+
+/* 5px 太窄会拖不中，太宽又吃掉内容区；hover 才显色，平时不画边框。 */
+.md-divider {
+  flex: none;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background var(--mc-dur) var(--mc-ease);
+}
+.md-divider:hover { background: var(--mc-primary-bg); }
+
+.md-detail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.md-detail-head {
+  height: 28px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--mc-sp-sm);
+  border-bottom: 1px solid var(--mc-line);
+  color: var(--mc-text-2);
+  font-size: 12px;
+}
+
+.md-detail-title {
+  font-weight: 600;
+  color: var(--mc-text);
+}
+
+/* column 而不是默认：调用方常在里面再放一层自己滚的区域（日志流）。 */
+.md-detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--mc-sp-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--mc-sp-sm);
+}
+
+/* ── 只读字段栅格（ui/DetailFields.tsx）───────────────────── */
+.df {
+  flex: none;
+  display: grid;
+  gap: 4px var(--mc-sp);
+  font-size: 12px;
+}
+
+.df-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.df-item.wide { grid-column: 1 / -1; }
+
+.df-label {
+  flex: none;
+  color: var(--mc-text-2);
+}
+
+.df-value {
+  min-width: 0;
+  color: var(--mc-text);
+  overflow-wrap: anywhere;
+}
+
+.df-value.mono { font-family: var(--mc-font-mono); font-size: 11.5px; }
+.df-value.tone-fail { color: var(--mc-fail); }
+.df-value.tone-ok { color: var(--mc-success); }
+.df-value.tone-muted { color: var(--mc-muted); }

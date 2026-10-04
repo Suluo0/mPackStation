@@ -5,7 +5,6 @@ package httpapi
 
 import (
 	"context"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -69,21 +68,19 @@ func apiError(w http.ResponseWriter, r *http.Request, status int, code, message 
 }
 
 // NewRouter assembles the local API over an explicit database handle.
-// token is the required write-token (see auth.md); an empty token rejects all
-// write requests with 503 auth_not_configured.
-func NewRouter(db *sql.DB, version, token string) http.Handler {
-	return newRouter(service.New(db), service.NewTaskAPI(db), service.NewP7Service(db), service.NewImportService(db), version, token)
+func NewRouter(db *sql.DB, version string) http.Handler {
+	return newRouter(service.New(db), service.NewTaskAPI(db), service.NewP7Service(db), service.NewImportService(db), version)
 }
 
 // NewRouterWithService is useful to tests and future composition roots.
-func NewRouterWithService(app *service.API, version, token string) http.Handler {
-	return newRouter(app, nil, nil, nil, version, token)
+func NewRouterWithService(app *service.API, version string) http.Handler {
+	return newRouter(app, nil, nil, nil, version)
 }
 
 // NewRouterWithProviders wires real provider adapters (Modrinth/CurseForge)
 // into both the catalog service and the publish pipeline. A non-nil queue
 // additionally enables task-based tool installation.
-func NewRouterWithProviders(db *sql.DB, version, token string, reg *provider.Registry, q *task.Queue) http.Handler {
+func NewRouterWithProviders(db *sql.DB, version string, reg *provider.Registry, q *task.Queue) http.Handler {
 	app := service.New(db)
 	app.SetProviderRegistry(reg)
 	if q != nil {
@@ -96,10 +93,10 @@ func NewRouterWithProviders(db *sql.DB, version, token string, reg *provider.Reg
 	}
 	p7 := service.NewP7Service(db)
 	p7.SetProviderRegistry(reg)
-	return newRouter(app, service.NewTaskAPI(db), p7, service.NewImportService(db), version, token)
+	return newRouter(app, service.NewTaskAPI(db), p7, service.NewImportService(db), version)
 }
 
-func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service, importer *service.ImportService, version, token string) http.Handler {
+func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service, importer *service.ImportService, version string) http.Handler {
 	mux := http.NewServeMux()
 	registerSystemRoutes(mux, app, version)
 	registerDashboardRoutes(mux, app)
@@ -112,7 +109,7 @@ func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service
 	registerPublishRoutes(mux, app, taskAPI, p7, version)
 	registerImportRoutes(mux, importer)
 	registerFSRoutes(mux, app)
-	return requestIDMiddleware(accessLogMiddleware(recoverMiddleware(maxBodyMiddleware(securityMiddleware(token, fallbackEnvelopeMiddleware(mux))))))
+	return requestIDMiddleware(accessLogMiddleware(recoverMiddleware(maxBodyMiddleware(securityMiddleware(fallbackEnvelopeMiddleware(mux))))))
 }
 
 // checkMCVersionCandidate enforces the closed candidate list for the pack
@@ -382,7 +379,25 @@ func maxBodyMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-func securityMiddleware(token string, next http.Handler) http.Handler {
+
+// securityMiddleware guards the loopback boundary, not user identity.
+//
+// Why no write token (user ruling 2026-10-03): this is a single-user local IDE.
+// The server binds 127.0.0.1 only, so the LAN cannot reach it at all, and the
+// frontend is served from the same loopback origin. A token added no real
+// protection — worse, the "how does the frontend obtain the token" chain was
+// itself the source of a 401 bug (vite once read a stale runtime-token belonging
+// to a different instance: reads worked, every write returned 401).
+//
+// What is kept, and why it still matters even on loopback:
+//   - Host/Origin checks. A malicious web page in the user's own browser can
+//     issue requests to 127.0.0.1 (that's what DNS rebinding is). Same-origin
+//     policy does not stop a page from *sending* requests, only from reading
+//     the responses. The Origin check rejects those cross-site writes.
+//   - If the bind address is ever widened past loopback, cross-site request
+//     forgery becomes real and there is no token left to stop it. Treat widening
+//     the bind address as requiring a security review.
+func securityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !validHost(r.Host) {
 			apiError(w, r, http.StatusBadRequest, "invalid_host", "request host is not allowed")
@@ -392,49 +407,13 @@ func securityMiddleware(token string, next http.Handler) http.Handler {
 			apiError(w, r, http.StatusForbidden, "invalid_origin", "request origin is not allowed")
 			return
 		}
-		// GET 默认免鉴权(本机工作台),但 /api/fs/browse 是例外:它把服务器文件系统的
-		// 任意目录名列出来,进程绑在 0.0.0.0 时同网段任何人都能翻。链路测试里
-		// 不带令牌 GET /api/fs/browse?path=/etc 直接返回了 /private/etc。
-		// 目录浏览只在配置导出/启动目录时用得到,前端本来就拿得到令牌,故改需令牌。
-		isRead := r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions
-		if isRead && !tokenRequiredForRead(r.URL.Path) {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if !writeTokenAccepted(w, r, token) {
-			return
-		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// writeTokenAccepted enforces the bootstrap token (MPACK_TOKEN env, or the
-// generated random value persisted to <data>/runtime-token). Hardcoded
-// fallbacks are forbidden by auth.md / decision D-8. It returns false after
-// writing the error response, so callers must stop.
-func writeTokenAccepted(w http.ResponseWriter, r *http.Request, token string) bool {
-	if token == "" {
-		apiError(w, r, http.StatusServiceUnavailable, "auth_not_configured", "write authentication is not configured")
-		return false
-	}
-	provided := r.Header.Get("X-MPack-Token")
-	if len(token) != len(provided) || subtle.ConstantTimeCompare([]byte(token), []byte(provided)) != 1 {
-		apiError(w, r, http.StatusUnauthorized, "unauthorized", "write authentication failed")
-		return false
-	}
-	return true
-}
-
-// tokenRequiredForRead lists read endpoints whose payload is sensitive enough to
-// require the token: an absolute local directory listing is not something a
-// LAN-bound workbench should hand to any unauthenticated client.
-func tokenRequiredForRead(path string) bool {
-	return path == "/api/fs/browse"
-}
-
 // Host 校验防的是 DNS rebinding:攻击者域名重绑到本机后,浏览器送来的 Host 是
-// 域名而不是地址。字面 IP 只认回环与私有网段(跨机访问时 Host 就是本机局域网地址),
-// 主机名必须出现在 MPACK_ALLOWED_HOSTS 里。
+// 域名而不是地址。这层不能因为「只监听回环」而删 —— 浏览器里任意网页都能向
+// 127.0.0.1 发请求,同源策略挡不住「发出去」,只挡得住「读到响应」。
 func validHost(host string) bool {
 	h := hostName(host)
 	if h == "" {

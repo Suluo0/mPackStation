@@ -62,18 +62,12 @@ export async function get<T>(url: string, schema: ZodType<T>, options: RequestOp
   }
 }
 
-/* 非 GET 请求需要 X-MPack-Token。令牌由 vite.config.ts 在构建期注入
-   （VITE_MPACK_TOKEN 环境变量优先，否则读后端 data/runtime-token)。
-   不存在硬编码兜底；注入为空时写请求会被后端 401，错误会如实抛给界面。 */
-const WRITE_TOKEN: string = typeof __MPACK_WRITE_TOKEN__ === 'string' ? __MPACK_WRITE_TOKEN__ : '';
-
+/* 本机单人工具，后端只监听 127.0.0.1（apps/web3/vite.config.ts 的 host 同为回环），
+   局域网物理上够不到后端，因此不需要写令牌，也不存在「令牌从哪来」这条链路。
+   曾经存在的 X-MPack-Token 注入是 401 故障的根源：vite 读到另一个实例遗留的
+   过期 runtime-token，读接口正常而写接口全挂，表现为「界面加载得出来但点不动」。 */
 function writeHeaders(): Record<string, string> {
-  return {'content-type': 'application/json', 'X-MPack-Token': WRITE_TOKEN};
-}
-
-/** 需令牌的读请求只需要令牌本身,不需要 content-type。 */
-export function tokenHeaders(): Record<string, string> {
-  return {'X-MPack-Token': WRITE_TOKEN};
+  return {'content-type': 'application/json'};
 }
 
 export type RequestOptions = {headers?: Record<string, string>};

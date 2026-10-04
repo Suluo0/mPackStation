@@ -14,11 +14,11 @@
 
 | 项 | 值 |
 |---|---|
-| 后端基址 | `http://127.0.0.1:18871`（只绑回环；跨机访问走前端 dev 服务器代理） |
-| 前端开发服务器 | `0.0.0.0:5273`（支持另一台设备用局域网地址打开），`/api` 由 vite 代理到后端（`changeOrigin: false`，Host 原样透传） |
-| 写鉴权 | 非 GET 请求需 `X-MPack-Token`，缺失 401，未配置 503 `auth_not_configured` |
+| 后端基址 | `http://127.0.0.1:18872`（只绑回环） |
+| 前端开发服务器 | `127.0.0.1:5271`（只绑回环），`/api` 由 vite 代理到后端 |
+| 写鉴权 | **无**（用户 2026-10-03 定稿）：本机单用户工具，前后端都只监听回环，不引入写令牌。安全边界见 `docs/api/auth.md` |
 | Host 白名单 | `localhost` + 字面 IP 的回环与私有网段（`127/8`、`::1`、`10/8`、`172.16/12`、`192.168/16`、`fc00::/7`），主机名需另经 `MPACK_ALLOWED_HOSTS`（逗号列表）放行，否则 400 `invalid_host` |
-| Origin 白名单 | 与请求 Host 同源即合法（含局域网地址）；`localhost` 与 `127.0.0.1`/`::1` 互为别名；`MPACK_FRONTEND_ORIGIN`（逗号列表）可显式追加跨主机来源，否则 403 `invalid_origin` |
+| Origin 白名单 | 与请求 Host 同源即合法；跨站来源（浏览器里打开的任意网页）一律 403 `invalid_origin` —— 同源策略挡得住「读响应」挡不住「发请求」，这层是 CSRF 的实际防线 |
 | 请求体上限 | 8 MB，超出 413 |
 
 不使用的路径：API 不带 `/api/v1` 前缀；只增字段，破坏性变更才开 `/api/v2`。
@@ -1117,7 +1117,7 @@ CHECK 枚举；在此之前它被 `conflict()` 的白名单悄悄改写成 `depe
 
 ## 6. 模组物品图标解析（2026-09-07）
 
-`POST /api/packs/{packId}/mods/{modId}/content/icons/resolve`，请求体 `{}`，要求现有 `X-MPack-Token`、Host/Origin 安全校验。
+`POST /api/packs/{packId}/mods/{modId}/content/icons/resolve`，请求体 `{}`，要求 Host/Origin 安全校验（无写令牌）。
 
 响应 `200`：
 

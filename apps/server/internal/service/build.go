@@ -146,6 +146,31 @@ func (a *API) CreatePackVersion(ctx context.Context, packID, version, channel, c
 	return packVersionDTO(v), nil
 }
 
+// ExportDir is the safe DTO for a user-approved output directory.
+type ExportDir struct {
+	Name       string `json:"name"`
+	Directory  string `json:"directory"`
+	VerifiedAt int64  `json:"verifiedAt"`
+	CreatedAt  int64  `json:"createdAt"`
+}
+
+// ListExportDirectories returns the approved destinations so the build UI can
+// offer an existing one instead of forcing the user to re-enter a path.
+func (a *API) ListExportDirectories(ctx context.Context) ([]ExportDir, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	rows, err := a.repo.ListExportDirs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ExportDir, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ExportDir{Name: r.Name, Directory: r.AbsolutePath, VerifiedAt: r.MarkerVerifiedAt, CreatedAt: r.CreatedAt})
+	}
+	return out, nil
+}
+
 // RegisterExportDirectory adds an explicit, marker-verified destination. It
 // is intentionally separate from BuildPack so a build can never silently
 // choose an arbitrary user directory.

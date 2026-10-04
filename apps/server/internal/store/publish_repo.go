@@ -298,8 +298,7 @@ func (r *Repository) RegisterExportDir(ctx context.Context, dir ExportDirRecord)
 }
 
 // GetExportDir returns a named approved export directory.
-func (r *Repository) GetExportDir(ctx context.Context, name string) (ExportDirRecord, error) {
-	var d ExportDirRecord
+func (r *Repository) GetExportDir(ctx context.Context, name string) (ExportDirRecord, error) {	var d ExportDirRecord
 	err := r.db.QueryRowContext(ctx, `SELECT name,absolute_path,marker_verified_at,created_at FROM allowed_export_dirs WHERE name=?`, name).Scan(&d.Name, &d.AbsolutePath, &d.MarkerVerifiedAt, &d.CreatedAt)
 	if err == sql.ErrNoRows {
 		return ExportDirRecord{}, ErrNotFound
@@ -308,6 +307,26 @@ func (r *Repository) GetExportDir(ctx context.Context, name string) (ExportDirRe
 		return ExportDirRecord{}, fmt.Errorf("get export directory: %w", err)
 	}
 	return d, nil
+}
+
+// ListExportDirs returns every user-approved export directory. The build UI
+// needs the list to offer a choice; otherwise the only usable name is whatever
+// the caller happened to type first, and a fresh client cannot start a build.
+func (r *Repository) ListExportDirs(ctx context.Context) ([]ExportDirRecord, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT name,absolute_path,marker_verified_at,created_at FROM allowed_export_dirs ORDER BY created_at DESC, name`)
+	if err != nil {
+		return nil, fmt.Errorf("list export directories: %w", err)
+	}
+	defer rows.Close()
+	var out []ExportDirRecord
+	for rows.Next() {
+		var d ExportDirRecord
+		if err := rows.Scan(&d.Name, &d.AbsolutePath, &d.MarkerVerifiedAt, &d.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 // CreateRelease creates or returns the durable idempotency record.
