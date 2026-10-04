@@ -1,6 +1,6 @@
 /**
  * 进度树布局/Tab/requirements 纯函数单测。
- * 设计权威：docs/design/advancement-vanilla-experience.md v1.1
+ * 设计权威：docs/active/design/advancement-vanilla-experience.md v1.1
  * 运行：cd apps/web && node --experimental-strip-types scripts/test-adv-layout.ts
  */
 import assert from 'node:assert/strict';

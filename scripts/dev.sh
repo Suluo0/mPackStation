@@ -47,7 +47,7 @@ echo "[dev] starting backend  (go run, 127.0.0.1:18872, data $DATA)"
 # 无鉴权模式（用户 2026-10-03 定调）：本机单用户 IDE，前后端都只监听回环，
 # 不再需要写令牌 —— 曾经那条「前端怎么拿到令牌」的链路本身就是 401 的根源。
 echo "[dev] starting frontend (vite, 127.0.0.1:5271)"
-# 唯一前端入口 = apps/web3（IDE 式单页，docs/design/web3-ide-shell-v3.md）。
+# 唯一前端入口 = apps/web3（IDE 式单页，docs/active/design/web3-ide-shell-v3.md）。
 # 不传 --host：交给 vite.config.ts 的 server.host（回环），命令行会覆盖它。
 (cd "$ROOT/apps/web3" && npm run dev -- --port 5271 \
   > "$LOGDIR/web.log" 2>&1) &

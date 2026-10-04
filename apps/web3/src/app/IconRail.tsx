@@ -1,7 +1,7 @@
 import {RAIL_TOOLS, TOOLS, useUrlPatch, useUrlState} from './url';
 import {Icon} from '../ui/Icon';
 
-/* 第 2 区 · 侧边按钮栏（六区骨架，见 docs/archive/frontend-refactor/04-align-pack-root.md §8）。
+/* 第 2 区 · 侧边按钮栏（六区骨架，见 docs/backup/frontend-refactor/04-align-pack-root.md §8）。
 
    一个按钮一件事：项目管理 / 新增模组 / 任务书 / Get Version。
    点按钮换的是**第 3 区（侧边栏）的内容**，不是在这条轨道上展开子菜单、也不是

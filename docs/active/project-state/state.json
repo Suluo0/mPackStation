@@ -1,0 +1,2019 @@
+{
+  "schema_version": 1,
+  "project": {
+    "name": "mPackStation",
+    "goal": "Minecraft 整合包工作台:模板开局 → 模组/依赖锁定 → 内容/任务书 → 构建 .mrpack → 部署冒烟 → 便携 Prism 导入并启动 Minecraft。流水线终局必须通向启动一个 Minecraft,否则前面工作没有意义(用户 2026-08-30 定调)。",
+    "goal_source": "user"
+  },
+  "checkpoint": {
+    "id": "cp-2026-10-03-zcode-session",
+    "context_completeness": "partial",
+    "created_at": "2026-10-03T16:50:00+08:00",
+    "note": "Z Code 会话（10-02 11:16 → 10-03 16:08）收尾。本轮落：图标渲染器 R1+R2+R0、模组搜索别名/复合排序、包内模组自定义分类 0027、目录 catalog-v4 清空后复跑闭环、唯一开发服务口径入 AGENTS.md。context_completeness=partial：会话文本层（52 条用户消息 + 全部助手文本）已读，590 条工具调用结果未逐条复核；仓库现状全部以实测为准。本轮新暴露：store 包回归测试 TestPackModCategoryAcrossReads 红（夹具自犯 CHECK），README schema/端口口径过期（已于 65cf1e5 修），日常库清空成因未定。链路引擎 P0 零代码落地。工作区 126 处未提交（75 改 + 51 新），HEAD fe7c4ea。 Git 交付：积压代码提交 6c0aa5d（190 文件 = 117 新增 + 73 修改，19742 插入 / 940 删除，含本轮修复的红夹具）、README 口径同步 65cf1e5，两者已推送 origin/DEV_2610-WK1（首推，远端 tip 65cf1e5）；checkpoint 文档随后单独提交；本轮改动全部经 18872/5271 唯一服务实测。"
+  },
+  "repository": {
+    "path": "/Volumes/Evo/code/mPackStation",
+    "is_git": true,
+    "initial_commit": "0c6edbe",
+    "remote": "https://github.com/Suluo0/mPackStation.git",
+    "structure": "monorepo:apps/web(web1)、apps/web2(IA v2.1 外壳)、apps/web3(当前唯一开发前端,IDE 外壳,端口 5271)、apps/server(Go+SQLite,当前 schema 27)、launcherCore(Rust+mc-launcher-core)、docs/、data/(运行期,gitignore)",
+    "branch": "DEV_2610-WK1",
+    "head": "65cf1e5",
+    "working_tree_clean": false
+  },
+  "tasks": [
+    {
+      "id": "task-verify-contract-4layer",
+      "kind": "task",
+      "title": "四层契约验收体系(可重放)",
+      "status": "verified",
+      "summary": "层1 静态门禁(go build/vet/gofmt基线制/go test + tsc)、层2 curl 契约矩阵(41→48→50→53 项)、层3 E2E 22×2(直连+vite 代理)、层4 每项改造专属机械证据(grep 计数/路由表 diff)。入口 scripts/verify-contract.bat,双击可重放。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "scripts/verify-contract.sh",
+        "scripts/verify-contract.bat",
+        "scripts/contract/curl-matrix.sh",
+        "scripts/contract/e2e-harness.ts"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "verify-contract.sh 多轮全绿: go test 9 包 + curl 53/53 + E2E 22/22×2",
+          "source": "session 2026-09-01",
+          "locator": "commit 0bdc621"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "task-b-series-refactor",
+      "kind": "task",
+      "title": "后端架构改造 B1-B7(行为保持,B5 暂缓)",
+      "status": "verified",
+      "summary": "B1 消灭 source any 装配;B3 四个错误翻译官归一为单一 writeError(幂等冲突 422 对齐契约);B2 httpapi god-file 1395→385 行拆 8 个域文件(73 条路由 diff 一致);B6 DTO 空值恒发 null;B7 pN 文件改域名;B4 TaskView 移出 task 包。B5(拆 service.API + Prism 移 platform)用户拍板暂缓。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "drafted",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/httpapi/",
+        "apps/server/internal/service/",
+        "apps/server/internal/task/http_adapter.go"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "每项改造后四层验收全绿;路由表前后 diff 一致;grep 结构证据达标",
+          "source": "session 2026-09-01",
+          "locator": "commits 9b55619/b2d6fda/1bdb7fa/c7e3b88/e61c114/464d61d"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "task-ux-trio-20260901",
+      "kind": "task",
+      "title": "交互三项:版本日期倒序 + 兼容优先 + CF key 配置全链路",
+      "status": "verified",
+      "summary": "provider.Version 加 datePublished 统一新→旧排序;版本下拉稳定排序兼容当前包的提前、默认选中最新兼容版;CF key 新增 PUT/DELETE 接口(保存前真实调用验证,无效 400/平台不通 502),secrets 表持久化,任何接口不回传,即存即效,env 优先级更高;启动探测双平台可达性修掉'未探测'假象。搜索交互用户拍板不动。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/service/system_config.go",
+        "apps/server/internal/provider/http_adapter.go",
+        "apps/web/src/hooks/useModSearch.ts",
+        "apps/web/src/pages/PackPages.tsx"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "实测: JEI 双平台版本第一条为当日最新;无效 key→400、真 key 保存/清除/恢复全通;curl 矩阵扩到 48 项全绿",
+          "source": "session 2026-09-01",
+          "locator": "commits 06e1846/e554985/ae9fa11"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "task-dual-source-merge",
+      "kind": "task",
+      "title": "双平台模组身份合并 + 添加时版本镜像钉死",
+      "status": "verified",
+      "summary": "搜索按身份表+名称规范化(保守,宁漏不错,slug 否决)跨平台合并成一张卡,双平台标签,下载量合并排序;pack_mods 一行加 mirror_source/mirror_project_id/mirror_version_id(迁移 0005),添加即钉死双平台版本、永不追新,查不到照常添加标'仅单平台';mod_identity 表本机学习配对永久复用;内置只读知识库 go:embed 随分发(JEI/AE2 实测核实种子),用户库永不进包(package.ps1 机械断言);主版本换版时镜像重钉。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/store/migrations/0005_mod_identity.sql",
+        "apps/server/internal/service/mods.go",
+        "apps/server/internal/service/mod_identity_baseline.go",
+        "apps/server/internal/service/mod_identity_baseline.json",
+        "scripts/package.ps1"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "实测: 搜 JEI 合并一张卡双标签;添加 MR JEI 19.51.0.417 自动钉 CF fileId 8769490(jei-1.21.1-neoforge-19.51.0.417.jar,同版本号同 loader);mod_identity 落表;curl 50/50",
+          "source": "session 2026-09-01",
+          "locator": "commit 149120f"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "task-compat-knowledge",
+      "kind": "task",
+      "title": "兼容知识库:已知问题自动修复 + 兼容模组推荐位",
+      "status": "verified",
+      "summary": "内置只读 compat_knowledge_baseline.json(只放人工核实条目,source 必填);添加模组时自动扫描已知冲突,有 install_mod 解法自动加装补丁(origin=compat-fix,'兼容补丁'标签可移除,活动日志注明,深度封顶);修不掉的进冲突列表 kind=known_issue;GET mod-recommendations 按包 MC/loader 过滤推荐(已装自动隐藏),前端一键添加;种子 Polymorph/Sinytra 双平台实测核实;docs/active/compat-knowledge.md 为维护者整理指南。knownIssues 空数组等用户整理数据。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/service/compat_knowledge.go",
+        "apps/server/internal/service/compat_knowledge_baseline.json",
+        "apps/server/internal/store/migrations/0006_pack_mod_origin.sql",
+        "docs/active/compat-knowledge.md"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "实测: neoforge 包推荐返回 Polymorph+Sinytra,fabric 矩阵包正确滤掉 Sinytra;5 个知识库单测绿;curl 53/53 + E2E 22/22×2",
+          "source": "session 2026-09-01",
+          "locator": "commit 3df1ce4"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "task-690ee8ef",
+      "kind": "task",
+      "title": "模组页双平台真实链路(搜索/版本/添加)",
+      "status": "verified",
+      "summary": "后端装配真实 provider registry(Modrinth 免 key 默认启用,CurseForge 需 CURSEFORGE_API_KEY),新增 mod-versions 接口;ModSearchAll 并发扇出双平台、单平台失败只做错误隔离;修复 CF 适配器三个 fixture 造假型 bug(搜索方言/logo 对象/gameVersions 混排);前端单框模糊名称搜索、路由/侧栏/顶栏去除写死的假包 tech。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "documentation": "drafted",
+      "delivery": "pushed",
+      "ownership": "shared",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/service/p5_mods.go",
+        "apps/server/internal/provider/http_adapter.go",
+        "apps/server/internal/httpapi/httpapi.go",
+        "apps/web/src/pages/PackPages.tsx",
+        "apps/web/src/main.tsx",
+        "apps/web/src/app/AppShell.tsx"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "curl 实测:搜 sodium/JEI 双平台并行返回;CF 与 MR 同版本 sha1 一致(1757289b…)交叉验证;添加落库成功;go test/vet/gofmt 全绿;前端 tsc/build 通过",
+          "source": "session 2026-08-30",
+          "locator": "commit 76fb818, 05aefa7"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "task-d0e1ded6",
+      "kind": "task",
+      "title": "Prism 便携安装脚本(prism-install.sh/bat)",
+      "status": "verified",
+      "summary": "便携 zip 装 .tools\\prism(零系统接触/无 UAC/相对路径随仓库分发);代理前置探测(tasklist 进程→端口 7897/7890/10809/10808→gstatic 204 探活);版本解析 GitHub API 直连→代理→钉住 11.0.3;下载优先级 代理→GitCode 镜像→gh-proxy→直连。bat 终版纯 ASCII+CRLF。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "documentation": "missing",
+      "delivery": "pushed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "scripts/prism-install.sh",
+        "scripts/prism-install.bat"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "sh 与 bat 均真删真装成功;prismlauncher.exe --version 输出 PrismLauncher 11.0.3;GitCode 镜像 20,392,295 字节与官方等大、16.3MB/s",
+          "source": "session 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "task-1bd4148d",
+      "kind": "task",
+      "title": "上手四步与 tool_install 任务化安装",
+      "status": "verified",
+      "summary": "上手三步变四步;第 4 步只负责登录(唤起便携 Prism GUI,后端检测 .tools/prism-data/accounts.json 自动打勾);安装本体按用户拍板改造为一等任务 tool_install:安装脚本输出实时写入任务日志,成败以任务终态+exe 存在为准;新增迁移 0003 扩展 tasks.kind CHECK;修掉租约 30s 静默下载被回收(10s 心跳)与幂等键阻塞重装(仅活跃任务复用)两个实测问题。首次启动流程/用户协议入口留待后续。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "documentation": "missing",
+      "delivery": "pushed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/service/api.go",
+        "apps/server/internal/task/task.go",
+        "apps/server/internal/store/migrations/0003_task_kind_tool_install.sql",
+        "apps/server/internal/httpapi/httpapi.go",
+        "apps/web/src/features/dashboard/OnboardingChecklist.tsx"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "e2e:删 .tools/prism → POST /api/tools/prism/install 返回 taskId → 任务日志 11 条(queued→代理探测→下载心跳→解压→succeeded)→ exe 就位 11.0.3;重复提交返回 already_installed;POST /api/tools/prism/login 唤起 GUI 且便携数据目录生成;后端 build/vet/test、gofmt、前端 tsc/build 全绿",
+          "source": "session 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "task-p7-build-publish",
+      "kind": "task",
+      "title": "P7 构建与发布",
+      "status": "implemented",
+      "summary": "Codex 午间轮(2026-08-30 12:16-12:30,用户授意)以 08f916a 重新交付 P7 构建/发布/worker 基础;取消语义/重启恢复测试/HTTP 契约测试三项缺口自该提交后未复核。",
+      "verification": "partial",
+      "acceptance": "pending",
+      "documentation": "drafted",
+      "delivery": "committed",
+      "ownership": "shared",
+      "scope": "project",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "08f916a 存在且后续全量 go test/vet/gofmt 通过(含 task 包);但三缺口未单独复验",
+          "source": "git log / session 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "task-p6-content-quest",
+      "kind": "task",
+      "title": "P6 内容编辑与任务书领域闭环",
+      "status": "delivered",
+      "summary": "内容文档/revision 与任务书图模型已实现 repository/service/HTTP 闭环,包含 canonical 校验、乐观并发、apply/rollback/history、环/孤立/跨包引用校验及 activity/outbox/audit 证据。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "shared",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/service/p6_content.go",
+        "apps/server/internal/store/p6_repo.go",
+        "apps/server/internal/httpapi/p6_acceptance_test.go",
+        "docs/active/issues/ISSUE-P6-CONTENT-QUEST",
+        "docs/active/tests/p6-p7-acceptance.md"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "P6 service/store 定向测试、P6 HTTP 契约测试、全量 go test、go vet、gofmt 均通过",
+          "source": "commit 7d5bf91 / Luna 独立复验 2026-08-29",
+          "locator": "docs/active/issues/ISSUE-P6-CONTENT-QUEST"
+        }
+      ],
+      "updated_at": "2026-08-29T00:00:00Z"
+    },
+    {
+      "id": "task-a1f07c2e",
+      "kind": "task",
+      "title": "monorepo 骨架与开发环境",
+      "status": "verified",
+      "summary": "目录骨架、README、.gitignore、便携 Go 1.27.0(.tools/,阿里云镜像安装)、apps/web 工程(vite 5273,/api 代理 18871)完成。",
+      "verification": "passed",
+      "acceptance": "not_requested",
+      "delivery": "working_tree",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "npm install 成功,tsc --noEmit 与 vite build 通过",
+          "source": "session"
+        },
+        {
+          "type": "file",
+          "level": "observed",
+          "claim": "go.exe version 输出 go1.27.0",
+          "source": ".tools/go"
+        }
+      ],
+      "updated_at": "2026-08-26T00:00:00Z"
+    },
+    {
+      "id": "task-b2e18d3f",
+      "kind": "task",
+      "title": "看板页功能实现(按 docs/active/design/dashboard-page-prompt.md)",
+      "status": "implemented",
+      "summary": "二态分发(空态迎新/有包总览)、环境自检条(含空态 suppressKeys 抑制 cf-key)、继续设计卡、包列表(只看待处理/删除二次确认)、后台任务 3s 条件轮询、状态与动态、新建/导入弹窗。USE_MOCK=true 走 mock,?mock=empty 切空态。",
+      "verification": "passed",
+      "acceptance": "rejected",
+      "delivery": "working_tree",
+      "related_files": [
+        "apps/web/src/pages/DashboardPage.tsx",
+        "apps/web/src/features/dashboard/"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "tsc --noEmit 零错误、vite build 通过",
+          "source": "session"
+        },
+        {
+          "type": "artifact",
+          "level": "observed",
+          "claim": "无头 Chrome 双态截图渲染正确",
+          "source": ".shots/dash-populated.png, .shots/dash-empty.png"
+        },
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户两次否定视觉质量('太丑'/'还是丑'),功能本身未被否定",
+          "source": "user"
+        }
+      ],
+      "updated_at": "2026-08-27T00:00:00Z"
+    },
+    {
+      "id": "task-c3d29e4a",
+      "kind": "task",
+      "title": "Go 后端空壳 + SQLite 初始 schema",
+      "status": "verified",
+      "summary": "net/http 标准库服务(18871),/api/health 返回 db:true;modernc.org/sqlite 纯 Go 驱动;schema 含 packs/pack_mods/jar_index/tasks/conflicts/activities/settings/remote_cache。",
+      "verification": "passed",
+      "acceptance": "not_requested",
+      "delivery": "working_tree",
+      "related_files": [
+        "apps/server/cmd/server/main.go",
+        "apps/server/internal/store/schema.sql",
+        "apps/server/internal/store/store.go"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go build ./... 通过;curl /api/health 直连与 vite 代理均返回 {\"status\":\"ok\",\"db\":true}",
+          "source": "session"
+        }
+      ],
+      "updated_at": "2026-08-27T00:00:00Z"
+    },
+    {
+      "id": "task-d4f3a5b6",
+      "kind": "task",
+      "title": "看板视觉重做:对齐 AI 设计稿(第一轮)",
+      "status": "implemented",
+      "summary": "补齐应用外壳(AppShell 侧边栏+顶栏+占位路由)、紫色主题令牌(#7B5CFF / #F3F1FA)、空态 hero+彩色入口卡+四步流程条+上手三步、有包态 2:1 栅格、渐变封面(cover.ts 按包 id 稳定取色)。",
+      "verification": "passed",
+      "acceptance": "rejected",
+      "delivery": "working_tree",
+      "evidence": [
+        {
+          "type": "artifact",
+          "level": "observed",
+          "claim": "双态截图风格对齐设计稿(侧边栏/紫主题/栅格齐全)",
+          "source": ".shots/"
+        },
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户仍不满意:'迭代啥了? 这不还是丑的'",
+          "source": "user"
+        }
+      ],
+      "updated_at": "2026-08-27T00:00:00Z"
+    },
+    {
+      "id": "task-e5a4b6c7",
+      "kind": "task",
+      "title": "redesign-skill 精修迭代(第二轮已完成的部分)",
+      "status": "verified",
+      "summary": "audit 后修 6 项:tabular-nums 等宽数字、健康列两行堆叠消除折行、继续卡进度语义改'模组安装 130/142'、动效令牌统一(160ms/cubic-bezier)+按压/浮起反馈、空态按钮钉底对齐、环境状态数值层次。",
+      "verification": "passed",
+      "acceptance": "rejected",
+      "delivery": "working_tree",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "tsc/build 通过,双态截图回看确认",
+          "source": "session"
+        },
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户评价仍为'还是丑'——精修未触及图形丰富度核心差距",
+          "source": "user"
+        }
+      ],
+      "updated_at": "2026-08-27T00:00:00Z"
+    },
+    {
+      "id": "task-f6b5c7d8",
+      "kind": "task",
+      "title": "看板视觉第三轮:图形丰富度与响应式收尾",
+      "status": "delivered",
+      "summary": "引入 frontend-design-codex 作为视觉实现约束;建立 workbench 间距令牌,重整欢迎页 Hero/卡片/流程布局,修复 CSS 预览组件样式,明确主标题语义断行,并为三步走浮层补齐中等桌面与移动响应式避让。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "delivery": "pushed",
+      "evidence": [
+        {
+          "type": "analysis",
+          "level": "observed",
+          "claim": "差距分析基于设计稿 region 放大比对;桌面与 390x844 移动视口截图复测无横向溢出,标题和浮层布局符合当前组件规则",
+          "source": "session 2026-08-30"
+        },
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户明确要求将看板视觉问题标记为已完成",
+          "source": "user 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T00:00:00Z",
+      "related_files": [
+        "apps/web/src/features/dashboard/OnboardingView.tsx",
+        "apps/web/src/features/dashboard/dashboard.css",
+        "apps/web/src/ui/workbench/workbench.css"
+      ]
+    },
+    {
+      "id": "task-launcher-m1",
+      "kind": "task",
+      "title": "mPackLauncher M1: 下载层+Vanilla安装+Java检测+启动",
+      "status": "verified",
+      "summary": "Rust启动器内核M1完成:自研下载层(mirror URL重写/BMCLAPI镜像/断点续传/原子rename/5次重试/系统代理自动检测/双Semaphore并发)、从VersionJson提取文件列表+asset index解析、Java运行时检测(JAVA_HOME/PATH/常见路径)、MC版本到Java版本映射(1.16.5→8/1.17~1.20.4→17/1.20.5+→21)、启动命令构建(封装mc-launcher-core+Xmx注入)、进程管理(detach模式)、完整安装编排(锁+磁盘预检+phase事件输出)。端到端验证:1.20.1 Vanilla安装(700MB+3598资源文件)+离线启动成功。69个单元测试全通过。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/launcher/src/download/",
+        "apps/launcher/src/java/",
+        "apps/launcher/src/launch/",
+        "apps/launcher/src/install.rs",
+        "apps/launcher/src/main.rs",
+        "docs/active/architecture/launcher-core-*.md"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "端到端验证: install 1.20.1 --mirror bmclapi 成功(700MB+3598资源文件); launch --version 1.20.1 --username TestPlayer --xmx 2G 成功detach启动PID=17996; cargo test 69项全通过",
+          "source": "session 2026-09-03",
+          "locator": "commit 8e4bb44"
+        }
+      ],
+      "updated_at": "2026-09-03T12:15:00Z"
+    },
+    {
+      "id": "task-launcher-m2",
+      "kind": "task",
+      "title": "mPackLauncher M2: 加载器安装(Fabric/Quilt/Forge/NeoForge)",
+      "status": "verified",
+      "summary": "实现四种加载器安装(Fabric/Quilt/Forge/NeoForge)。Fabric/Quilt用meta API+profile,Forge/NeoForge用installer.jar+Java执行。CLI集成--loader选项。端到端验证通过:Fabric 1.20.1安装+离线启动成功(PID=13036)。74测试全通过。",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "documentation": "complete",
+      "delivery": "committed",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "launcherCore/src/loader/"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "Fabric 1.20.1安装成功(65库+3598资源+Fabric库); launch成功detach PID=13036; cargo test 74项全通过",
+          "source": "session 2026-09-03",
+          "locator": "commit 8c75c6d"
+        }
+      ],
+      "updated_at": "2026-09-03T13:00:00Z"
+    },
+    {
+      "id": "task-launcher-m3",
+      "title": "mPackLauncher M3: Java自动下载+微软OAuth+keyring凭证",
+      "status": "verified",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "summary": "M3完成: Java自动下载(Mojang/BMCLAPI runtime清单+2并发+指数退避+跳过重复LICENSE) + 微软OAuth device flow(XBL→XSTS→Minecraft) + keyring凭证存储 + 离线账号(标准UUID v3)。验证: Java17下载成功可运行, 离线登录成功, 91测试全通过。",
+      "depends_on": [
+        "task-launcher-m2"
+      ],
+      "notes": [
+        "Java检测方案已调研确认：",
+        "1. 快速路径(启动时自动执行): 注册表(HKLM/HKCU JavaSoft JDK) + JAVA_HOME + PATH + 启动器runtime目录",
+        "2. 深度扫描(用户主动触发/首次启动): 全盘3层目录扫描 + 跳过规则 + 关键词前缀匹配 + bin/java.exe验证",
+        "3. 跳过目录: Windows, ProgramData, node_modules, .git, Common Files, .Bin, System Volume Information等",
+        "4. 匹配规则: 前缀匹配 ^(jdk|jre|java|temurin|zulu|corretto|adoptium|semeru|liberica|openjdk|graalvm), 避免javascript/javax误匹配",
+        "5. 基准测试: C+D盘扫描0.19秒, 1441目录, 找到6个真实Java(无遗漏)",
+        "6. Java下载与Java检测是独立模块: 下载就是传版本参数从Mojang/BMCLAPI拉runtime, 下载到runtime/{component}/, 注册到JavaRegistry",
+        "7. Java选择策略参考PCL2: Auto(自动选择+自动下载), VersionFolder(版本文件夹内), Forced(强制指定)",
+        "8. Java版本需求用范围而非单一版本, Forge/Fabric/NeoForge有额外上下限约束"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "Java 17.0.15下载成功(193文件)并可运行; 离线登录UUID v3成功; cargo test 91项全通过",
+          "source": "session 2026-09-03",
+          "locator": "commit 060706a"
+        }
+      ],
+      "kind": "task",
+      "updated_at": "2026-09-07T07:24:33.351626+00:00"
+    },
+    {
+      "id": "task-launcher-m4",
+      "title": "mPackLauncher M4: 错误处理完善+性能优化+跨平台验证",
+      "status": "verified",
+      "verification": "passed",
+      "acceptance": "accepted",
+      "summary": "M4完成: natives解压(install后自动解压.dll/.so/.dylib) + deadcode清理 + 错误处理完善(19种错误+exit_code+suggestion) + release体积4.77MB(<10MB目标) + 91测试全通过。跨平台(Linux/macOS)待目标环境验证。",
+      "depends_on": [
+        "task-launcher-m3"
+      ],
+      "notes": [
+        "跨平台验证需在Linux/macOS目标环境执行，Windows开发机无法完成"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "release binary 4.77MB; cargo test 91项全通过; natives解压集成到install流程",
+          "source": "session 2026-09-04",
+          "locator": "commit 65a2560"
+        }
+      ],
+      "kind": "task",
+      "updated_at": "2026-09-07T07:24:33.351626+00:00"
+    },
+    {
+      "id": "task-launcher-m5",
+      "title": "mPackLauncher M5: Go后端集成+终局闭环",
+      "status": "implemented",
+      "verification": "partial",
+      "acceptance": "not_started",
+      "summary": "M5后端完成: migration 0007 + launcher task kind + binary exec封装 + API端点。前端启动台菜单和页面已实现(本次会话)。go build+test全通过。待: 端到端验证+binary部署。",
+      "depends_on": [
+        "task-launcher-m4"
+      ],
+      "notes": [
+        "前端启动台菜单和页面已在本次会话实现",
+        "端到端验证需将launcherCore release binary放到.tools/launcher/mpack-launcher.exe"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go build ./... 通过; go test ./... 全通过; 7 files changed, 370 insertions",
+          "source": "session 2026-09-04",
+          "locator": "commit b78cd27"
+        }
+      ],
+      "kind": "task",
+      "updated_at": "2026-09-07T07:24:33.351626+00:00",
+      "note": "Go 侧集成完成并用协议桩验证（MPACK_LAUNCHER_BIN + launcher_installs + installs 查询）；当时剩余断点为 O14。2026-09-30 补充：真实内核已用本机 cargo 编译并跑通 install --mrpack → launch，见 task-terminal-chain-20260930"
+    },
+    {
+      "id": "task-mod-content-parse-m6",
+      "kind": "task",
+      "title": "M6 模组内容解析: lang/recipe/ammo/texture/item_icon + 等距渲染器",
+      "status": "implemented",
+      "summary": "从mod jar提取数据驱动内容: lang(语言文件翻译)、recipe(配方,JEI风格3x3网格展示)、ammo_definition(物质炮弹药定义,非配方)、texture(原始纹理PNG)、item_icon(物品栏图标,等距投影3D渲染)。migrations 0009-0012扩展kind CHECK。等距投影渲染器rotation[30,225,0],三面亮度分级(top1.0/right0.82/front0.65)。支持generated/handheld(2D layer0)和cube_all(3D等距)。AE2实测:2367条内容,488配方,68ammo,190item_icon。",
+      "verification": "partial",
+      "acceptance": "pending",
+      "documentation": "drafted",
+      "delivery": "working_tree",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/service/mod_content_extract.go",
+        "apps/server/internal/service/mod_content_task.go",
+        "apps/server/internal/service/item_icon_render.go",
+        "apps/server/internal/httpapi/routes_mod_content.go",
+        "apps/server/internal/store/migrations/0009_mod_content_lang.sql",
+        "apps/server/internal/store/migrations/0010_mod_content_texture.sql",
+        "apps/server/internal/store/migrations/0011_mod_content_ammo_definition.sql",
+        "apps/server/internal/store/migrations/0012_mod_content_item_icon.sql",
+        "apps/web/src/pages/ModContentPage.tsx"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "AE2 19.2.17解析:2367条内容,488真正配方,68ammo_definition,190item_icon(145generated+45cube_all),614texture,589item_model,18lang",
+          "source": "session 2026-09-07",
+          "locator": "database query"
+        },
+        {
+          "type": "artifact",
+          "level": "observed",
+          "claim": "等距投影渲染器修复后:陨石块/石英块三面正确显示(顶面最亮/右面带中/前面最暗),与Minecraft原生方块图标一致",
+          "source": ".tmp/sky_stone_icon.png, .tmp/icon_ae2_smooth_quartz_block.png"
+        }
+      ],
+      "updated_at": "2026-09-07T02:00:00Z"
+    },
+    {
+      "id": "task-item-icons-fix-20260907",
+      "kind": "task",
+      "title": "方块物品图标修复与原版基础素材图标补齐",
+      "status": "verified",
+      "summary": "父模型/逐面UV/GUI/elements/遮挡修复；按版本缓存原版资源；图标resolve绕开旧快照；三项通用标签代表图标。剩余自定义渲染保持独立缺口。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "documentation": "complete",
+      "delivery": "working_tree",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/service/item_icon_render.go",
+        "apps/server/internal/service/item_model_resources.go",
+        "apps/server/internal/service/item_icon_tags.go",
+        "apps/server/internal/service/mod_content_icons.go",
+        "apps/server/internal/service/mod_content_extract.go",
+        "apps/server/internal/provider/minecraft_assets.go",
+        "apps/server/internal/httpapi/routes_mod_content.go",
+        "apps/web/src/api/modContent.ts",
+        "apps/web/src/pages/ModContentPage.tsx"
+      ],
+      "evidence": [
+        {
+          "type": "artifact",
+          "level": "observed",
+          "claim": "全量 Go test/vet、前端构建、真实 MC 1.21.1/AE2 资源和高级卡配方 UI 验证通过；349 AE2 图标，29 item 模型未生成（含辅助模型）。",
+          "source": "docs/backup/project-state/history/2026-09-07-item-icons-fix.md",
+          "locator": "sha256:d411445bb155afc452d82d9218576165cd699c1a64524eed52b102567fd456f8"
+        }
+      ],
+      "updated_at": "2026-09-07T07:18:34.448011+00:00"
+    },
+    {
+      "id": "task-pack-content-catalog-20260907",
+      "kind": "task",
+      "title": "包内物品、方块、配方、标签与多语言目录",
+      "status": "verified",
+      "summary": "新增 schema 13/14 内容目录与 catalog_init 任务；创建包、修改 MC 版本和模组解析后自动重建。完整 1.21.1 + AE2 实际目录为 2133 物品、1164 方块、1778 配方、424 标签，支持标签展开和物品反查标签。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "documentation": "complete",
+      "delivery": "working_tree",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "apps/server/internal/store/migrations/0013_item_catalog.sql",
+        "apps/server/internal/store/migrations/0014_catalog_init_task.sql",
+        "apps/server/internal/store/catalog_repo.go",
+        "apps/server/internal/service/item_catalog.go",
+        "apps/server/internal/service/item_catalog_task.go",
+        "apps/server/internal/provider/minecraft_assets.go",
+        "apps/server/internal/httpapi/routes_catalog.go",
+        "apps/web/src/api/catalog.ts",
+        "apps/web/src/pages/ModContentPage.tsx",
+        "docs/active/decisions/ADR-pack-content-catalog.md"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go test ./...、go vet ./...、npm run build 与两个 zod fixture 检查通过；真实 1.21.1 原版覆盖 1754/1062/1290/331。",
+          "source": "session 2026-09-07"
+        },
+        {
+          "type": "runtime",
+          "level": "observed",
+          "claim": "现有 KingingProject 重建成功且 stale=false；目录 2133 物品、1164 方块、1778 配方、424 标签。末影粉标签解析为 ae2:ender_dust，六个样例中文名和 PNG 图标可读。",
+          "source": "local API 127.0.0.1:18871"
+        }
+      ],
+      "updated_at": "2026-09-07T09:56:00Z"
+    },
+    {
+      "id": "task-e2e-baseline-20260929",
+      "kind": "task",
+      "title": "端到端能力基线脚本与真实能力摸底",
+      "status": "verified",
+      "summary": "新增 scripts/e2e-baseline.sh：建包→面向包搜索→版本解析→添加模组→锁依赖→目录重建→模组解析→任务书闭环→注册导出目录→构建→launcher install 逐段 curl 断言，可重放。首轮实测 PASS=27 FAIL=3，结论是设计与内容段真实可用，但构建产物只是调用方自带文件的 zip 归档（283 字节，无 jar、非 .mrpack），launcher install 在 macOS 上因二进制路径硬编码 .exe 结构性不可用。",
+      "verification": "passed",
+      "acceptance": "pending",
+      "documentation": "complete",
+      "delivery": "working_tree",
+      "ownership": "session_owned",
+      "scope": "project",
+      "related_files": [
+        "scripts/e2e-baseline.sh",
+        "docs/active/tests/e2e-baseline-2026-09-29.md",
+        "docs/backup/project-state/history/e2e-baseline-20260929.log"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "PASS=27 FAIL=3 SKIP=0，packId=pack-22fe30cd9493c34b94684724，隔离后端 127.0.0.1:18899 -data /tmp/mpack-e2e。",
+          "source": "e2e-baseline-20260929.log 汇总段"
+        },
+        {
+          "type": "runtime",
+          "level": "observed",
+          "claim": "产物 /tmp/mpack-e2e/export/0.1.222046-bfedf896b1f765a4.zip 共 283 字节，unzip -l 只有 1 个 160 字节 modrinth.index.json。",
+          "source": "unzip -l / unzip -p 实测"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "任务终态枚举按契约 :50 是 success（不是 succeeded）；catalog 状态与 mod_content run 状态才用 succeeded。",
+          "source": "docs/active/api/contract.md:50 + 轮询实测"
+        }
+      ],
+      "updated_at": "2026-09-29T14:30:00Z"
+    },
+    {
+      "id": "task-chain-test-20260930",
+      "kind": "task",
+      "title": "前端→后端全链路调用测试（每功能正/反用例，DB 入库为准）+ 缺陷修复",
+      "status": "verified",
+      "summary": "scripts/chain-test.py 173 例隔离环境跑通（run15）；构建产出真实 .mrpack；O1/O1b/O2/O4/O8/O9/O10/O13/O25 修复并加守护用例。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run15:173 例 PASS 172 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/chain-run15-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z"
+    },
+    {
+      "id": "task-terminal-chain-20260930",
+      "kind": "task",
+      "title": "真内核终局链路：构建 .mrpack → cargo 编译的 mpack-launcher 安装 → 启动 Minecraft",
+      "status": "verified",
+      "summary": "scripts/verify-terminal-chain.sh --launch（后端 18874 / 数据 /tmp/mpack-terminal / MPACK_LAUNCHER_BIN 指向 cargo 产物）用 HTTP 一路走到 Minecraft 1.21.1 + Fabric 0.16.14 起窗；真机验证暴露并修掉 O14-O25。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "终局链路 43 条断言 PASS 43 / FAIL 0，最后一条为游戏真起窗（Fabric 横幅 + 渲染线程建号）",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/terminal-run-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z"
+    },
+    {
+      "id": "task-catalog-v4-20261002",
+      "kind": "task",
+      "title": "物品目录条目资格收口（catalog-v4：语言键权威 + 配方/标签引用）",
+      "status": "verified",
+      "summary": "目录曾把「模型文件清单」当物品（v2 1754），改语言键后又漏进官方语言表超前键（v3 1493）。v4 判据 = 有名字键 ∧（有 models/item 资产 ∨ 被配方/标签引用），migration 0025 给 evidence 加 lang。2026-10-03 共享库被清空后重建测试包复跑：1754 → 1330 条真实物品、无名 0、全部 evidence=lang、图标路径保留；18 个疑似残渣经核对是真·纹饰锻造模板官方物品。本条为补登记：判据与 1330 基线在 HANDOFF 2026-10-02 条目已成文，但 state.json 此前停在 09-30，未收录该任务。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go test ./... -count=1：internal/service 包 ok（含 catalog 回归锁 clock_01/bow_pulling_0 不得出现）",
+          "source": "checkpoint 2026-10-03 复跑",
+          "locator": "apps/server/internal/service/item_catalog_test.go"
+        },
+        {
+          "type": "document",
+          "level": "corroborated",
+          "claim": "1330/1062/1257/1290/331 基线与逐条核查",
+          "source": "docs/active/project-state/HANDOFF.md 2026-10-02 条目",
+          "locator": "docs/active/design/web3-ide-shell-v3.md"
+        },
+        {
+          "type": "artifact",
+          "level": "reported",
+          "claim": "10-03 清空后重建：1754→1330、无名 0、evidence 全 lang",
+          "source": "zcode sess_0c49f511 (2026-10-02 11:16 → 2026-10-03 16:08)",
+          "locator": "docs/active/tests/incident-2026-10-03-shared-env-wipe.md"
+        }
+      ],
+      "updated_at": "2026-10-03T16:50:00+08:00",
+      "priority": "high",
+      "related_files": [
+        "apps/server/internal/service/item_catalog.go",
+        "apps/server/internal/store/migrations/0025_catalog_item_evidence_lang.sql"
+      ],
+      "verification": {
+        "status": "passed",
+        "bound_to": "sha256:a795433e455031778428ac5df350fe0c30be54861ebbb21a80b1aa01d9b7ef53",
+        "note": "复跑结果来自会话内真接口，未留机器可读日志"
+      },
+      "acceptance": {
+        "status": "accepted",
+        "note": "用户 2026-10-02 16:15 批准「目录构建器修复立刻做」"
+      },
+      "delivery": {
+        "status": "remote_verified",
+        "commit": "6c0aa5d",
+        "note": "本次提交包含提交前实测：go test ./... -count=1 全绿 + go vet 干净 + web3 build 通过；随后 已推送 origin/DEV_2610-WK1（该分支首推，upstream 已建立；远端 tip 65cf1e5，`git ls-remote` 实测）。README 口径同步在同分支 65cf1e5",
+        "pushed_at": "2026-10-03T16:50:00+08:00"
+      }
+    },
+    {
+      "id": "task-icon-renderer-r0r2-20261003",
+      "kind": "task",
+      "title": "图标渲染器第一批 R1+R2+R0（loader 放行 + composite 变量解引用 + 缺图原因落库）",
+      "status": "implemented",
+      "summary": "R1：loader 不再一票否决，item_layers/separate_transforms/composite 各有通路；R2：composite 子模型 #变量就地解引用、按 key 字典序合并；R0：migration 0026 加 icon_reason 列并全链透传前端，无图标物品悬停可见原因（如 runtime_generated_model）。渲染器版本 v2 → v3。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go test ./internal/service -count=1 ok（含两个新增合成夹具测试：金色 90 像素 + 铁 352 像素，证实变量解引用与层叠）",
+          "source": "checkpoint 2026-10-03 16:2x 复跑",
+          "locator": "apps/server/internal/service/item_icon_render_test.go"
+        },
+        {
+          "type": "document",
+          "level": "observed",
+          "claim": "工单 R0-R6 定义与收益预估（R3 明确不做，R4 OBJ +22 / R5 tint +15 / R6 化学桶 +18 未动）",
+          "source": "plan 2026-10-03",
+          "locator": "docs/active/design/item-icon-renderer-plan-2026-10-03.md"
+        }
+      ],
+      "updated_at": "2026-10-03T16:50:00+08:00",
+      "priority": "high",
+      "related_files": [
+        "apps/server/internal/service/item_model_resources.go",
+        "apps/server/internal/service/mod_content_icons.go",
+        "apps/server/internal/store/migrations/0026_catalog_item_icon_reason.sql"
+      ],
+      "acceptance_criteria": [
+        "loader 白名单外模型不再整体拒绝（R1）",
+        "composite #变量解引用正确合并（R2）",
+        "缺图原因随目录条目落库并在前端可见（R0）"
+      ],
+      "verification": {
+        "status": "passed",
+        "bound_to": "sha256:a795433e455031778428ac5df350fe0c30be54861ebbb21a80b1aa01d9b7ef53",
+        "note": "R4/R5/R6 未实施，覆盖缺口见 issue-item-icon-coverage-gap"
+      },
+      "acceptance": {
+        "status": "pending",
+        "note": "用户批准「继续推进」，未见对 R1/R2/R0 的逐项验收表态"
+      },
+      "delivery": {
+        "status": "remote_verified",
+        "commit": "6c0aa5d",
+        "note": "本次提交包含提交前实测：go test ./... -count=1 全绿 + go vet 干净 + web3 build 通过；随后 已推送 origin/DEV_2610-WK1（该分支首推，upstream 已建立；远端 tip 65cf1e5，`git ls-remote` 实测）。README 口径同步在同分支 65cf1e5",
+        "pushed_at": "2026-10-03T16:50:00+08:00"
+      }
+    },
+    {
+      "id": "task-mod-search-alias-20261003",
+      "kind": "task",
+      "title": "模组搜索修复：别名表 + 复合排序 + slug 直取/容错 + 前端防抖",
+      "status": "implemented",
+      "summary": "病因：平台相关度埋掉 slug-only 正主 + 后端按下载量重排。修法：别名表展开（modsearch_alias.go）、复合排序（slug 精确 100 > 别名命中 95 > 编辑距离≤1 容错 85 > 分词前缀 80）、slug 直取，前端搜索防抖。会话内真机实测：aer / 精致存储 / ae2 三案例首命中正主（Applied Energistics 2 / refinedstorage）。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go test ./internal/service -run \"Alias|Search\" -count=1 -v：TestExpandModSearchAlias PASS、TestModSearchScoreOrdering PASS、TestP5ModChainSearchAddResolveAndHealth PASS",
+          "source": "checkpoint 2026-10-03 16:2x 复跑",
+          "locator": "apps/server/internal/service/modsearch_alias_test.go"
+        },
+        {
+          "type": "artifact",
+          "level": "reported",
+          "claim": "aer → Applied Energistics 2 排第一；三案例全部命中正主（经 127.0.0.1:18872 真接口）",
+          "source": "zcode sess_0c49f511 (2026-10-02 11:16 → 2026-10-03 16:08)",
+          "locator": "docs/active/design/web3-ide-shell-v3.md"
+        }
+      ],
+      "updated_at": "2026-10-03T16:50:00+08:00",
+      "priority": "high",
+      "related_files": [
+        "apps/server/internal/service/modsearch_alias.go",
+        "apps/server/internal/service/mods.go",
+        "apps/web3/src/panels/SourcesPanel.tsx"
+      ],
+      "verification": {
+        "status": "passed",
+        "bound_to": "sha256:a795433e455031778428ac5df350fe0c30be54861ebbb21a80b1aa01d9b7ef53",
+        "note": "真机三案例为会话内实测陈述，未留可重放脚本"
+      },
+      "acceptance": {
+        "status": "pending",
+        "note": "缺陷由用户 10-02 报出，修复后用户未逐项表态"
+      },
+      "delivery": {
+        "status": "remote_verified",
+        "commit": "6c0aa5d",
+        "note": "本次提交包含提交前实测：go test ./... -count=1 全绿 + go vet 干净 + web3 build 通过；随后 已推送 origin/DEV_2610-WK1（该分支首推，upstream 已建立；远端 tip 65cf1e5，`git ls-remote` 实测）。README 口径同步在同分支 65cf1e5",
+        "pushed_at": "2026-10-03T16:50:00+08:00"
+      }
+    },
+    {
+      "id": "task-pack-mod-category-20261003",
+      "kind": "task",
+      "title": "包内模组自定义分类（migration 0027 + PATCH 链路 + 来源树分组 UI）",
+      "status": "verified",
+      "summary": "用户旧需求：来源树里给模组打自定义类目（「优化」/「科技」）。落法：pack_mods 加 category 列（0027）、PATCH 透传（service/mods.go:818）、两条读取路径都带出 category。本轮真实缺陷修在读取侧：前端走 includeBuiltin=true → ListPackMembers 是另一条 SELECT，未查 category 列（含 scanPackMod 共用扫描），补列后浏览器验收通过：来源树显示「Minecraft 原版」+「📁 优化 1」分组下 JEI。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go test ./internal/store -run TestPackModCategoryAcrossReads -count=1 → FAIL（夹具自犯 CHECK，见 issue-category-testfixture-check）；功能链路本身经 API 回读 + 浏览器验收通过",
+          "source": "checkpoint 2026-10-03 16:2x 实测",
+          "locator": "apps/server/internal/store/category_test.go:23"
+        },
+        {
+          "type": "artifact",
+          "level": "reported",
+          "claim": "分类 PATCH 回读 JEI → 「优化」；来源树分组头出现（浏览器实测）",
+          "source": "zcode sess_0c49f511 (2026-10-02 11:16 → 2026-10-03 16:08)",
+          "locator": "apps/web3/src/panels/SourcesPanel.tsx"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "go test ./internal/store -count=1 ok（TestPackModCategoryAcrossReads 通过）",
+          "source": "checkpoint 2026-10-03 复跑",
+          "locator": "apps/server/internal/store/category_test.go"
+        }
+      ],
+      "updated_at": "2026-10-03T16:50:00+08:00",
+      "priority": "medium",
+      "related_files": [
+        "apps/server/internal/store/migrations/0027_pack_mod_category.sql",
+        "apps/server/internal/store/mod_repo.go",
+        "apps/server/internal/store/pack_scoped_repo.go",
+        "apps/server/internal/service/mods.go"
+      ],
+      "acceptance_criteria": [
+        "分类可写可读（PATCH + 两条读取路径一致）",
+        "来源树按分类分组，空值归「未分类」"
+      ],
+      "verification": {
+        "status": "passed",
+        "note": "自带回归测试的红项已修（夹具数据），随 6c0aa5d 入库后 go test 全绿；浏览器分组验收见会话记录"
+      },
+      "acceptance": {
+        "status": "pending"
+      },
+      "delivery": {
+        "status": "remote_verified",
+        "commit": "6c0aa5d",
+        "note": "本次提交包含提交前实测：go test ./... -count=1 全绿 + go vet 干净 + web3 build 通过；随后 已推送 origin/DEV_2610-WK1（该分支首推，upstream 已建立；远端 tip 65cf1e5，`git ls-remote` 实测）。README 口径同步在同分支 65cf1e5",
+        "pushed_at": "2026-10-03T16:50:00+08:00"
+      }
+    },
+    {
+      "id": "task-dev-service-lockdown-20261003",
+      "kind": "task",
+      "title": "唯一开发服务口径落规（后端 18872 / 前端 5271，禁历史端口与新实例）",
+      "status": "delivered",
+      "summary": "共享 /tmp 数据被双会话清空后，用户 13:36 定死口径：全停 → 后端 18872 + 前端 5271 → 写进项目必读约束文件。落地为 AGENTS.md 顶部「服务与环境铁律」一节（含禁止 5173/5273/5274/5275/5276/18871/18880、/tmp/mpack-data 为唯一数据目录、动它须当轮明示、迁移编号先 ls 再取号、并行会话改文件前先重读）；scripts/dev.sh 与 dev-stop.sh 按新标准重写（原 Windows/PowerShell 版退役），README 快速开始同步。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "observed",
+          "claim": "用户原话：「所有的服务全部停掉，然后重启新的服务」「后端指定到 18872，前端用 5271。这个定下来不要再改了」「在项目里面新建一个 agents.markdown，约束一下」",
+          "source": "user 2026-10-03 13:36",
+          "locator": "zcode sess_0c49f511 (2026-10-02 11:16 → 2026-10-03 16:08)"
+        },
+        {
+          "type": "artifact",
+          "level": "observed",
+          "claim": "AGENTS.md 顶部「服务与环境铁律」成文；dev.sh 第 13-29 行硬绑 18872/5271 并做端口占用检查",
+          "source": "checkpoint 2026-10-03",
+          "locator": "AGENTS.md"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "ps 实测在跑：vite --port 5271（apps/web3）+ /tmp/mpackstation-server -addr 127.0.0.1:18872 -data /tmp/mpack-data",
+          "source": "checkpoint 2026-10-03 16:22"
+        }
+      ],
+      "updated_at": "2026-10-03T16:50:00+08:00",
+      "priority": "high",
+      "verification": {
+        "status": "not_required"
+      },
+      "acceptance": {
+        "status": "accepted",
+        "note": "用户当轮明示「定下来不要再改了」"
+      },
+      "delivery": {
+        "status": "remote_verified",
+        "commit": "6c0aa5d",
+        "note": "本次提交包含提交前实测：go test ./... -count=1 全绿 + go vet 干净 + web3 build 通过；随后 已推送 origin/DEV_2610-WK1（该分支首推，upstream 已建立；远端 tip 65cf1e5，`git ls-remote` 实测）。README 口径同步在同分支 65cf1e5",
+        "pushed_at": "2026-10-03T16:50:00+08:00"
+      }
+    },
+    {
+      "id": "task-chain-engine-p0-20261003",
+      "kind": "task",
+      "title": "逆向链路引擎 P0（纯前端 5 文件 + 3 处挂载，≈350 行）",
+      "status": "planned",
+      "summary": "入参 = 终极物品 id + 数量，出参 = 递归到原版采集的完整链路，每节点带数量、每边带「机器·时长·时长出处」，取不到处显式标断点。规格已齐（模块划分、键名并集词表、时长四层降级、BFS+环检测、非物品输入建模），后端零改动。状态：代码零落地——实测 `apps/web3/src/` 下无 chain 目录、grep -ri chain apps/web3/src 零命中（2026-10-03 16:2x）。会话在 14:55 宣布进入该项后被打断（15:43 转去做 checkpoint），未开工。",
+      "evidence": [
+        {
+          "type": "document",
+          "level": "observed",
+          "claim": "P0 工单表：interpret.ts / ticks.ts / expand.ts / chainRules.json / ChainView.tsx + url.ts、EditorArea.tsx 挂载",
+          "source": "plan 2026-10-03",
+          "locator": "docs/active/design/craft-chain-engine-plan-2026-10-03.md"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "grep -rli chain apps/web3/src → 零命中；apps/web3/src 下仅 api/app/dock/editor/panels/styles",
+          "source": "checkpoint 2026-10-03"
+        }
+      ],
+      "updated_at": "2026-10-03T16:30:00+08:00",
+      "priority": "high",
+      "related_files": [
+        "docs/active/design/craft-chain-engine-plan-2026-10-03.md",
+        "apps/web3/src/app/url.ts",
+        "apps/web3/src/editor/EditorArea.tsx"
+      ],
+      "acceptance_criteria": [
+        "节点数量可递归到原版采集",
+        "每条边带机器·时长且时长必填出处与置信度",
+        "能量/热力等非物品输入进 totals 并标注，不被物品图吞掉",
+        "断点显式成列（cycle/no-recipe/unresolved/cap）"
+      ],
+      "verification": {
+        "status": "not_run"
+      },
+      "acceptance": {
+        "status": "not_requested"
+      },
+      "delivery": {
+        "status": "not_applicable"
+      }
+    }
+  ],
+  "issues": [
+    {
+      "id": "issue-migration-crlf-checksum",
+      "kind": "issue",
+      "title": "迁移文件 CRLF 被 sha256 校验判篡改导致启动失败",
+      "status": "resolved",
+      "summary": "git autocrlf 把 SQL 检出成 CRLF,迁移执行器字节级 sha256 与库内记录不符,报 migration 0001 checksum mismatch 拒启。",
+      "resolution": "4 个迁移文件统一回 LF + 新建 .gitattributes 钉死 '*.sql text eol=lf'(commit 5aacce2)。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "修复后后端健康 ready;verify 四层全绿",
+          "source": "session 2026-09-01",
+          "locator": "commit 5aacce2"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "issue-ac56a422",
+      "kind": "issue",
+      "title": "假包 tech 路由导致模组搜索 404",
+      "status": "resolved",
+      "summary": "main.tsx 四条路由写死 /packs/tech/…,AppShell 侧栏 activePackId 默认 'tech',数据库只有真实包,导致全部 404 'pack not found',表现为'JEI 都搜不到'。",
+      "resolution": "DefaultPackRedirect 自动落第一个真实包;侧栏包导航 listPacks 动态化;PackContext 顶栏改 getPack 真实数据。修复后 JEI 双平台实测 10 条。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "修复后 curl 搜 JEI:CF+MR 共 10 条无错误",
+          "source": "session 2026-08-30",
+          "locator": "commit 05aefa7"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "issue-670c4eeb",
+      "kind": "issue",
+      "title": "tool_install 任务首次提交 500 与租约回收",
+      "status": "resolved",
+      "summary": "① tasks 表 CHECK 约束枚举写死 kind,新 kind 插入被 sqlite 拒绝(迁移 0003 重建表解决,注意迁移执行器自带事务,文件内不能再写 BEGIN/COMMIT);② 任务租约 30s,下载静默期无 Progress 被回收重跑(10s 心跳 + handler 入口 exe 存在即成功解决);③ 幂等键复用已成功任务导致'删了重装'无法提交(改为仅复用活跃任务)。",
+      "resolution": "迁移 0003 + 心跳 + 活跃任务复用;e2e 复验任务日志 11 条干净闭环",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "复验任务日志:queued→leased→running→安装输出→succeeded,无回收重跑",
+          "source": "session 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "issue-07c8d9e0",
+      "kind": "issue",
+      "title": "后端端口 18766 被旧 mc_dev 进程占用",
+      "status": "resolved",
+      "summary": "go run 首次启动 bind 失败,curl 到的是旧项目的 404。mPackStation 后端改用 18871,vite 代理同步更新。旧进程(5173/18765/18766)一律不动。",
+      "resolution": "改端口为 18871 并验证双链路",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "netstat 确认 18765/18766/5173 被占;18871 健康检查通过",
+          "source": "session"
+        }
+      ],
+      "updated_at": "2026-08-27T00:00:00Z"
+    },
+    {
+      "id": "issue-item-icon-coverage-gap",
+      "kind": "issue",
+      "title": "剩余自定义渲染/染色图标覆盖缺口（AE2 29 个 item 模型，含辅助模型）",
+      "status": "open",
+      "summary": "2026-09-07 已修复普通方块方向/UV，扩展模型继承/elements/半砖/楼梯/墙和原版资源。当前 models/item 口径 AE2 349 张图标生成，29 个模型未生成；旧 519/190 统计混合模型口径，保留为历史证据。剩余自定义loader、运行时染色/实体渲染与跨模组资源叠加待支持。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "AE2: 519 item_model, 190 item_icon(36.6%), 329无icon。按parent分布: none45/handheld21(已修复)/part_base18/covered_cable_base17/slab_top11/inner_stairs11等",
+          "source": "session 2026-09-07",
+          "locator": "database query + check_no_icon.py"
+        },
+        {
+          "type": "artifact",
+          "level": "observed",
+          "claim": "全量 Go test/vet、前端构建、真实 MC 1.21.1/AE2 资源和高级卡配方 UI 验证通过；349 AE2 图标，29 item 模型未生成（含辅助模型）。",
+          "source": "docs/backup/project-state/history/2026-09-07-item-icons-fix.md",
+          "locator": "sha256:d411445bb155afc452d82d9218576165cd699c1a64524eed52b102567fd456f8"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "2026-10-03 R1+R2 已放行 item_layers/separate_transforms/composite（loader 一票否决取消），缺口相应收窄；未做：R4 OBJ 网格(+22)、R5 tint 近似(+15)、R6 化学桶(+18)；R3 builtin/entity 明确「不做，只说清」",
+          "source": "checkpoint 2026-10-03 / docs/active/design/item-icon-renderer-plan-2026-10-03.md §3-§4"
+        }
+      ],
+      "updated_at": "2026-10-03T16:30:00+08:00",
+      "note": "O12 部分缓解：loader 拒绝类已放行，剩 OBJ/tint/化学桶三类渲染能力（R4-R6）与 wall_banner 无语言键"
+    },
+    {
+      "id": "issue-content-page-layout",
+      "kind": "issue",
+      "title": "内容编辑页面排版问题: 列表/详情布局需优化",
+      "status": "resolved",
+      "summary": "用户反馈内容编辑页面排版不对。当前ModContentPage的列表展示和详情弹窗布局需要优化,特别是配方展示(JEI网格)和物品列表的间距/对齐/响应式。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'这页面排版不对呀'",
+          "source": "user 2026-09-07"
+        }
+      ],
+      "updated_at": "2026-09-07T02:00:00Z",
+      "resolution": "本轮逐页截图复核后已修，残余见 defects-2026-09-30.md"
+    },
+    {
+      "id": "issue-service-stability",
+      "kind": "issue",
+      "title": "前后端服务稳定性: 经常挂掉,需前台PowerShell窗口运行",
+      "status": "resolved",
+      "summary": "后端server.exe和前端vite dev server在后台运行时经常挂掉(进程被回收/端口释放)。用户明确要求必须用前台PowerShell窗口运行(-NoExit),不要后台运行。当前每次会话需要手动重启服务。需要调查根因(是OOM/句柄泄漏/还是PowerShell后台进程管理问题)并提供稳定的启动方案。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'服务又挂了'、'你直接在我电脑上搞个窗口出来,把这个服务挂在那个窗口里,也就是前台启动那个脚本'、'不要每次都是后台运行,动不动就挂掉了'",
+          "source": "user 2026-09-07"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "2026-09-30 macOS 复核：本会话期间 18871 后端与 5273 vite 全程存活（curl /api/health 返回 ready、两个 LISTEN 都在），且同一后端进程撑完了 15 轮链路测试与终局真下载。Windows 时代的前台窗口方案随仓库迁移到 macOS 已不适用",
+          "source": "session 2026-09-30",
+          "locator": "curl http://127.0.0.1:18871/api/health; lsof -nP -iTCP:18871 -iTCP:5273 -sTCP:LISTEN"
+        }
+      ],
+      "updated_at": "2026-09-30T13:00:00Z",
+      "resolution": "根因是 Windows 侧后台 PowerShell 进程管理，仓库迁移到 macOS 后该形态不再存在，开发实例（scripts/dev.sh）本轮全程未重启。macOS 上的同类风险只剩一条且已有规避：把 -data 放在 Evo(SMB) 挂载上会让进程卡成 UN，因此数据目录固定用本地盘 /tmp/mpack-data（见 HANDOFF「环境」条）。"
+    },
+    {
+      "id": "issue-dynamic-recipe-parse",
+      "kind": "issue",
+      "title": "动态代码配方无法解析: 如AE2线缆伪装合成(运行时Java代码生成)",
+      "status": "open",
+      "summary": "当前解析器只能解析静态JSON配方文件(data/*/recipes/*.json)。部分模组的配方是通过运行时Java代码动态注册的(如AE2的线缆伪装版可以和任意方块合成),无法从jar中的静态文件提取。这类动态配方需要反编译/运行时dump才能获取,当前架构不支持。用户已了解此限制,标记为后续研究项。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户问'A12线缆伪装版可以和任意东西伪装合成,这个东西的配方是怎么实现的?这块的动态代码能解析吗?'",
+          "source": "user 2026-09-07"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "2026-09-19 部分缓解：parseRecipeFile 把 minecraft:crafting_special_*、decorated_pot 以及 recipe 路径下无 ingredients/result 的 JSON 标为 IsDynamic，前端 RecipeViewer 增「特殊/动态」列分支——动态配方不再被静默丢弃或误判为坏数据，但仍不产出真实配方内容（需运行时 dump）。需 force 重解析后生效",
+          "source": "session 2026-09-19 / docs/active/project-state/HANDOFF.md",
+          "locator": "apps/server/internal/service/mod_content_extract.go:278-316 parseRecipeFile / IsDynamic"
+        }
+      ],
+      "updated_at": "2026-09-19T00:00:00Z"
+    },
+    {
+      "id": "issue-bottombar-mock-data",
+      "kind": "issue",
+      "title": "底边栏使用mock数据: 未接入真实数据源",
+      "status": "resolved",
+      "summary": "用户要求底边栏用真实数据源替代mock。当前底边栏的状态信息(包数量/模组数量/任务状态等)可能还是硬编码或mock数据,需要接入后端真实API。用户说'先把底边栏的mock解决掉吧,用真实数据源'。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'先把底边栏的mock解决掉吧,用真实数据源'",
+          "source": "user 2026-09-07"
+        }
+      ],
+      "updated_at": "2026-09-07T02:00:00Z",
+      "resolution": "假数据残余清理：无真实数据源的块改为空态或移除，死 CSS 一并删（2026-09-30）"
+    },
+    {
+      "id": "issue-mrpack-not-assembled",
+      "kind": "issue",
+      "title": "[D1 阻塞终局] 构建不装配整合包：只把调用方传入的 files 压成 zip，产物无 jar、非 .mrpack",
+      "status": "resolved",
+      "summary": "阻塞终局。service/build.go:405 validateBuildInput 要求 len(Files)>0，契约 docs/active/api/contract.md:910 却写 files 可选——按契约调用必 400。build.go:332 文件名 <version>-<fp16>.zip、Kind=zip；全仓 Go 无 mrpack/manifestVersion 字样。前端 PackPages.tsx:440 自行拼占位 manifest 上传，实测产物 283 字节只含 1 个 160 字节 modrinth.index.json。契约里的 422 build_blocked 与 403 export_dir_not_allowed 两条分支从未执行过（包内有 4 条未解决冲突仍直接进构建）。",
+      "evidence": [
+        {
+          "type": "file",
+          "level": "observed",
+          "claim": "assembly_repo.go LEFT JOIN + build.go 装配；单测 TestBuildDoesNotSilentlyDropModWithoutSelection",
+          "source": "session 2026-09-30",
+          "locator": "apps/server/internal/service/build_input_codes_test.go",
+          "note": "2026-10-03 checkpoint 归一：原值 verified 不是合法证据等级（state-model 枚举为 observed/corroborated/reported/inferred/unknown），该条证据实为命令/产物级实测，改标 observed，内容未动。"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "服务端按权威链 pack_mods.current_selection_id→pack_mod_selections→selection_platform_pins(role=primary)→platform_release_files 自行装配真实 .mrpack（隔离环境产物 539 字节，manifest 含 JEI 真实 Modrinth URL + sha1/sha512）。装配只读 SQLite+写 zip，不需要网络。见 docs/active/tests/defects-2026-09-30.md O1"
+    },
+    {
+      "id": "issue-pack-version-conflict-500",
+      "kind": "issue",
+      "title": "[D2 阻塞级] POST /packs/{id}/versions 版本号冲突返回 500 而非 409/422",
+      "status": "resolved",
+      "summary": "建包时服务端已自动写入 0.1.0/draft 行，对刚建好的包正常发起的第一个动作就撞唯一约束 → 500 internal_error。实测 0.2.0→201、重复 0.1.0→500，基线脚本有 \"duplicate version (期望 409)\" 探针稳定复现。次生不一致：自动行 ID 前缀 packver-，手动创建前缀 version-。同类复发参考已 resolved 的 issue-670c4eeb。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "显式错误码：build_lock_mismatch(422,带 lockId 与取回路径)、build_input_conflict(409)；不再依赖 httpapi.go 兜底映射"
+    },
+    {
+      "id": "issue-quest-get-error-label",
+      "kind": "issue",
+      "title": "[D3 契约语义] GET /packs/{id}/quests 把「包存在但还没有任务书」报成 404 pack_not_found",
+      "status": "resolved",
+      "summary": "store/content_repo.go:371-375 无 quest_books 行时抛裸 ErrNotFound，httpapi.go 统一映射 pack_not_found；同一包 catalog/status=200 可排除包真不存在。契约 :838 写的就是这个码，属于契约把两种语义挤进一个码，调用方只能靠 If-Match:0 猜着建档（写侧正常）。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "quest_book_not_found / quest_revision_not_found 分离，空态有专门段落写进 docs/active/api/contract.md §3.6"
+    },
+    {
+      "id": "issue-launcher-install-no-sync-validation",
+      "kind": "issue",
+      "title": "[D4] launcher install 受理残缺 payload，必填项到异步任务才报错",
+      "status": "resolved",
+      "summary": "LauncherInstallPayload 字段是 version/minecraft_dir（launcher_task.go:14-19），没有 packId；传 {\"packId\":...} 得 202+taskId，任务随即 failed: version and minecraft_dir are required。同步可判的必填校验放到异步，错误只能查任务才看得见。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "R1/R2/R3 同步侧校验：缺 minecraft_dir/username 直接 400/422 且不入队；chain 用例断言 tasks 表计数不变"
+    },
+    {
+      "id": "issue-launcher-binary-path-windows-only",
+      "kind": "issue",
+      "title": "[D5 结构性，阻塞终局] 启动内核二进制路径在 macOS 上永远解析不到（硬编码 .exe + 拼错根目录 + 无 PATH 兜底）",
+      "status": "resolved",
+      "summary": "service/launcher/launcher.go:37-39 固定 filepath.Join(workbenchRoot, \".tools/launcher\", \"mpack-launcher.exe\")；实参 workbenchRoot 是 -data 数据根目录（报错路径 /private/tmp/.tools/launcher/... 即 /tmp/mpack-e2e 拼出来的），与注释「next to the server executable」不符；注释还声称「or on PATH」，但代码没有 exec.LookPath 兜底。launcherCore 在本机从未编译（无 target/）。失败把 Go fork/exec 原文当 error 透出，没有归一错误码。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "MPACK_LAUNCHER_BIN 环境变量注入；安装记录落 launcher_installs(migration 0022)，版本 ID 契约 fabric-loader-<loader>-<mc> 对齐 launcherCore/src/loader/fabric.rs:43-45；GET /api/launcher/installs 可查并按已装 ID 启动；未安装 409 launcher_not_installed。2026-09-30 更正：本机 cargo 一直可用（brew rustup，只是不在默认 PATH），已用真编译内核跑通终局，见 task-terminal-chain-20260930"
+    },
+    {
+      "id": "issue-launcher-api-undocumented",
+      "kind": "issue",
+      "title": "[D6 文档缺口] 启动器接口完全没进 API 契约",
+      "status": "resolved",
+      "summary": "docs/active/api/contract.md 全文 launcher 出现 0 次，而 POST /api/launcher/install（routes_system.go:92）已实现且 202 语义正确。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "docs/active/api/contract.md §8.1/§8.2 补齐 pack_id、installs 端点、version_id 契约与错误码"
+    },
+    {
+      "id": "issue-catalog-no-recipe-lookup",
+      "kind": "issue",
+      "title": "[D7 覆盖缺口] 包目录域没有「按物品反查配方」的端点",
+      "status": "resolved",
+      "summary": "GET /catalog/items/{id} 实测字段 displayName/evidence/iconStatus/id/modelPath/names/resolvedLocale/tags，无 recipes/usages；catalog 路由全集只有 icon/status/rebuild/(list)/items/{id}/tags/{id}。配方目前只能从 mods/{modId}/content 按模组取。契约与 ADR 均未定义该端点，属设计留白，但「点物品看配方」这条 JEI 核心体验在包目录域无 API。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z",
+      "resolution": "读未构建包目录返回 catalog_not_built(409)，错误码表进契约；O9/O10 语义与入口收敛"
+    },
+    {
+      "id": "issue-launcher-no-mrpack-reader",
+      "kind": "issue",
+      "title": "[O14 曾阻塞终局] launcherCore 无 .mrpack 读取能力",
+      "status": "resolved",
+      "summary": "全仓 grep mrpack|manifestVersion|modrinth.index|overrides 命中 0：构建产物已真实，但启动内核无法消费，流水线最后一环仍断。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "grep 0 命中",
+          "source": "session 2026-09-30",
+          "locator": "launcherCore/src",
+          "note": "2026-10-03 checkpoint 归一：原值 verified 不是合法证据等级（state-model 枚举为 observed/corroborated/reported/inferred/unknown），该条证据实为命令/产物级实测，改标 observed，内容未动。"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "终局链路 43 条断言 PASS 43 / FAIL 0，真内核按 artifact_id 安装 .mrpack 并拉起 Minecraft 1.21.1 / Fabric 0.16.14",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/terminal-run-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T13:00:00Z",
+      "resolution": "launcherCore/src/mrpack.rs 解析 modrinth.index.json（manifest/files/overrides），CLI 新增 install --mrpack <file> --dir <mc>；Go 侧只传 artifact_id，版本 ID 取自 manifest。曾写在本条上的「本机无 cargo，自研不可验证，需用户拍板 Prism 兜底」是误判，已作废"
+    },
+    {
+      "id": "issue-terminal-defects-o15-o25",
+      "kind": "issue",
+      "title": "[O15-O25] 真机终局跑通时一次性暴露的 11 个缺陷",
+      "status": "resolved",
+      "summary": "O15 导出目录换名重登记返回裸 500；O16 加载器 url-only 库漏装（装上后 ClassNotFoundException: KnotClient）；O17 macOS Java runtime 布局未探测（runtime/<component>/jre.bundle/Contents/Home/bin/java）；O18 下载 runtime 缺执行位；O19 竞速下载残留 partial 文件；O20 致命冲突不拦构建（装上就崩）；O21 本轮未再检出的过期冲突不结案；O22 原样回传锁快照仍被判 build_lock_mismatch；O23 conflicts.kind CHECK 不收 known_issue；O24 依赖类型（required/optional/embedded/incompatible）不分级；O25 平台不可用被写成 error 级 dependency 冲突，把构建闸门堵死。逐条出处见 docs/active/tests/defects-2026-09-30.md §1。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "真内核终局链路 43 条断言全绿；chain run14 曾 8 条 FAIL 全指向 O25，修后 run15 PASS 172 / FAIL 0 / SKIP 1；go test ./... -count=1 退出 0",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/terminal-run-2026-09-30.log, docs/active/tests/evidence/chain-run15-2026-09-30.log"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "回归断言：test_plan_downloads_url_only_libraries、TestBuildBlockedByUnresolvedFatalConflict、TestBuildAcceptsSnapshotResentVerbatim、TestTransientProviderConflictIsWarningAndDoesNotBlockBuild、TestConflictWhitelistKeepsKnownKinds、chain [13] P3b",
+          "source": "session 2026-09-30",
+          "locator": "apps/server/internal/service/conflict_transient_test.go, apps/server/internal/service/build_conflict_gate_test.go",
+          "note": "2026-10-03 checkpoint 归一：原值 verified 不是合法证据等级（state-model 枚举为 observed/corroborated/reported/inferred/unknown），该条证据实为命令/产物级实测，改标 observed，内容未动。"
+        }
+      ],
+      "updated_at": "2026-09-30T13:00:00Z",
+      "resolution": "O16-O19 在 launcherCore（url-only 库走 MavenCoordinate、macOS runtime 布局探测、补执行位、清理竞速 partial）；O20/O21/O22 在 apps/server/internal/service/build.go 的 assertPackBuildable 与冲突生命周期；O23/O24/O25 在 mods.go 冲突白名单 + 迁移 0023/0024（provider_unavailable 独立 kind，网络态只出 warning）。schema 现为 24。残余：O16 后半/O17/O18/O19 尚无专属 Rust 单测，只由终局实跑覆盖。"
+    },
+    {
+      "id": "issue-pack-delete-slow",
+      "kind": "issue",
+      "title": "[O5] 删除空包同步耗时 ≈9.6-9.8s",
+      "status": "open",
+      "summary": "实测 9.61/9.79/9.82 秒（257MB 库，疑缺 FK 覆盖索引）。未改行为，属 UX 决策：入队异步+任务进度 vs 建索引。chain-test [29] 已把耗时写入 note。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z"
+    },
+    {
+      "id": "issue-local-jar-not-in-mrpack",
+      "kind": "issue",
+      "title": "[O1 残余] 只有本机 jar 的本地模组进不了 .mrpack",
+      "status": "open",
+      "summary": ".mrpack 规范要求 files[] 带 downloads URL；本地 jar 无 URL，只能进 overrides/。当前 LEFT JOIN 保证它不被静默丢弃，但未真正落 overrides。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "隔离环境 chain run13:166 例 PASS 165 / FAIL 0 / SKIP 1",
+          "source": "session 2026-09-30",
+          "locator": "docs/active/tests/evidence/chain-run13-2026-09-30.log"
+        }
+      ],
+      "updated_at": "2026-09-30T12:00:00Z"
+    },
+    {
+      "id": "issue-category-testfixture-check",
+      "kind": "issue",
+      "title": "回归测试夹具自犯 pack_mods CHECK 约束，导致 go test ./... 红一项",
+      "status": "resolved",
+      "summary": "category_test.go:23 插入 source='modrinth' 且 project_id=NULL，直接违反建表 CHECK (source='local' AND project_id IS NULL) OR (source IN ('curseforge','modrinth') AND project_id NOT NULL)，测试在 ExecContext 处即失败。复现：cd apps/server && go test ./internal/store -run TestPackModCategoryAcrossReads -count=1（确定性，非环境抖动）。影响：仓库当前 `go test ./...` 不为全绿（10 包 ok / 1 包 FAIL），与 AGENTS.md「固定验证」要求冲突，提交前必修。修法（一行）：夹具改 project_id 给真值，或把 source 换成 'local'。功能本身无缺陷（API 回读与浏览器验收均通过）。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "--- FAIL: TestPackModCategoryAcrossReads (0.12s) category_test.go:24: constraint failed: CHECK constraint failed: ... (275)；同轮 go vet ./... 干净",
+          "source": "checkpoint 2026-10-03 16:22 实测 -count=1",
+          "locator": "apps/server/internal/store/category_test.go:23"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "修复后复跑 cd apps/server && go test ./... -count=1 → 10 包全 ok（含 internal/store 的 TestPackModCategoryAcrossReads），go vet ./... 干净；修复 = 夹具 project_id 由 NULL 改给真值（source=modrinth 须非空）",
+          "source": "checkpoint 2026-10-03 16:4x 实测",
+          "locator": "6c0aa5d^..6c0aa5d apps/server/internal/store/category_test.go"
+        }
+      ],
+      "updated_at": "2026-10-03T16:45:00+08:00",
+      "severity": "medium",
+      "resolution": "已修：夹具 project_id 给真值，随 6c0aa5d 入库",
+      "verification": {
+        "status": "failed",
+        "bound_to": "sha256:a795433e455031778428ac5df350fe0c30be54861ebbb21a80b1aa01d9b7ef53"
+      }
+    },
+    {
+      "id": "issue-daily-db-wipe-cause-unknown",
+      "kind": "issue",
+      "title": "共享开发库 /tmp/mpack-data 被清空，成因未定（真实数据丢失）",
+      "status": "suspected",
+      "summary": "2026-10-03 13:20 起：/tmp/mpack-data(18871/18872) 与 /tmp/mpack-chain 的 packs/pack_mods/mod_content 全 0 行。链路库已判定为 chain-test-run.sh 的设计内重置（脚本每次运行重置隔离环境），不算事故；日常库是真实数据丢失（readd-test 的任务书/目录/魔改记录），成因未定——本会话动作可证无关（0025/0026 迁移只动目录四表），但无日志不能指认并行会话。恢复尝试已穷尽：sqlite .recover 只捞出 9 月旧孤儿数据（pack-06344b…）；APFS 快照不覆盖 /tmp；幸存副本仅仓库 data/ 下的 09-19 快照（schema 16，3 个旧链路测试包）。防再发已入 AGENTS.md 铁律（动共享数据目录须当轮明示）。",
+      "evidence": [
+        {
+          "type": "document",
+          "level": "observed",
+          "claim": "事实、恢复尝试与判定全文",
+          "source": "docs/active/tests/incident-2026-10-03-shared-env-wipe.md",
+          "locator": "docs/active/tests/incident-2026-10-03-shared-env-wipe.md"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "13:2x 两库三表 COUNT=0；18880 clean 实例（幸存 264MB / 2 包）完好",
+          "source": "zcode sess_0c49f511 (2026-10-02 11:16 → 2026-10-03 16:08)"
+        }
+      ],
+      "updated_at": "2026-10-03T16:30:00+08:00",
+      "severity": "high",
+      "resolution": "链路库部分结案（脚本设计内重置）；日常库保留 suspected，除非有新的日志/时间线证据",
+      "verification": {
+        "status": "not_applicable"
+      }
+    },
+    {
+      "id": "issue-readme-schema-port-stale",
+      "kind": "issue",
+      "title": "README 的 schema 版本与端口口径双双过期",
+      "status": "resolved",
+      "summary": "README.md:22 写「schema 26（migrations 0001-0026）」，实际 apps/server/internal/store/store.go:41 CurrentSchemaVersion = 27（0027_pack_mod_category.sql 已在）。README.md:70-72 仍写「端口约定：前端 5273、后端 18871」与 5273 跨机访问示例，与 AGENTS.md 铁律（5271/18872，且明令禁止 5273/18871）冲突。README.md:58 也还引用 18871 作为「不要复用」的历史端口说明。属文档缺陷，会误导下一个会话。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "grep 实测：README.md:22 schema 26 / README.md:70 端口 5273+18871 vs store.go:41 = 27 vs AGENTS.md:5-7",
+          "source": "checkpoint 2026-10-03 16:2x",
+          "locator": "README.md"
+        },
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "README:22 现写 schema 27；:70 现写前端 5271/后端 18872；`grep -n 18871 README.md` 仅命中作废清单行",
+          "source": "apps/server/internal/store/store.go:41 = 27；git show 65cf1e5 --stat",
+          "locator": "README.md:22,58,70-72"
+        }
+      ],
+      "updated_at": "2026-10-03T16:50:00+08:00",
+      "severity": "low",
+      "resolution": "已修：README:22 schema 26→27（补 0027 说明）、端口段改 5271/18872 并列作废端口，提交 65cf1e5",
+      "verification": {
+        "status": "not_applicable"
+      }
+    },
+    {
+      "id": "issue-evidence-logs-untracked",
+      "kind": "issue",
+      "title": "docs/active/tests/evidence/*.log 被 .gitignore 的 *.log 规则排除，报告引用的证据不在版本控制里",
+      "status": "confirmed",
+      "summary": "HANDOFF 与 README 多处把绿灯结论指向 docs/active/tests/evidence/chain-run15-2026-09-30.log、terminal-run-2026-09-30.log，但仓库根 .gitignore:6 有 `*.log`，这些文件从未入库（git check-ignore 实测命中）。后果：别人从 GitHub 拉下来只看得到「173 例 PASS 172」这类断言，拿不到原始日志，无法复核。修法二选一：给 .gitignore 加 `!docs/active/tests/evidence/*.log` 例外并把日志入库，或改为在报告里贴关键片段而不引用文件。",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "git check-ignore -v docs/active/tests/evidence/chain-run15-2026-09-30.log → .gitignore:6:*.log；ls 该目录有 chain-run8/10/12/13/15 等多个日志",
+          "source": "checkpoint 2026-10-03 16:4x",
+          "locator": ".gitignore"
+        }
+      ],
+      "severity": "medium",
+      "verification": {
+        "status": "not_applicable"
+      },
+      "updated_at": "2026-10-03T16:45:00+08:00"
+    },
+    {
+      "id": "issue-chain-test-port-collision",
+      "kind": "issue",
+      "title": "chain-test-run.sh 默认端口 18872 = 唯一开发后端端口：不停开发实例就跑链路测试会把用例打在 /tmp/mpack-data 上",
+      "status": "confirmed",
+      "severity": "high",
+      "summary": "10-03 铁律把开发后端从 18871 迁到 18872，而 scripts/chain-test-run.sh 的默认端口一直是 18872（CHAIN_PORT 可改）。撞口时链路测试自己的后端 bind 失败，但脚本的 wait_up 只看 http://127.0.0.1:18872/api/health 是否 200 —— 开发后端会答这个 200，于是脚本继续对着开发实例跑 173 个用例（含建包、删包、清目录），数据目录是 /tmp/mpack-data。这与 10-03 日常库被洗空的现象同型，是当前最容易复发的自伤路径。",
+      "resolution": null,
+      "acceptance_criteria": "跑 chain-test-run.sh 时若 18872 已被非 chain 实例占用，脚本必须硬失败退出（不是继续跑）；建议做法：起服务前探测 /api/health 的响应体（带上数据目录或实例标记）而不是只看 200，或把默认端口改成不与开发实例重合的值。",
+      "related_files": [
+        "scripts/chain-test-run.sh",
+        "scripts/dev.sh",
+        "AGENTS.md",
+        "README.md"
+      ],
+      "verification": {
+        "status": "not_run",
+        "note": "未实跑：跑一次就会污染唯一开发库"
+      },
+      "evidence": [
+        {
+          "type": "code",
+          "level": "observed",
+          "claim": "chain-test-run.sh:8 `PORT=${CHAIN_PORT:-18872}`；:29-30 的 pkill 只匹配 `mpack-chain-server -addr`，杀不掉 dev.sh 起的 `go run ./cmd/server`；:20-26 wait_up 仅以 /api/health 的 200 判定存活",
+          "source": "读 scripts/chain-test-run.sh 全文",
+          "locator": "scripts/chain-test-run.sh:8,20-30"
+        },
+        {
+          "type": "code",
+          "level": "observed",
+          "claim": "dev.sh 用同一端口 18872 且数据目录为 /tmp/mpack-data；dev.sh 自己有 port_busy 保护，chain 脚本没有",
+          "source": "读 scripts/dev.sh",
+          "locator": "scripts/dev.sh:12-18"
+        },
+        {
+          "type": "analysis",
+          "level": "inferred",
+          "claim": "撞口后果（用例写到开发库）由上述代码路径推出，本轮未实跑验证；未实跑是因为实跑一次就会重置/污染唯一开发库，而 AGENTS.md 规定动它须用户当轮明示",
+          "source": "代码路径推理",
+          "locator": "scripts/chain-test-run.sh:32-34,159-181"
+        }
+      ],
+      "updated_at": "2026-10-03T16:58:00+08:00"
+    }
+  ],
+  "ideas": [
+    {
+      "id": "idea-client-telemetry-upload",
+      "kind": "idea",
+      "title": "客户端采集上报:兼容问题/配对知识从客户端回流服务端",
+      "status": "captured",
+      "summary": "用户 2026-09-01 提出:当前只记录了哪些规则是兼容性问题、哪些是双平台同模组(内置知识库+身份表),但缺少从客户端采集并上传到服务端的能力——分发出去的包在用户机器上跑出的兼容问题/配对确认,应能回流积累。用户明确:先不实现,仅登记。未来设计候选:上报内容边界(崩溃日志/冲突命中/配对确认)、隐私与脱敏、接收端鉴权与防垃圾、与内置知识库的合并流程(人工核实后才进基线)。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'我们没有从客户端采集并上传到服务端的这个能力,这也是很重要的。先不做实现了,先知道有这么个事儿'",
+          "source": "user 2026-09-01"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "idea-ddc96879",
+      "kind": "idea",
+      "title": "自研启动内核分段评估(Go 实现启动器协议子集)",
+      "status": "needs_discussion",
+      "summary": "嵌 Prism 代码被否决后,改评估自研:mrpack 客户端安装(可借 MIT 的 mrpack-install)+ Mojang manifest 安装 MC + loader 安装 + 微软 device code 登录 + 拉起抓日志,估 2-4k 行 Go,范围收窄到 1.16+/Windows/NeoForge+Fabric/自家包。三段执行:Phase 0 原版+离线模式 spike(卡住即止损回 Prism CLI)→ Phase 1 loader+mrpack+与 Prism 目录树 diff 神谕测试 → Phase 2 微软登录+真实包冒烟矩阵。用户担心 LLM 从零架构能力,已选定引入 superpowers 方法论;待用户拍板是否开工 Phase 0。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'好好想想,你要是真能接,那你就做好吧。先评估一下' —— 评估已交付,开工未拍板",
+          "source": "user 2026-08-30"
+        },
+        {
+          "type": "analysis",
+          "level": "observed",
+          "claim": "参照系:minecraft-launcher-lib(Python,BSD-2)约 5k 行实现同等能力全集;go-mc 无现成启动器核心",
+          "source": "web 调研 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "idea-2bc71628",
+      "kind": "idea",
+      "title": "模板卡片 = 预制开局(迎新三卡落地)",
+      "status": "needs_discussion",
+      "summary": "科技包默认 AE2/Mek/Flux Networks/JEI+基础附属+按 loader 分叉的优化层(NeoForge=Embeddium/FerriteCore/ModernFix,Fabric=Sodium/Lithium);模板存 JSON 数据文件;不可解析版本跳过并出报告;装完自动依赖解析。未拍板:模板清单 schema、反选权(默认全勾可取消 vs 全装)、清单草案分工。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'我现在的目的是跟你讨论,不是说让你直接就去改'",
+          "source": "user 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "idea-28f0096b",
+      "kind": "idea",
+      "title": "mrpack-install 服务端冒烟进流水线",
+      "status": "captured",
+      "summary": "mrpack-install(MIT,Go)可无账号部署 .mrpack 为服务端,抓日志即可自动冒烟(缺依赖/版本错配/初始化崩);作为'启动 Minecraft'前的免账号验收环。是否进路线图未拍板。",
+      "evidence": [
+        {
+          "type": "analysis",
+          "level": "observed",
+          "claim": "官方 README:server/update/ping 子命令,支持 vanilla/fabric/quilt/forge/neoforge/paper",
+          "source": "github.com/nothub/mrpack-install"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "idea-18d9e0f1",
+      "kind": "idea",
+      "title": "SVG 像素风 MC 场景封面替代渐变块",
+      "status": "captured",
+      "summary": "不接外链图的约束下,手工 SVG 像素/voxel 风山水场景在主题贴合度上优于平色渐变,也优于抽象色块。接真封面后 PackCover 一行换 <img>。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "inferred",
+          "claim": "由设计稿比对得出,未经用户确认",
+          "source": "session"
+        }
+      ],
+      "updated_at": "2026-08-27T00:00:00Z"
+    },
+    {
+      "id": "idea-29e0f1a2",
+      "kind": "idea",
+      "title": "包工作台页(/packs/:id)提示词文档",
+      "status": "captured",
+      "summary": "交互主战场(搜索→加入整合包)的页面级提示词,按'每页一文档、mock 先行、截图验收'流程推进。旧 mc_dev 仅 multiblocks 组件(GridPreview/IsoPreview)值得移植。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "来自交接备忘记录的既定计划",
+          "source": "session"
+        }
+      ],
+      "updated_at": "2026-08-26T00:00:00Z"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "decision-dual-source-naming",
+      "kind": "decision",
+      "title": "双平台配对名称优先 + 添加即钉版 + 一行镜像字段 + 身份表双库分离",
+      "status": "active",
+      "summary": "配对用名称规范化完全相同(忽略大小写/空格/括号),slug 否决(AE2 两边 slug 不同);宁漏并不错并。版本在用户添加模组时立即双平台钉死,永不追新——'再追新版,打包打最新版,之前的调试就没意义了,发出来的包大概率连启动都过不了'(用户原话)。存储一行+镜像字段,不用两行(已装列表/依赖/冲突/计数都假设一模组一行)。身份表分发用独立内置只读知识库(go:embed),绝不与用户整合包信息同库。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'不能slug优先…名称优先吧 先这么用 出问题再说';'版本镜像在添加时立即查';'不能把整合包信息打进去 理论上不能是同一个库'",
+          "source": "user 2026-09-01"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "decision-compat-knowledge-autofix",
+      "kind": "decision",
+      "title": "兼容知识:自动修复=自动但可见;知识起步只放人工核实",
+      "status": "active",
+      "summary": "命中已知冲突自动加装兼容性模组(用户:'兼容模组不提供内容只提供兼容,一般不会导致更严重的兼容问题'),靠透明保掌控(标签+日志+可移除),不做默默修改;知识库起步只放人工核实条目+常见兼容性模组推荐,本机自动学习暂不做。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'我们会整理出对应的兼容信息…理论上用户不会失去对包内容的掌控';'起步的话,就只放人工核实过的'",
+          "source": "user 2026-09-01"
+        }
+      ],
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    {
+      "id": "decision-9a0c8004",
+      "kind": "decision",
+      "title": "流水线终局通向启动 Minecraft",
+      "status": "active",
+      "summary": "链 = 模板开局 → 模组/依赖锁定 → 内容/任务书 → 构建 .mrpack → mrpack-install 服务端冒烟(免账号)→ Prism 导入并启动(账号 = 用户登录一次微软账号的人工节点)。mPackStation 生态位 = 编排器:构建是自己的,部署/启动用现成轮子或自研内核,不造 GUI 启动器;知识沉淀(踩坑规则)是壁垒。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户:'这条线最终的结果肯定通向启动一个 Minecraft,不然我们前面的工作都是没有意义的'",
+          "source": "user 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "decision-da2110dc",
+      "kind": "decision",
+      "title": "模组搜索:单框模糊名称、双平台并发、不加锁",
+      "status": "active",
+      "summary": "单搜索框按名称模糊搜(两平台 ID 不一致,否决 ID 搜索);底层 WaitGroup 并发扇出 MR+CF;适配器无状态故不加锁;防限流靠每平台单次请求/零自动重试/15s 独立超时/仅手动触发;单平台失败只做错误隔离绝不阻塞另一平台。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户钦定设计,曾因 Codex 残壳被误改为单平台而震怒",
+          "source": "user 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "decision-f3ee0d92",
+      "kind": "decision",
+      "title": "否决嵌入 Prism 代码,能力靠协议自研或 CLI 调用",
+      "status": "active",
+      "summary": "实测 Prism launcher/ 795 文件 116,455 行 C++20 且与 Qt 深度耦合,无可拆库;GPL-3.0-only 嵌入即传染全项目;其微软 client id 依 ToS 不可冒用。CLI 调用属 mere aggregation 不传染,保留为兜底;自研路径见 idea-ddc96879。",
+      "alternatives": [
+        "嵌入/fork Prism 源码(否决:GPL 传染+Qt 耦合)",
+        "引导用户自装 Prism(否决:用户要求自动安装)"
+      ],
+      "evidence": [
+        {
+          "type": "analysis",
+          "level": "observed",
+          "claim": "浅克隆真实统计 LOC;COPYING.md GPL-3.0-only;README 明示 fork 须替换 API key",
+          "source": "GitCode 克隆 + 官方仓库 2026-08-30"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "decision-7859b14d",
+      "kind": "decision",
+      "title": "引入 obra/superpowers 作为从 0 开发方法论",
+      "status": "active",
+      "summary": "用户认定 LLM 单点执行可信、从零架构组织不可信,要求引入方法论 skill。superpowers v6.3.0 已安装并启用(14 个 skill:brainstorming/writing-plans/executing-plans/subagent-driven-development/TDD 等)。安装时曾被安全扫描拦截(227 条全为 docs/tests 误报),用户授权'抽审确认误报即可直接装',已按 临时关扫描→安装→恢复 完成。注意:官方提示 Hermes 无 post-compaction hook,长会话压缩后引导可能失效,每阶段开新会话 + project-checkpoint 配套。",
+      "alternatives": [
+        "github/spec-kit(暂缓,文档仪式可先借概念)",
+        "buildermethods/agent-os(不匹配从 0 立项)",
+        "BMAD-METHOD(不匹配)"
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "hermes plugins install 输出 dangerous 判定与 227 条清单;逐条抽审均为 docs/tests 误报",
+          "source": "session 2026-08-30 / superpowers-scan.log"
+        }
+      ],
+      "updated_at": "2026-08-30T08:00:00Z"
+    },
+    {
+      "id": "decision-3af1a2b3",
+      "kind": "decision",
+      "title": "技术栈:React+TS+Vite+antd+zod 前端,Go+SQLite 后端",
+      "status": "active",
+      "summary": "用户明确否决 Node(嫌依赖重、部署占地)与 Java(个人工具启动慢)。发布形态后定(单 exe 本地服务→Electron 均可),现在只做开发环境。",
+      "alternatives": [
+        "Node 后端(否决)",
+        "Java(否决)",
+        "每包一库 SQLite(否决,改单库分域)"
+      ],
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户明确表示不喜欢 Node 依赖重、Java 启动慢",
+          "source": "user"
+        }
+      ],
+      "updated_at": "2026-08-26T00:00:00Z"
+    },
+    {
+      "id": "decision-4ba2b3c4",
+      "kind": "decision",
+      "title": "SQLite 纪律:单库、pack_id 分域、jar_index 按 sha1 共享、原始 JSON 不落库",
+      "status": "active",
+      "summary": "data/mpackstation.db 单库;pack_mods 是唯一权威'已选择/已安装'来源,不再维护全局本地模组清单;平台原始响应只存落盘路径。写在 schema.sql 顶部注释。",
+      "evidence": [
+        {
+          "type": "file",
+          "level": "observed",
+          "claim": "schema.sql 顶部四条纪律注释",
+          "source": "apps/server/internal/store/schema.sql"
+        }
+      ],
+      "updated_at": "2026-08-26T00:00:00Z"
+    },
+    {
+      "id": "decision-5cb3c4d5",
+      "kind": "decision",
+      "title": "开发流程:每页先在 docs/ 落自含提示词 → mock 先行 → 截图验收 → 接真后端",
+      "status": "active",
+      "summary": "规格文档是唯一真相;AI 生成效果图只是视觉参考,其内部文字不可信(曾把 AI 图噪点当错字被用户纠正)。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户明确要求从零写文档、不信旧内容",
+          "source": "user"
+        }
+      ],
+      "updated_at": "2026-08-26T00:00:00Z"
+    },
+    {
+      "id": "decision-6dc4d5e6",
+      "kind": "decision",
+      "title": "端口分配:前端 5273、后端 18871",
+      "status": "superseded",
+      "summary": "5173=旧 mc_dev 前端、18765=本地 LLM、18766=旧 mc_dev 后端,均不动。18766 占用是实测踩坑后改的。（2026-10-03 由 decision-dev-service-singleton 取代：开发口径改前端 5271 / 后端 18872，历史端口一律禁用）",
+      "evidence": [
+        {
+          "type": "command",
+          "level": "observed",
+          "claim": "netstat 确认 18765/18766/5173 被占",
+          "source": "session"
+        }
+      ],
+      "updated_at": "2026-10-03T16:30:00+08:00"
+    },
+    {
+      "id": "decision-7ed5e6f7",
+      "kind": "decision",
+      "title": "紫色主题视觉规范(docs/active/design/dashboard-page-prompt.md 6.1 节)",
+      "status": "needs_review",
+      "summary": "主色 #7B5CFF、底色 #F3F1FA、16px 圆角、动效令牌 160ms。规范已定稿成文,但用户两轮验收均未通过,下一轮迭代可能修订。",
+      "evidence": [
+        {
+          "type": "file",
+          "level": "observed",
+          "claim": "6.1 节视觉规范已写入",
+          "source": "docs/active/design/dashboard-page-prompt.md"
+        },
+        {
+          "type": "statement",
+          "level": "reported",
+          "claim": "用户两轮验收未通过",
+          "source": "user"
+        }
+      ],
+      "updated_at": "2026-08-27T00:00:00Z"
+    },
+    {
+      "id": "decision-8f7a6b5c",
+      "kind": "decision",
+      "title": "视觉实现采用 frontend-design-codex skill",
+      "status": "active",
+      "summary": "采用该 skill 指导视觉预分析、设计令牌、排版/间距/组件规则和浏览器验收;页面形态保持按页面自由组合,不强制所有页面共用同一布局。",
+      "alternatives": [
+        "仅使用 Web Design Guidelines(主要是可访问性审计,不能提供完整视觉系统)"
+      ],
+      "evidence": [
+        {
+          "type": "file",
+          "level": "observed",
+          "claim": "skill 已安装至 C:/Users/<user>/.codex/skills/frontend-design-codex/SKILL.md,内容要求先建立 tokens/typography/spacing/components 并进行浏览器验证",
+          "source": "C:/Users/<user>/.codex/skills/frontend-design-codex/SKILL.md"
+        }
+      ],
+      "updated_at": "2026-08-28T00:00:00Z"
+    },
+    {
+      "id": "decision-dev-service-singleton",
+      "kind": "decision",
+      "title": "唯一开发服务：后端 18872 + 前端 5271，/tmp/mpack-data 为唯一数据目录，禁止新开实例",
+      "status": "active",
+      "summary": "2026-10-03 双会话共用工作区 + 环境重置导致共享库清空后定稿。口径：5173/5273/5274/5275/5276/18871/18880 一律不再使用；scripts/dev.sh / dev-stop.sh 是唯一起停方式，改动会话不得绕过它手工起服务；对 /tmp/mpack-data 做重启/迁移/目录重建前必须获得用户当轮明示；迁移编号先 ls apps/server/internal/store/migrations/ 再取号；并行会话改任何文件前先重读。",
+      "evidence": [
+        {
+          "type": "statement",
+          "level": "observed",
+          "claim": "用户 13:36：「后端指定到 18872，前端用 5271。这个定下来不要再改了」「约束一下：只允许使用这个服务进行开发和测试，不允许开新实例」",
+          "source": "user 2026-10-03"
+        },
+        {
+          "type": "artifact",
+          "level": "observed",
+          "claim": "成文于 AGENTS.md 顶部「服务与环境铁律（2026-10-03 用户定稿，优先级高于本文件其余各节）」",
+          "source": "AGENTS.md",
+          "locator": "AGENTS.md"
+        }
+      ],
+      "updated_at": "2026-10-03T16:30:00+08:00",
+      "alternatives": [
+        "各会话各建隔离 -data 与独立端口（被否决：端口与数据目录漂移正是本次事故根因）",
+        "继续用 18871/5273 旧口径（被否决：历史端口混杂，无法判断谁在写共享库）"
+      ],
+      "scope": "开发环境与服务启停；不影响生产部署口径",
+      "reconsider_when": "需要真正隔离的验收环境时，先向用户申请，不自行开端口"
+    }
+  ],
+  "next_session": {
+    "recommended_item": "issue-chain-test-port-collision",
+    "read_first": [
+      "AGENTS.md",
+      "docs/active/project-state/HANDOFF.md",
+      "docs/backup/project-state/history/2026-10-03-session-summary.md",
+      "docs/active/tests/incident-2026-10-03-shared-env-wipe.md",
+      "docs/active/design/craft-chain-engine-plan-2026-10-03.md",
+      "docs/active/design/item-icon-renderer-plan-2026-10-03.md",
+      "docs/active/project-state/state.json"
+    ],
+    "first_action": "先过撞口安全闸（HANDOFF「下一步」4 / issue-chain-test-port-collision）：跑 scripts/chain-test-run.sh 之前必须先 scripts/dev-stop.sh，它默认端口就是唯一开发后端的 18872，不停会把 173 个用例打在 /tmp/mpack-data 上。修好后再在 schema 27 上重跑两套终局脚本（chain 173 例 + verify-terminal-chain --launch 43 断言），然后开链路引擎 P0（task-chain-engine-p0-20261003，规格齐全、零代码）。",
+    "queue": [
+      "【安全闸】撞口未修前，跑 `scripts/chain-test-run.sh` 之前必须先 `scripts/dev-stop.sh`（它默认端口就是开发后端的 18872，见 issue-chain-test-port-collision）；修法是让脚本探测实例身份而不是只看 /api/health 200。",
+      "确认远端：`git fetch && git log --oneline origin/DEV_2610-WK1 -3` 应含 6c0aa5d（代码）与 65cf1e5（README），checkpoint 文档在其后一条。",
+      "重跑两套终局脚本以对齐 schema 27：`scripts/chain-test-run.sh`（注意它按设计重置 /tmp/mpack-chain，且默认端口 18872 与唯一开发实例同口——先 scripts/dev-stop.sh）+ `scripts/verify-terminal-chain.sh --launch`。",
+      "链路引擎 P0（task-chain-engine-p0-20261003，规格齐全、零代码落地）。",
+      "图标渲染器第二批 R4/R5/R6 + 73 个 iconStatus=missing 收口（issue-item-icon-coverage-gap）。",
+      "决定 docs/active/tests/evidence/*.log 是否改名入库（issue-evidence-logs-untracked）：现在报告引用的证据远端拉不到。",
+      "日常库清空成因（issue-daily-db-wipe-cause-unknown）仍为 suspected，无新证据不再排查。"
+    ]
+  }
+}

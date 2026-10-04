@@ -1,5 +1,5 @@
 /* 共享无限画布 viewport 纯函数单测。
-   设计权威：docs/design/mp-infinite-canvas.md
+   设计权威：docs/active/design/mp-infinite-canvas.md
    运行：cd apps/web && node --experimental-strip-types scripts/test-viewport.ts
 */
 import assert from 'node:assert/strict';

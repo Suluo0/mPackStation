@@ -9,7 +9,7 @@
 - 每个功能至少一条正向 + 一条反向。
 - 只打隔离数据目录(默认 /tmp/mpack-chain),绝不碰开发库。
 
-用法: MPACK_TOKEN=... python3 scripts/chain-test.py [--only 功能前缀] [--out docs/tests/chain-raw.log]
+用法: MPACK_TOKEN=... python3 scripts/chain-test.py [--only 功能前缀] [--out docs/active/tests/chain-raw.log]
 """
 from __future__ import annotations
 

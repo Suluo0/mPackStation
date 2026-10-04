@@ -33,7 +33,7 @@ func (a *TaskAPI) ready() error {
 	return nil
 }
 
-// TaskView is the single contract Task DTO (docs/api/dto.md): list, detail and
+// TaskView is the single contract Task DTO (docs/active/api/dto.md): list, detail and
 // control endpoints all return this exact shape. Payloads, filesystem paths
 // and lease ownership are intentionally not included; extra runtime detail
 // (message/attempt/log) is available via the log endpoint. The DTO and its

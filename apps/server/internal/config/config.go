@@ -35,7 +35,7 @@ func Default() Config {
 
 // DefaultPath returns the conventional per-user config file location, aligned
 // with each OS's application-settings convention (调研结论见
-// docs/user_check/排查确认记录.md #4：应用默认配置放 Roaming，不放 Documents）：
+// docs/active/user_check/排查确认记录.md #4：应用默认配置放 Roaming，不放 Documents）：
 //
 //	Windows: %APPDATA%\mPackStation\config.toml   (AppData\Roaming)
 //	macOS:   ~/Library/Application Support/mPackStation/config.toml

@@ -1,5 +1,5 @@
 /* 进度树布局与视图变换纯函数。
-   设计权威：docs/design/advancement-vanilla-experience.md v1.1
+   设计权威：docs/active/design/advancement-vanilla-experience.md v1.1
    （advancement-tree-canvas.md 仅作历史手势细节参考，不作验收权威）。
    本模块无 DOM/React 依赖，可被 vitest / node 直接单测。 */
 

@@ -71,7 +71,7 @@ pub async fn install_vanilla(
 
     // 6. 校验完成
     Protocol::phase(protocol::phase::VERIFYING, "安装完成");
-    // result 只由 main.rs 打一条（protocol.rs 与 docs/api/contract.md 的约定是
+    // result 只由 main.rs 打一条（protocol.rs 与 docs/active/api/contract.md 的约定是
     // 「整场只有一条 result」）。此前这里和 main 各打一条，Go 侧 scanStdout
     // 恰好取最后一条才没暴露 —— 库函数只发 phase，不发 result。
     Ok(version_id.to_string())

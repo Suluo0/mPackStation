@@ -1,6 +1,6 @@
 /* M1 任务图编辑：draft.edges 为图权威；保存前把 prerequisites 同步为指向该节点的 fromNodeId 列表。
    P0 FTB 扩展：节点/章节/book 可选字段向后兼容（缺省时前端默认）。
-   权威设计：docs/design/quest-book-ftb-experience.md v1.1 */
+   权威设计：docs/active/design/quest-book-ftb-experience.md v1.1 */
 
 export type DependencyRequirement = 'all_completed' | 'one_completed' | 'all_started' | 'one_started';
 

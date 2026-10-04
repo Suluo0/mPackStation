@@ -1,7 +1,7 @@
 /* 逆向链路引擎 · interpret：配方 payload → 边。
    按「键名并集」分类，不按 type 白名单——键名并集缺一个就掉一批配方
    （2026-10-03 实测：Mekanism 不加 main_output 只有 76%，加上 89%）。
-   规格出处：docs/design/craft-chain-engine-plan-2026-10-03.md §2。 */
+   规格出处：docs/active/design/craft-chain-engine-plan-2026-10-03.md §2。 */
 
 export type Ref = {kind: 'item' | 'item_tag'; id: string; qty: number; unit: 'item' | 'mB'};
 

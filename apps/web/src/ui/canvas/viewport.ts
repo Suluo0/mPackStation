@@ -1,5 +1,5 @@
 /* 共享无限画布：视口数学与手势决议纯函数。
-   设计权威：docs/design/mp-infinite-canvas.md
+   设计权威：docs/active/design/mp-infinite-canvas.md
    无 DOM/React 依赖，可被 node --experimental-strip-types 直接单测。 */
 
 export type Viewport = { x: number; y: number; k: number };
