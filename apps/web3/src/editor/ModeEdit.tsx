@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react';
-import {getContent, listContent, type ContentDocument, type ContentRevision} from '../api/content';
+import {getContent, listContent, saveContentDraft, validateContent, type ContentDocument, type ContentRevision} from '../api/content';
 import {useUrlPatch, useUrlState} from '../app/url';
 
 /* 魔改态 v0：文档列表 + Design|Code Split 布局（V3 §6 用户决策 6）。
@@ -12,6 +12,13 @@ export function ModeEdit() {
   const [rev, setRev] = useState<ContentRevision | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dividerPct, setDividerPct] = useState(55);
+  /* 可写编辑器（2026-10-05 用户反馈：光建草稿不能改等于没魔改）：
+     Code 面板从只读探针升级为 textarea + 保存草稿 + 校验。 */
+  const [text, setText] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!packId) return;
@@ -20,12 +27,43 @@ export function ModeEdit() {
 
   useEffect(() => {
     if (!packId || !doc) { setRev(null); return; }
-    getContent(packId, doc).then(r => setRev(r.revision)).catch(e => setError(e instanceof Error ? e.message : String(e)));
+    getContent(packId, doc).then(r => {
+      setRev(r.revision);
+      setText(r.revision ? JSON.stringify(r.revision.payload, null, 2) : '');
+      setDirty(false);
+      setNotice(null);
+      setEditError(null);
+    }).catch(e => setError(e instanceof Error ? e.message : String(e)));
   }, [packId, doc]);
 
   if (!packId) return null;
 
-  const payloadText = rev ? JSON.stringify(rev.payload, null, 2) : '';
+  const saveDraft = async () => {
+    if (!packId || !doc || !rev || busy) return;
+    setBusy(true); setEditError(null); setNotice(null);
+    try {
+      const payload = JSON.parse(text); // 语法错在这里就地暴露
+      const next = await saveContentDraft(packId, doc, rev.revision, payload);
+      setRev(next); setText(JSON.stringify(next.payload, null, 2)); setDirty(false);
+      setNotice(`已保存草稿 r${next.revision}`);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  };
+
+  const runValidate = async () => {
+    if (!packId || !doc || busy) return;
+    setBusy(true); setEditError(null); setNotice(null);
+    try {
+      if (dirty) { setEditError('先保存草稿再校验（校验走的是服务端已保存的版本）'); return; }
+      const v = await validateContent(packId, doc);
+      const bad = v.issues.filter(i => i.severity === 'error');
+      setNotice(`校验：${v.status}${v.issues.length ? ` · ${v.issues.length} 条问题` : ' · 无问题'}`
+        + (bad.length ? ` — ${bad.slice(0, 2).map(i => i.message).join('；')}` : ''));
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  };
 
   const startDrag = () => {
     const move = (e: MouseEvent) => {
@@ -50,7 +88,9 @@ export function ModeEdit() {
         <span className="title">魔改</span>
         <span className="sub">{docs.length} 份文档 · 选中写 ?doc=</span>
         <span className="grow"/>
-        {rev && <span className="ed-count">revision r{rev.revision} · {rev.state}</span>}
+        {notice && <span className="ed-count" style={{color: 'var(--mc-success)'}}>{notice}</span>}
+        {editError && <span className="ed-count" style={{color: 'var(--mc-fail)'}}>{editError}</span>}
+        {rev && <span className="ed-count">revision r{rev.revision} · {rev.state}{dirty ? ' · 未保存' : ''}</span>}
       </div>
       <div style={{flex: 1, minHeight: 0, display: 'flex'}}>
         <div className="split-docs">
@@ -68,10 +108,20 @@ export function ModeEdit() {
         </div>
         <div className="split">
           <div className="split-pane" style={{flexBasis: `calc(${dividerPct}% - 3px)`}}>
-            <div className="sp-head">Code · payload JSON（只读探针，可写编辑器由 3C 落地）</div>
+            <div className="sp-head">Code · payload JSON
+              {rev && (
+                <span className="sp-acts">
+                  <button type="button" className="p-btn" disabled={busy} onClick={() => void runValidate()}>校验</button>
+                  <button type="button" className="p-btn primary" disabled={busy || !dirty} onClick={() => void saveDraft()}>
+                    {busy ? '保存中…' : dirty ? '保存草稿' : '已保存'}
+                  </button>
+                </span>
+              )}
+            </div>
             <div className="sp-body">
               {rev
-                ? <textarea className="split-json" readOnly value={payloadText} spellCheck={false}/>
+                ? <textarea className="split-json" value={text} spellCheck={false}
+                    onChange={e => { setText(e.target.value); setDirty(true); }}/>
                 : <div className="ed-placeholder">{doc ? '这份文档还没有修订内容。' : '左侧选一份文档。'}</div>}
             </div>
           </div>

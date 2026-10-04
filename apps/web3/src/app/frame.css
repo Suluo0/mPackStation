@@ -348,6 +348,9 @@
   padding: 3px 6px;
   border-radius: var(--mc-radius);
   min-height: 24px;
+  /* 行是按钮不是文本：双击不允许选中文字（2026-10-05 用户反馈，VSCode 文件树手感）。 */
+  user-select: none;
+  -webkit-user-select: none;
   font-size: 13px;
   color: var(--mc-text);
   min-width: 0;
@@ -374,6 +377,7 @@
   color: var(--mc-text);
 }
 .p-input:focus { outline: 1px solid var(--mc-primary); border-color: var(--mc-primary); }
+.p-row input, .p-row textarea { user-select: text; -webkit-user-select: text; }
 .p-btn {
   border: 1px solid var(--mc-line);
   background: var(--mc-fill);

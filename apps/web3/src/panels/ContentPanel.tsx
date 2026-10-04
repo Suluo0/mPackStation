@@ -15,6 +15,14 @@ const KINDS: Record<string, string> = {
   ore: '矿脉',
 };
 
+/* 新建时的最小合法草稿（字段必须落在后端 contentFields 白名单内，
+   见 apps/server/internal/service/content.go）。 */
+const DEFAULT_PAYLOAD: Record<string, unknown> = {
+  recipe: {schema_version: 1, type: 'crafting', input: [], output: {}},
+  structure: {schema_version: 1, file: '', size: {x: 1, y: 1, z: 1}},
+  ore: {schema_version: 1, dimension: 'minecraft:overworld', block: '', min_y: -64, max_y: 320},
+};
+
 export function ContentPanel() {
   const {packId, ck} = useUrlState();
   const patch = useUrlPatch();
@@ -71,9 +79,14 @@ export function ContentPanel() {
           placeholder="标题，如：铁锭 → 铁块"
           onOk={title => {
             /* slug 由标题生成：后端要求 kind+slug 在包内唯一，且不许为空。
-               中文标题转不出有意义 slug，用时间戳兜底，标题才是给人看的那个。 */
+               中文标题转不出有意义 slug，用时间戳兜底，标题才是给人看的那个。
+               payload 必填（后端 canonicalContentPayload 空 = 400）：给各 kind 一份
+               能通过字段白名单的最小草稿，新建后进魔改态继续填。 */
             const slug = `${kind}-${Date.now().toString(36)}`;
-            void createContent(packId, {kind, slug, title}).then(load).catch(e => setError(String(e)));
+            void createContent(packId, {
+              kind, slug, title,
+              payload: DEFAULT_PAYLOAD[kind] ?? {schema_version: 1},
+            }).then(load).catch(e => setError(String(e)));
           }}
           onClose={() => setCreating(false)}/>
       )}

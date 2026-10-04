@@ -59,8 +59,12 @@ const listEnvelope = <T extends z.ZodTypeAny>(item: T) =>
 
 export const listContent = (packId: string, kind?: string) =>
   get(`/api/packs/${encodeURIComponent(packId)}/content${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`, listEnvelope(contentDocumentSchema)).then(v => v.items);
-export const createContent = (packId: string, body: {kind: string; slug: string; title: string}) =>
-  post(`/api/packs/${encodeURIComponent(packId)}/content`, body, contentDocumentSchema);
+/* payload：后端 canonicalContentPayload 必填（空 = 400），各 kind 有自己的字段白名单
+   （recipe: schema_version/type/input/output/conditions/metadata）。 */
+/* 后端 201 响应是 {document, revision} 信封，不是文档本体——这里拆包取 document。 */
+export const createContent = (packId: string, body: {kind: string; slug: string; title: string; payload?: unknown}) =>
+  post(`/api/packs/${encodeURIComponent(packId)}/content`, body,
+    z.object({document: contentDocumentSchema, revision: revisionSchema.nullable()})).then(v => v.document);
 export const getContent = (packId: string, documentId: string) =>
   get(`/api/packs/${encodeURIComponent(packId)}/content/${encodeURIComponent(documentId)}`, z.object({document: contentDocumentSchema, revision: revisionSchema.nullable()}));
 export const contentHistory = (packId: string, documentId: string) =>

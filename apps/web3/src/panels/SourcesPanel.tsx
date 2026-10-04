@@ -49,7 +49,10 @@ const kindLabel = (k: string) => KIND_LABELS[k] ?? k;
 
 /* 玩法内容 vs 资源（第三轮反馈：资源类是模组自带文件，系统用它生成图标与翻译，
    不是作者要编辑的东西 → 折叠到第二组）。未知 kind 默认按玩法内容对待。 */
-const RESOURCE_KINDS = new Set(['texture', 'lang', 'item_icon', 'metadata']);
+const RESOURCE_KINDS = new Set(['texture', 'item_icon', 'metadata']);
+/* 前端不展示的内部口径种类（数据照常入库，只是不渲染）：metadata = 模组自述，
+   lang = 语言文件（译名生成的原料，对用户没有信息量）。 */
+const HIDDEN_KINDS = new Set(['metadata', 'lang']);
 
 function SourceTree() {
   const {packId, ns, q} = useUrlState();
@@ -112,6 +115,9 @@ function SourceTree() {
     /* 编辑描述：用户自己的备忘（"为什么加它""给哪个玩法用"），展示时优先于
        平台元数据。隔了几周忘了这模组是干嘛的，这句话就是答案（2026-10-05）。 */
     {label: `编辑描述…`, icon: 'settings', action: () => setDescEdit(m)},
+    /* 原挂在模组行的单击上，会让人「点一下就莫名筛走一屏」——挪进右键（2026-10-05）。 */
+    {label: '只看它贡献的物品', icon: 'search',
+      action: () => patch({ns: m.canonicalModId, src: null, mode: 'index', type: null})},
     {separator: true},
     /* 归类：现有分类 → 新建 → 取消归类。子菜单而不是平铺，是因为分类会长；
        顺序按「最常用的动作在最近的地方」排。 */
@@ -504,14 +510,12 @@ function SourceTree() {
         {builtin.map(m => (
           <ModRow key={m.id} mod={m} expanded={expanded === m.id}
             onToggleExpand={() => setExpanded(x => x === m.id ? null : m.id)}
-            onFilter={() => patch({ns: m.canonicalModId || 'minecraft', mode: 'index', type: null})}
             onContextMenu={e => builtinMenu.open(e, builtinItems(m))}
             onParsed={load}
             badge={<span className="sub">原版</span>}/>
         ))}
         <ModGroups installed={installed} expanded={expanded} setExpanded={setExpanded}
           extraCats={pendingCats}
-          patch={patch}
           onParsed={load}
           onContextMenu={(e, m) => modMenu.open(e, modItems(m))}
           onGroupContextMenu={(e, name) => groupMenu.open(e, groupItems(name))}
@@ -640,11 +644,10 @@ function SearchHits({q}: {q: string}) {
    行上刻意**不挂**「停用 / 移除」按钮：那是低频且不可逆的动作，
    挤在每个模组右侧等于给误点造靶子，现在一律走右键菜单。
    本体（builtin）也用这一行，只是 badge 不同（「原版」而非状态相关的东西）。 */
-function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, onParsed, badge}: {
+function ModRow({mod, expanded, onToggleExpand, onContextMenu, onParsed, badge}: {
   mod: Mod;
   expanded: boolean;
   onToggleExpand: () => void;
-  onFilter: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   onParsed: () => void;
   badge?: ReactNode;
@@ -654,8 +657,11 @@ function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, onParse
     : <span className="grow" style={{overflow: 'hidden', textOverflow: 'ellipsis'}}>{mod.displayName}</span>;
   return (
     <>
-      <div className="p-row click" onClick={onFilter} onContextMenu={onContextMenu}
-        title={`${mod.nameZh ?? mod.displayName} · 点击筛选它贡献的物品 · 右键更多操作`}>
+      {/* 单击不做事、双击展开/收起（VSCode 文件树的手感）；「看它贡献的物品」
+          在右键菜单里，不再挂在单击上（2026-10-05 用户反馈）。
+          行是按钮不是文本：user-select:none 由 .p-row 统一负责。 */}
+      <div className="p-row click" onDoubleClick={onToggleExpand} onContextMenu={onContextMenu}
+        title={`${mod.nameZh ?? mod.displayName} · 双击展开 / 收起 · 右键更多操作`}>
         <button type="button" className="src-chevron" aria-label={expanded ? '收起' : '展开详情'}
           aria-expanded={expanded}
           onClick={e => { e.stopPropagation(); onToggleExpand(); }}>
@@ -689,7 +695,7 @@ function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, onParse
 
    为什么是组件而不是函数：分组标题要能就地变成输入框（重命名），
    这需要它自己持有展开/编辑态；原来那个函数式渲染没法挂。 */
-function ModGroups({installed, expanded, setExpanded, extraCats, patch, onParsed,
+function ModGroups({installed, expanded, setExpanded, extraCats, onParsed,
   onContextMenu, onGroupContextMenu, renamingCat, renameCatValue, setRenameCatValue,
   onCommitRenameCat, onCancelRenameCat}: {
   installed: Mod[];
@@ -697,7 +703,6 @@ function ModGroups({installed, expanded, setExpanded, extraCats, patch, onParsed
   setExpanded: (fn: (x: string | null) => string | null) => void;
   /* 前端暂存的空分类（新建后还没移入模组）：也要渲染成可折叠的分组。 */
   extraCats: string[];
-  patch: (p: Record<string, string | null>, opts?: {push?: boolean}) => void;
   onParsed: () => void;
   onContextMenu: (e: React.MouseEvent, m: Mod) => void;
   onGroupContextMenu: (e: React.MouseEvent, name: string) => void;
@@ -722,7 +727,6 @@ function ModGroups({installed, expanded, setExpanded, extraCats, patch, onParsed
   const row = (m: Mod) => (
     <ModRow key={m.id} mod={m} expanded={expanded === m.id}
       onToggleExpand={() => setExpanded(x => x === m.id ? null : m.id)}
-      onFilter={() => patch({ns: m.canonicalModId, src: null, mode: 'index', type: null})}
       onContextMenu={e => onContextMenu(e, m)}
       onParsed={onParsed}/>
   );
@@ -838,10 +842,10 @@ function ModContent({mod, ns, onParsed}: {mod: Mod; ns: string; onParsed: () => 
 
   if (loading) return <div className="p-empty" style={{paddingLeft: 26}}>载入解析内容…</div>;
 
-  /* metadata（模组自述元数据）是系统内部口径，只送后端消费，不再作为内容种类
-     展示（2026-10-04 用户反馈：它不该出现在前端）。 */
-  const gameplay = kinds.filter(k => !RESOURCE_KINDS.has(k.kind) && k.kind !== 'metadata');
-  const resources = kinds.filter(k => RESOURCE_KINDS.has(k.kind) && k.kind !== 'metadata');
+  /* metadata（模组自述）与 lang（语言文件，只用来生成译名）都是系统内部口径，
+     只送后端消费，不作为内容种类展示（2026-10-04/05 用户反馈）。 */
+  const gameplay = kinds.filter(k => !RESOURCE_KINDS.has(k.kind) && !HIDDEN_KINDS.has(k.kind));
+  const resources = kinds.filter(k => RESOURCE_KINDS.has(k.kind) && !HIDDEN_KINDS.has(k.kind));
 
   const kindRow = (k: {kind: string; count: number}) => (
     <div key={k.kind} className="p-row click"
@@ -854,18 +858,12 @@ function ModContent({mod, ns, onParsed}: {mod: Mod; ns: string; onParsed: () => 
 
   return (
     <div className="mod-kinds">
+      {/* 「已解析 N / 文件 N」是工程口径，对选模组没有信息量（2026-10-05 用户反馈），
+          不再展示；种类计数本身就是更直接的答案。未解析时保留「解析」入口。 */}
       {!run && (
         <div className="p-row" style={{paddingLeft: 26}}>
           <span className="sub grow">还没有解析过这个模组。</span>
           <button type="button" className="p-btn" onClick={() => void parse()}>解析</button>
-        </div>
-      )}
-      {run && (
-        <div className="run-stats">
-          <span>已解析 {run.parsedCount}</span>
-          {run.dynamicCount > 0 && <span>动态 {run.dynamicCount}</span>}
-          {run.errorCount > 0 && <span style={{color: 'var(--mc-fail)'}}>错误 {run.errorCount}</span>}
-          <span>文件 {run.totalFiles}</span>
         </div>
       )}
       {error && <div className="p-empty" style={{paddingLeft: 26}}>{error}</div>}

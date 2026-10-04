@@ -38,7 +38,9 @@ export function NavTree() {
     },
     {
       key: 'quest', label: '任务书管理', icon: 'quest',
-      count: pack ? String(pack.edits.quests) : undefined,
+      /* 不放计数：数字只统计「已应用修订」的章节+节点，草稿里的新节点不计入，
+         数字常年滞后于实际内容（2026-10-05 用户反馈）——章节数/节点数展开后
+         自然可见，标题保持干净。 */
       body: () => <QuestPanel/>,
     },
     {

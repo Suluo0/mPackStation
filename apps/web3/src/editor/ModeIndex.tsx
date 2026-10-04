@@ -1,8 +1,11 @@
 import {useEffect, useMemo, useState} from 'react';
 import {listModContent, type ModContentItem} from '../api/modContent';
+import {createContent, getQuest, saveQuestDraft} from '../api/content';
+import {ApiError} from '../api/http';
 import {useCatalog} from '../app/CatalogContext';
 import {applyFilter, matchNamespace, parseFilterSpec, textMatchItem, tagMatchItem, typeBucket} from '../app/catalogSearch';
 import {FilterBuilder} from './FilterBuilder';
+import {makeChapter, rid} from './questDraft';
 import {useFocus, useUrlPatch, useUrlState} from '../app/url';
 import {ItemGrid, ItemQuickView} from './ItemGrid';
 import {iconReasonText} from './iconReason';
@@ -22,7 +25,7 @@ export function ModeIndex() {
 
 function CatalogTable({q, ns, view}: {q: string; ns: string | null; view: 'grid' | 'table'}) {
   const patch = useUrlPatch();
-  const {packId, f, fmode, sort, dir, fs} = useUrlState();
+  const {packId, f, fmode, sort, dir, fs, chap} = useUrlState();
   const {catalog, refreshing, error} = useCatalog();
   const [focus, setFocus] = useFocus();
   const [cap, setCap] = useState(CAP_STEP);
@@ -51,6 +54,10 @@ function CatalogTable({q, ns, view}: {q: string; ns: string | null; view: 'grid'
       {label: '看用途（U）', action: () => gotoLens(id, {mode: 'graph', rd: 'in'})},
       {label: '看逆向链路（C）', action: () => gotoLens(id, {mode: 'chain'})},
       {separator: true},
+      /* 内容编辑入口（2026-10-05）：R/U 只解决「看」，改配方/进任务书从这里走。 */
+      {label: `魔改它的配方`, icon: 'wrench', action: () => { void openRecipeEditor(id, name).catch(() => undefined); }},
+      {label: '引入任务书', icon: 'quest', action: () => { void intoQuestBook(id, name).catch(() => undefined); }},
+      {separator: true},
       {label: '设为焦点', icon: 'focus', action: () => setFocus({kind: 'item', id})},
       {label: '看速览配方', action: () => setQuick({id, x, y})},
       {separator: true},
@@ -68,6 +75,45 @@ function CatalogTable({q, ns, view}: {q: string; ns: string | null; view: 'grid'
 
   const iconUrl = (itemId: string) =>
     `/api/packs/${encodeURIComponent(packId ?? '')}/catalog/icon?itemId=${encodeURIComponent(itemId)}`;
+
+  /* ── 物品 → 内容编辑的两个入口（2026-10-05 用户反馈：R/U 只能看，改要有着落）──
+     魔改：为物品建一份预填了 output 的配方草稿，跳到魔改态继续编辑；
+     引入任务书：往当前章节（无任务书则连书一起建）追加一个以物品命名的任务节点，
+     跳到编排态落点。失败时仍导航过去，由那边的错误条说明原因。 */
+  const openRecipeEditor = async (id: string, name: string) => {
+    if (!packId) return;
+    const d = await createContent(packId, {
+      kind: 'recipe', slug: `recipe-${Date.now().toString(36)}`, title: `魔改 ${name}`,
+      payload: {schema_version: 1, type: 'crafting', input: [], output: {id, count: 1}},
+    });
+    patch({mode: 'edit', doc: d.id, item: null});
+  };
+
+  const intoQuestBook = async (id: string, name: string) => {
+    if (!packId) return;
+    const makeNode = (chapterId: string, peers: {x: number; y: number}[]) => ({
+      id: rid('node'), chapterId, title: name, description: `引入自目录：${id}`, icon: '',
+      x: peers.length ? Math.max(...peers.map(n => n.x)) + 3 : 0,
+      y: peers.length ? Math.min(...peers.map(n => n.y)) : 0,
+      prerequisites: [], rewards: [], modRefs: [], position: peers.length,
+    });
+    const b = await getQuest(packId).catch((e: unknown) => (
+      e instanceof ApiError && e.status === 404 ? null : Promise.reject(e)));
+    if (!b) {
+      const ch = makeChapter(0, '第一章');
+      const node = makeNode(ch.id, []);
+      await saveQuestDraft(packId, 0, {book: {title: '任务书'}, chapters: [ch], nodes: [node], edges: []});
+      patch({mode: 'quest', chap: ch.id, node: node.id, qscope: null});
+      return;
+    }
+    const d = b.revision.draft;
+    const chapters = [...d.chapters].sort((a, b2) => a.position - b2.position);
+    let ch = chapters.find(c => c.id === chap) ?? chapters[0];
+    if (!ch) { ch = makeChapter(0, '第一章'); d.chapters.push(ch); }
+    const node = makeNode(ch.id, d.nodes.filter(n => n.chapterId === ch.id));
+    await saveQuestDraft(packId, b.revision.revision, {...d, nodes: [...d.nodes, node], book: d.book});
+    patch({mode: 'quest', chap: ch.id, node: node.id, qscope: null});
+  };
 
   /* 过滤管线：复杂条件（?f=）→ ?ns= 快捷来源 → ?q= 文本/标签词，全部 AND；
      ?q= 以 # 开头时按标签语义（与来源下拉的 # 搜索同一口径——搜索驱动页面）。 */
