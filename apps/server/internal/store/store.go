@@ -38,7 +38,7 @@ type migration struct {
 // CurrentSchemaVersion is the highest migration shipped by this binary.
 // 加一条 migrations/*.sql 就要同步这里：migration_test 的两处断言
 // （MAX(version) 与 COUNT(*)）会在不一致时直接红，不会静默放过。
-const CurrentSchemaVersion = 29
+const CurrentSchemaVersion = 30
 
 // V7AcceptanceEvidence is a documentation anchor used by the human-readable
 // schema acceptance examples.

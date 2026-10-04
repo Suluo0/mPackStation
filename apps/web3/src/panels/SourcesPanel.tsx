@@ -18,6 +18,7 @@ import {searchCatalogByTag, searchCatalogItems, suggestTags} from '../app/catalo
 import {Icon} from '../ui/Icon';
 import {useContextMenu, type MenuItem} from '../ui/ContextMenu';
 import {Prompt} from '../ui/Prompt';
+import {Modal} from '../ui/Modal';
 import './panels.css';
 
 /* 菜单分隔线。抽成常量是因为三元表达式里写 `{separator: true}` 会被推断成
@@ -108,6 +109,9 @@ function SourceTree() {
       action: () => { void toggleMod(m).catch(() => undefined); },
     },
     {label: `重新解析 ${m.displayName}`, icon: 'refresh', action: () => { void parseModContent(packId!, m.id).catch(() => undefined); }},
+    /* 编辑描述：用户自己的备忘（"为什么加它""给哪个玩法用"），展示时优先于
+       平台元数据。隔了几周忘了这模组是干嘛的，这句话就是答案（2026-10-05）。 */
+    {label: `编辑描述…`, icon: 'settings', action: () => setDescEdit(m)},
     {separator: true},
     /* 归类：现有分类 → 新建 → 取消归类。子菜单而不是平铺，是因为分类会长；
        顺序按「最常用的动作在最近的地方」排。 */
@@ -162,6 +166,9 @@ function SourceTree() {
   const [renamingCat, setRenamingCat] = useState<string | null>(null);
   const [renameCatValue, setRenameCatValue] = useState('');
   const [prompt, setPrompt] = useState<{title: string; ok: (v: string) => void} | null>(null);
+  /* 描述编辑（0030）：右键「编辑描述…」的目标模组。描述是用户自己的备忘，
+     展示时优先于平台元数据；清空保存 = 回退平台/默认描述。 */
+  const [descEdit, setDescEdit] = useState<Mod | null>(null);
 
   const load = useCallback(() => {
     if (!packId) return;
@@ -537,6 +544,9 @@ function SourceTree() {
           placeholder="分类名，如：科技 / 主线 / 优化"
           onOk={prompt.ok} onClose={() => setPrompt(null)}/>
       )}
+      {descEdit && (
+        <DescEditor mod={descEdit} onClose={() => setDescEdit(null)} onSaved={load}/>
+      )}
     </div>
     </>
   );
@@ -630,10 +640,6 @@ function SearchHits({q}: {q: string}) {
    行上刻意**不挂**「停用 / 移除」按钮：那是低频且不可逆的动作，
    挤在每个模组右侧等于给误点造靶子，现在一律走右键菜单。
    本体（builtin）也用这一行，只是 badge 不同（「原版」而非状态相关的东西）。 */
-/* 向游戏实际贡献内容的种类（配方/物品模型/结构/群系/战利品/进度/标签）。
-   只有 lang/metadata/texture/item_icon 的模组对游戏没有任何变化 —— 折叠成一行。 */
-const GAMEPLAY_KINDS = new Set(['recipe', 'item_model', 'structure', 'worldgen', 'loot_table', 'advancement', 'tag']);
-
 function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, onParsed, badge}: {
   mod: Mod;
   expanded: boolean;
@@ -643,13 +649,6 @@ function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, onParse
   onParsed: () => void;
   badge?: ReactNode;
 }) {
-  /* 空模组判定用后端给的精确计数（contentKinds），不再靠展开后取样数。
-     原版（minecraft）的 mod_content 里 metadata 只有一行内部口径，其余种类
-     齐全，不会被误判。 */
-  const gameplayTotal = Object.entries(mod.contentKinds ?? {})
-    .filter(([k]) => GAMEPLAY_KINDS.has(k))
-    .reduce((s, [, n]) => s + n, 0);
-  const isEmpty = gameplayTotal === 0;
   const nameEl = mod.nameZh
     ? <span className="grow" style={{overflow: 'hidden', textOverflow: 'ellipsis'}}>{mod.nameZh} <span className="sub">{mod.displayName}</span></span>
     : <span className="grow" style={{overflow: 'hidden', textOverflow: 'ellipsis'}}>{mod.displayName}</span>;
@@ -657,28 +656,21 @@ function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, onParse
     <>
       <div className="p-row click" onClick={onFilter} onContextMenu={onContextMenu}
         title={`${mod.nameZh ?? mod.displayName} · 点击筛选它贡献的物品 · 右键更多操作`}>
-        {/* 空内容模组没有展开区可给，行首不放箭头 —— 展开箭头的有无本身就是
-            「这个模组有没有可下钻的内容」的信号。 */}
-        {!isEmpty && (
-          <button type="button" className="src-chevron" aria-label={expanded ? '收起' : '展开解析内容'}
-            aria-expanded={expanded}
-            onClick={e => { e.stopPropagation(); onToggleExpand(); }}>
-            <Icon name={expanded ? 'caretDown' : 'caretRight'} size={13}/>
-          </button>
-        )}
+        <button type="button" className="src-chevron" aria-label={expanded ? '收起' : '展开详情'}
+          aria-expanded={expanded}
+          onClick={e => { e.stopPropagation(); onToggleExpand(); }}>
+          <Icon name={expanded ? 'caretDown' : 'caretRight'} size={13}/>
+        </button>
         {/* 本体的圆点是蓝色：它不是「装了 / 停了」的状态，是「这就是游戏本身」。 */}
         <span className="dot" style={{background: mod.origin === 'builtin' ? 'var(--mc-blue)' : DOT[mod.status] ?? 'var(--mc-muted)'}}/>
         {nameEl}
         {badge}
       </div>
-      {isEmpty && (
-        <div className="p-row" style={{paddingLeft: 26}}>
-          <span className="sub">{mod.description ?? '这个模组不向游戏提供物品、配方、结构等内容（例如纯翻译/纯库模组）。'}</span>
-        </div>
-      )}
-      {expanded && !isEmpty && (
+      {expanded && (
         <>
-          {/* 展开第一行 = 模组的一句话描述（平台元数据；原版行由后端给定）。 */}
+          {/* 展开第一行 = 模组的一句话描述（用户自定义优先，右键「编辑描述」可改；
+              原版行由后端给定）。就算一个内容条目都没有的模组也有展开区 ——
+              「它是干嘛的」这句话就住在这里（2026-10-05 用户反馈）。 */}
           {mod.description && (
             <div className="p-row" style={{paddingLeft: 26}} title="模组的一句话描述">
               <span className="sub">{mod.description}</span>
@@ -894,5 +886,43 @@ function ModContent({mod, ns, onParsed}: {mod: Mod; ns: string; onParsed: () => 
         <div className="p-empty" style={{paddingLeft: 26}}>这个模组没有解析出内容条目（功能全靠运行时代码的模组就是这样）。</div>
       )}
     </div>
+  );
+}
+
+/* 描述编辑弹窗：textarea 而不是 Prompt 的单行输入 —— 描述是给人看的备忘，
+   常常超过一行。允许保存空值 = 清掉自定义描述、回退平台/默认描述；
+   保存走 PATCH updateMod（0030），与停启用/归类同一条链路。 */
+function DescEditor({mod, onClose, onSaved}: {mod: Mod; onClose: () => void; onSaved: () => void}) {
+  const {packId} = useUrlState();
+  const [value, setValue] = useState(mod.description ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async () => {
+    if (!packId || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await updateMod(packId, mod.id, {description: value});
+      onSaved();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal onClose={onClose}>
+      <div className="p-title">编辑描述 · {mod.nameZh ?? mod.displayName}</div>
+      <textarea className="p-input" rows={3} autoFocus value={value}
+        placeholder="它是干嘛的？为什么加进来？"
+        onChange={e => setValue(e.target.value)}
+        style={{width: '100%', resize: 'vertical', lineHeight: 1.5}}/>
+      <div className="p-empty">只属于当前包里的这个模组；清空保存 = 恢复平台 / 默认描述。</div>
+      {error && <div className="p-empty" style={{color: 'var(--mc-fail)'}}>{error}</div>}
+      <div className="mm-actions">
+        <button type="button" className="p-btn" onClick={onClose}>取消</button>
+        <button type="button" className="p-btn primary" disabled={busy} onClick={() => void save()}>{busy ? '保存中…' : '保存'}</button>
+      </div>
+    </Modal>
   );
 }

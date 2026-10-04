@@ -53,6 +53,8 @@ type UpdateModInput struct {
 	Status    *string `json:"status"`
 	Required  *bool   `json:"required"`
 	Category  *string `json:"category"`
+	// Description 是用户自定义的一句话描述（0030）；空串 = 清掉自定义、回退平台描述。
+	Description *string `json:"description"`
 }
 type Mod struct {
 	ID                 string  `json:"id"`
@@ -74,8 +76,9 @@ type Mod struct {
 	MirrorSource    *string `json:"mirrorSource"`
 	MirrorProjectID *string `json:"mirrorProjectId"`
 	// 展示性增强，全部可为 null / 空（前端各自降级，不作为功能依赖）：
-	// NameZh = 社区中文名（别名表按 slug 反查）；Description = 平台一句话描述
-	// （0029 起落库，历史行缺失时服务层读取时按需补拉并回写）；
+	// NameZh = 社区中文名（别名表按 slug 反查）；Description = 一句话描述
+	// （用户自定义优先，0030；平台描述 0029 起落库，仅在用户没写时兜底，
+	// 历史行缺失时服务层读取时按需补拉并回写）；
 	// ContentKinds = 解析产物精确分类计数（模组树展开计数与「空模组」判定用）。
 	NameZh       *string          `json:"nameZh"`
 	Description  *string          `json:"description"`
@@ -771,18 +774,24 @@ func (a *API) enrichModDTOs(ctx context.Context, rows []store.PackModRecord) []M
 			// 内置原版行：没有平台元数据，描述与中文名直接给定。
 			desc := "Minecraft 本体（原版物品、配方、进度、结构、群系、语言与纹理）。"
 			zh := "我的世界"
-			dto.Description, dto.NameZh = &desc, &zh
+			dto.NameZh = &zh
+			if dto.Description == nil { // 用户自定义描述（0030）优先
+				dto.Description = &desc
+			}
 		case isPlatformSource(m.Source) && m.ProjectID != "":
 			if b, ok := briefs[m.Source+"|"+m.ProjectID]; ok {
 				if zh := zhNameForSlug(b.Slug); zh != "" {
 					dto.NameZh = &zh
 				}
-				if b.Description != "" {
-					dto.Description = &b.Description
-				} else {
-					missing = append(missing, [2]string{m.Source, m.ProjectID})
+				// 平台描述只做兜底：用户写过自定义描述就不覆盖，也不必补拉。
+				if dto.Description == nil {
+					if b.Description != "" {
+						dto.Description = &b.Description
+					} else {
+						missing = append(missing, [2]string{m.Source, m.ProjectID})
+					}
 				}
-			} else {
+			} else if dto.Description == nil {
 				missing = append(missing, [2]string{m.Source, m.ProjectID})
 			}
 		}
@@ -868,6 +877,10 @@ func modDTO(m store.PackModRecord) Mod {
 	// 契约要求 contentKinds 永远是对象（前端 zod record 不收 null）；清单路径的
 	// 精确计数由 enrichModDTOs 填，单模组响应（添加/更新等）给空对象即可。
 	dto.ContentKinds = map[string]int64{}
+	// 用户自定义描述（0030）优先；平台描述由 enrichModDTOs 在为空时兜底。
+	if m.Description != "" {
+		dto.Description = &m.Description
+	}
 	return dto
 }
 
@@ -1178,6 +1191,14 @@ func (a *API) UpdatePackMod(ctx context.Context, packID, modID string, in Update
 	before := found
 	if in.Category != nil {
 		found.Category = strings.TrimSpace(*in.Category)
+	}
+	if in.Description != nil {
+		d := strings.TrimSpace(*in.Description)
+		if len([]rune(d)) > 512 {
+			return Mod{}, ErrInvalidArgument
+		}
+		// 描述与 category 同级：纯展示字段，不进 catalogRelevantModChange。
+		found.Description = d
 	}
 	if in.VersionID != nil {
 		if strings.TrimSpace(*in.VersionID) == "" {

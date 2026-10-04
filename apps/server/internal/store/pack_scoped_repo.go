@@ -74,7 +74,7 @@ func (r *Repository) RecordScopedParseFailure(ctx context.Context, packID, runID
 // required builtin Minecraft row. ListPackMods intentionally keeps its legacy
 // user-mod semantics for existing API clients.
 func (r *Repository) ListPackMembers(ctx context.Context, packID string) ([]PackModRecord, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,''),origin,COALESCE(mod_id,''),COALESCE(current_selection_id,''),COALESCE(category,'') FROM pack_mods WHERE pack_id=? AND status<>'removed' ORDER BY CASE WHEN mod_id='minecraft' THEN 0 ELSE 1 END, COALESCE(NULLIF(category,''),'未分类') COLLATE NOCASE, display_name COLLATE NOCASE,id`, packID)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,''),origin,COALESCE(mod_id,''),COALESCE(current_selection_id,''),COALESCE(category,''),COALESCE(description,'') FROM pack_mods WHERE pack_id=? AND status<>'removed' ORDER BY CASE WHEN mod_id='minecraft' THEN 0 ELSE 1 END, COALESCE(NULLIF(category,''),'未分类') COLLATE NOCASE, display_name COLLATE NOCASE,id`, packID)
 	if err != nil {
 		return nil, fmt.Errorf("list pack members: %w", err)
 	}
@@ -93,7 +93,7 @@ func (r *Repository) ListPackMembers(ctx context.Context, packID string) ([]Pack
 func scanPackMod(s interface{ Scan(...any) error }) (PackModRecord, error) {
 	var m PackModRecord
 	var req int
-	if err := s.Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt, &m.MirrorSource, &m.MirrorProjectID, &m.MirrorVersionID, &m.Origin, &m.ModID, &m.CurrentSelectionID, &m.Category); err != nil {
+	if err := s.Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt, &m.MirrorSource, &m.MirrorProjectID, &m.MirrorVersionID, &m.Origin, &m.ModID, &m.CurrentSelectionID, &m.Category, &m.Description); err != nil {
 		return m, err
 	}
 	m.Required = req != 0

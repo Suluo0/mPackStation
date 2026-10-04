@@ -24,6 +24,9 @@ type PackModRecord struct {
 	// Origin: manual = 用户手动添加; compat-fix = 兼容知识库自动加装的补丁。
 	Origin   string
 	Category string // 用户自定义分类（"优化"/"科技"…），空串 = 未分类（0027）
+	// Description 是用户自定义的一句话描述（0030，右键「编辑描述」），
+	// 空串 = 没写过，展示时回退平台元数据描述。纯展示字段。
+	Description string
 }
 type JarIndexRecord struct {
 	SHA1, SHA256, FilePath, RawMetaPath string
@@ -49,7 +52,7 @@ type LockRecord struct {
 }
 
 func (r *Repository) ListPackMods(ctx context.Context, packID string) ([]PackModRecord, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,''),origin,COALESCE(mod_id,''),COALESCE(current_selection_id,''),COALESCE(category,'') FROM pack_mods WHERE pack_id=? AND status<>'removed' AND origin<>'builtin' ORDER BY COALESCE(NULLIF(category,''),'未分类') COLLATE NOCASE,display_name COLLATE NOCASE,id`, packID)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,pack_id,source,COALESCE(project_id,''),COALESCE(version_id,''),display_name,file_name,COALESCE(sha1,''),status,required,added_at,updated_at,mirror_source,COALESCE(mirror_project_id,''),COALESCE(mirror_version_id,''),origin,COALESCE(mod_id,''),COALESCE(current_selection_id,''),COALESCE(category,''),COALESCE(description,'') FROM pack_mods WHERE pack_id=? AND status<>'removed' AND origin<>'builtin' ORDER BY COALESCE(NULLIF(category,''),'未分类') COLLATE NOCASE,display_name COLLATE NOCASE,id`, packID)
 	if err != nil {
 		return nil, fmt.Errorf("list pack mods: %w", err)
 	}
@@ -58,7 +61,7 @@ func (r *Repository) ListPackMods(ctx context.Context, packID string) ([]PackMod
 	for rows.Next() {
 		var m PackModRecord
 		var req int
-		if err := rows.Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt, &m.MirrorSource, &m.MirrorProjectID, &m.MirrorVersionID, &m.Origin, &m.ModID, &m.CurrentSelectionID, &m.Category); err != nil {
+		if err := rows.Scan(&m.ID, &m.PackID, &m.Source, &m.ProjectID, &m.VersionID, &m.DisplayName, &m.FileName, &m.SHA1, &m.Status, &req, &m.AddedAt, &m.UpdatedAt, &m.MirrorSource, &m.MirrorProjectID, &m.MirrorVersionID, &m.Origin, &m.ModID, &m.CurrentSelectionID, &m.Category, &m.Description); err != nil {
 			return nil, err
 		}
 		m.Required = req != 0
@@ -166,7 +169,7 @@ func (r *Repository) ListModIdentities(ctx context.Context) ([]ModIdentityRecord
 }
 
 func (r *Repository) UpdatePackMod(ctx context.Context, m PackModRecord) error {
-	res, err := r.db.ExecContext(ctx, `UPDATE pack_mods SET version_id=?,display_name=?,file_name=?,sha1=?,status=?,required=?,updated_at=?,mirror_source=?,mirror_project_id=?,mirror_version_id=?,category=? WHERE pack_id=? AND id=? AND status<>'removed'`, nullString(m.VersionID), m.DisplayName, m.FileName, nullString(m.SHA1), m.Status, boolInt(m.Required), m.UpdatedAt, m.MirrorSource, nullString(m.MirrorProjectID), nullString(m.MirrorVersionID), m.Category, m.PackID, m.ID)
+	res, err := r.db.ExecContext(ctx, `UPDATE pack_mods SET version_id=?,display_name=?,file_name=?,sha1=?,status=?,required=?,updated_at=?,mirror_source=?,mirror_project_id=?,mirror_version_id=?,category=?,description=? WHERE pack_id=? AND id=? AND status<>'removed'`, nullString(m.VersionID), m.DisplayName, m.FileName, nullString(m.SHA1), m.Status, boolInt(m.Required), m.UpdatedAt, m.MirrorSource, nullString(m.MirrorProjectID), nullString(m.MirrorVersionID), m.Category, m.Description, m.PackID, m.ID)
 	if err != nil {
 		return fmt.Errorf("update pack mod: %w", err)
 	}
