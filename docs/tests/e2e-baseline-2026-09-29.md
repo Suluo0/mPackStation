@@ -1,7 +1,7 @@
 # 端到端能力基线 2026-09-29
 
 脚本：`scripts/e2e-baseline.sh`（可重放，只依赖 `BASE`/`TOKEN`/`OUT`/`DATA`/`MCVER`/`LOADER`）
-证据：`docs/project-state/history/e2e-baseline-20260929.log`（终轮）＋ `-run1.log`/`-run4.log`（演化过程）＋ 逐步响应体 `/tmp/e2e-out-5/*.log`
+证据：`docs/archive/project-state-history/e2e-baseline-20260929.log`（终轮）＋ `-run1.log`/`-run4.log`（演化过程）＋ 逐步响应体 `/tmp/e2e-out-5/*.log`
 环境：HEAD `89195a7`，`go run` 二进制，`-addr 127.0.0.1:18899 -data /tmp/mpack-e2e`，MC `1.21.1` + fabric，macOS arm64
 
 ## 结论

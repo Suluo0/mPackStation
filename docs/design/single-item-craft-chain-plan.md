@@ -33,7 +33,7 @@
 **非目标（本轮明确不做）**
 - 不做"凭空造一个原版与模组都不存在的新物品"——后端模型里没有落点（B4），要单独立项。
 - 不改后端（用户规则）。B1/B2/B4 只出**可执行的后端工单**，不动手。
-- 不做图形化无限画布（那是 3D 批次的既有范围，`docs/design/web2-step3-domain-widgets.md:122`）。
+- 不做图形化无限画布（那是 3D 批次的既有范围，`docs/archive/design/web2-step3-domain-widgets.md:122`）。
 
 ---
 
@@ -130,7 +130,7 @@ export function summarize(result: ChainResult): {rawMaterials: {itemId: string; 
 
 ### L1 · 让"断点"能一键变成"下一步动作"（前端，依赖既有接口）
 
-- 断点节点上给「为它新建配方」→ 走既有 `POST /api/packs/{p}/content`（kind=recipe，`routes_content.go:18-29`）预填 `output`，这条正是设计文档里已有的设想（`docs/design/workbench-v2-implementation-plan.md:960`）。
+- 断点节点上给「为它新建配方」→ 走既有 `POST /api/packs/{p}/content`（kind=recipe，`routes_content.go:18-29`）预填 `output`，这条正是设计文档里已有的设想（`docs/archive/design/workbench-v2-implementation-plan.md:960`）。
 - 前提是把魔改态从只读探针改成可写（`ModeEdit.tsx:74` 的 `readOnly` textarea + 工具栏挂 `api/content.ts:68-76` 已就绪的 `saveContentDraft/validateContent/applyContent/rollbackContent`），即 3C 批次的最小版。
 - 注意此时**新配方只在数据库里**：目录看不见它（B4），所以链视图必须显式把"自建配方"当作另一条数据源读（`listContent` + `getContent` 的 `payload`），并打上"未装配"的水印，等后端通道打通再切到目录。这是 L1 里唯一需要新代码逻辑的地方。
 

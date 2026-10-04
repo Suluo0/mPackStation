@@ -679,7 +679,7 @@
           "type": "artifact",
           "level": "observed",
           "claim": "全量 Go test/vet、前端构建、真实 MC 1.21.1/AE2 资源和高级卡配方 UI 验证通过；349 AE2 图标，29 item 模型未生成（含辅助模型）。",
-          "source": "docs/project-state/history/2026-09-07-item-icons-fix.md",
+          "source": "docs/archive/project-state-history/2026-09-07-item-icons-fix.md",
           "locator": "sha256:d411445bb155afc452d82d9218576165cd699c1a64524eed52b102567fd456f8"
         }
       ],
@@ -740,7 +740,7 @@
       "related_files": [
         "scripts/e2e-baseline.sh",
         "docs/tests/e2e-baseline-2026-09-29.md",
-        "docs/project-state/history/e2e-baseline-20260929.log"
+        "docs/archive/project-state-history/e2e-baseline-20260929.log"
       ],
       "evidence": [
         {
@@ -1177,7 +1177,7 @@
           "type": "artifact",
           "level": "observed",
           "claim": "全量 Go test/vet、前端构建、真实 MC 1.21.1/AE2 资源和高级卡配方 UI 验证通过；349 AE2 图标，29 item 模型未生成（含辅助模型）。",
-          "source": "docs/project-state/history/2026-09-07-item-icons-fix.md",
+          "source": "docs/archive/project-state-history/2026-09-07-item-icons-fix.md",
           "locator": "sha256:d411445bb155afc452d82d9218576165cd699c1a64524eed52b102567fd456f8"
         },
         {
@@ -1999,7 +1999,7 @@
     "read_first": [
       "AGENTS.md",
       "docs/project-state/HANDOFF.md",
-      "docs/project-state/history/2026-10-03-session-summary.md",
+      "docs/archive/project-state-history/2026-10-03-session-summary.md",
       "docs/tests/incident-2026-10-03-shared-env-wipe.md",
       "docs/design/craft-chain-engine-plan-2026-10-03.md",
       "docs/design/item-icon-renderer-plan-2026-10-03.md",

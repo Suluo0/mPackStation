@@ -10,7 +10,7 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 
 分支 `DEV_2610-WK1`,远端 `origin = github.com/Suluo0/mPackStation`,HEAD `65cf1e5`。**本分支已推送**（2026-10-03 首推，upstream = `origin/DEV_2610-WK1`，远端 tip 实测 `65cf1e5`）：`6c0aa5d` = 10-02/10-03 两轮改造一次性入库（**190 个路径 = 117 新增 + 73 修改，19742 插入 / 940 删除**，含 `apps/web3/` 整目录、迁移 0021-0027、`launcherCore` Rust 改动、本轮修好的红夹具），`65cf1e5` = README 口径同步，checkpoint 文档在 `d738ec9`（`cp-2026-10-03-zcode-session` 三件套，本行的哈希由其后一条回填提交写下）。点击级 UI 回归 **33/33 PASS**(2026-09-18,本轮未重跑)。
 
-**本轮(10-03)验证快照**（绑定工作区指纹 `sha256:a795433e…b7ef53`，提交前 HEAD `fe7c4ea`）：`go vet ./...` 干净；红项修复后 `go test ./... -count=1` = **10 包全绿**；`npm --prefix apps/web3 run build` 通过（883 kB chunk 警告为既有现象）。详录 `docs/project-state/history/2026-10-03-session-summary.md`。
+**本轮(10-03)验证快照**（绑定工作区指纹 `sha256:a795433e…b7ef53`，提交前 HEAD `fe7c4ea`）：`go vet ./...` 干净；红项修复后 `go test ./... -count=1` = **10 包全绿**；`npm --prefix apps/web3 run build` 通过（883 kB chunk 警告为既有现象）。详录 `docs/archive/project-state-history/2026-10-03-session-summary.md`。
 
 ### 2026-10-03 · 图标渲染器第一批 + 搜索/分类闭环 + 共享环境清空事故（Z Code 会话收尾）
 
@@ -127,7 +127,7 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
   - 选中边可删除；保存前本地 Kahn 环检测并提示（后端 validate/save 契约已有 cycle）
 - 非目标（禁止扩 scope）：SNBT/FTB 导出、任务完成模拟/解锁运行时、AND/OR/AND_N UI
 - 验证：`npx tsc -b` / `npm run build` 通过；纯函数断言通过；API 创建 A→B 保存后 GET 回来 `edges` 非空且 prerequisites 已同步
-- 相关产物：`apps/web/src/features/quest/questGraph.ts`、`apps/web/src/pages/PackPages.tsx`（QuestEditorPage）、`apps/web/src/pages/pack-pages.css`、`scripts/verify-quest-m1.sh`、`docs/project-state/history/quest-m1-verify-*.log`
+- 相关产物：`apps/web/src/features/quest/questGraph.ts`、`apps/web/src/pages/PackPages.tsx`（QuestEditorPage）、`apps/web/src/pages/pack-pages.css`、`scripts/verify-quest-m1.sh`、`docs/archive/project-state-history/quest-m1-verify-*.log`
 
 ### 2026-09-07 · 包内物品/方块/配方/标签/多语言目录
 
@@ -402,7 +402,7 @@ mPackStation —— Minecraft 整合包工作台:模板开局 → 模组/依赖�
 ## 首先读取
 
 - `AGENTS.md`（仓库根）—— **服务与环境铁律优先级最高**：只用 18872/5271 与 `/tmp/mpack-data`，禁历史端口、禁新开实例、动数据目录须当轮请示
-- `docs/project-state/history/2026-10-03-session-summary.md` —— 本轮（Z Code 会话）详录：进度、验证快照、遗留缺陷、下一步
+- `docs/archive/project-state-history/2026-10-03-session-summary.md` —— 本轮（Z Code 会话）详录：进度、验证快照、遗留缺陷、下一步
 - `docs/tests/incident-2026-10-03-shared-env-wipe.md` —— 共享库清空事故的事实、恢复尝试与判定
 - `docs/design/craft-chain-engine-plan-2026-10-03.md` + `docs/design/item-icon-renderer-plan-2026-10-03.md` —— 两份未消化完的工单（链路引擎 P0 零代码；图标 R4/R5/R6 未做）
 - `docs/tests/defects-2026-09-30.md` —— **缺陷台账与验证边界**（D*/L*/O* 逐条带可复现出处；§4 说清两套验证各证明了什么）

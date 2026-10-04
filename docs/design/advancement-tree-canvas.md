@@ -218,4 +218,4 @@ function AdvancementTreeView(props: {
 - 结论：**有条件通过**（已按严重问题修订本稿）
 - 交互核心（transform + pointer capture）可实现
 - 开发前已补：k_fit 分离、树分组/脏数据、可测验收、环处理
-- files: `docs/design/advancement-tree-blind-review-packet.md`
+- files: `docs/archive/design/advancement-tree-blind-review-packet.md`

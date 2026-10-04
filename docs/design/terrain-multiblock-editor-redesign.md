@@ -6,7 +6,7 @@
   - 遗留资产：`legacy-assets/frontend/multiblocks/*`（IsoPreview / GridPreview / MultiblocksPage）
   - 产品内容域：P6 `content` kind = `recipe | structure | ore`（`docs/architecture/backend-architecture-v7.md`）
   - 包内目录：物品/方块/配方/标签/多语言（migrations 0013–0014）
-  - 接入计划：`docs/design/legacy-assets-integration-plan.md`
+  - 接入计划：`docs/archive/design/legacy-assets-integration-plan.md`
   - 现状缺口：`ContentEditorPage` 未挂路由；M6 `ModContentPage` 只做「解析浏览」
 
 ## 1. 设计目标
