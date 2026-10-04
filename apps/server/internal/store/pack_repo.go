@@ -240,7 +240,14 @@ func (r *Repository) DashboardPacks(ctx context.Context) ([]PackSummaryRecord, e
 		COALESCE((SELECT COUNT(*) FROM content_documents d WHERE d.pack_id=p.id AND d.kind='recipe'),0),
 		COALESCE((SELECT COUNT(*) FROM content_documents d WHERE d.pack_id=p.id AND d.kind='structure'),0),
 		COALESCE((SELECT COUNT(*) FROM content_documents d WHERE d.pack_id=p.id AND d.kind='ore'),0),
-		COALESCE((SELECT COUNT(*) FROM quest_nodes qn JOIN quest_revisions qr ON qr.id=qn.revision_id JOIN quest_books qb ON qb.id=qr.quest_book_id WHERE qb.pack_id=p.id AND (qr.id=qb.active_revision_id OR (qb.active_revision_id IS NULL AND qr.state='applied'))),0),
+		-- 任务书计数 = 活跃修订里的 章节 + 节点：只数节点的话，建了章节还没放
+		-- 节点的任务书会显示 0，看起来像「任务书是空的」（2026-10-04 用户反馈）。
+		COALESCE((
+			SELECT (SELECT COUNT(*) FROM quest_chapters qc JOIN quest_revisions qr2 ON qr2.id=qc.revision_id JOIN quest_books qb2 ON qb2.id=qr2.quest_book_id
+			        WHERE qb2.pack_id=p.id AND (qr2.id=qb2.active_revision_id OR (qb2.active_revision_id IS NULL AND qr2.state='applied')))
+			     + (SELECT COUNT(*) FROM quest_nodes qn JOIN quest_revisions qr ON qr.id=qn.revision_id JOIN quest_books qb ON qb.id=qr.quest_book_id
+			        WHERE qb.pack_id=p.id AND (qr.id=qb.active_revision_id OR (qb.active_revision_id IS NULL AND qr.state='applied')))
+		),0),
 		COALESCE((SELECT COUNT(*) FROM pack_alerts a WHERE a.pack_id=p.id AND a.kind='crash' AND a.status='open'),0),
 		COALESCE((SELECT COUNT(*) FROM pack_mod_updates u WHERE u.pack_id=p.id AND u.status='pending'),0)
 		FROM packs p WHERE p.status='active' ORDER BY p.last_edited_at DESC,p.id ASC`

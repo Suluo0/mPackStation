@@ -864,7 +864,11 @@ func modDTO(m store.PackModRecord) Mod {
 	if origin == "" {
 		origin = "manual"
 	}
-	return Mod{ID: m.ID, Category: m.Category, CanonicalModID: m.ModID, CurrentSelectionID: m.CurrentSelectionID, PackID: m.PackID, Source: m.Source, ProjectID: strPtr(m.ProjectID), VersionID: strPtr(m.VersionID), DisplayName: m.DisplayName, FileName: m.FileName, SHA1: strPtr(m.SHA1), Status: m.Status, Required: m.Required, MirrorSource: strPtr(m.MirrorSource), MirrorProjectID: strPtr(m.MirrorProjectID), Origin: origin, AddedAt: iso(m.AddedAt), UpdatedAt: iso(m.UpdatedAt)}
+	dto := Mod{ID: m.ID, Category: m.Category, CanonicalModID: m.ModID, CurrentSelectionID: m.CurrentSelectionID, PackID: m.PackID, Source: m.Source, ProjectID: strPtr(m.ProjectID), VersionID: strPtr(m.VersionID), DisplayName: m.DisplayName, FileName: m.FileName, SHA1: strPtr(m.SHA1), Status: m.Status, Required: m.Required, MirrorSource: strPtr(m.MirrorSource), MirrorProjectID: strPtr(m.MirrorProjectID), Origin: origin, AddedAt: iso(m.AddedAt), UpdatedAt: iso(m.UpdatedAt)}
+	// 契约要求 contentKinds 永远是对象（前端 zod record 不收 null）；清单路径的
+	// 精确计数由 enrichModDTOs 填，单模组响应（添加/更新等）给空对象即可。
+	dto.ContentKinds = map[string]int64{}
+	return dto
 }
 
 // otherProviderOf names the opposite catalog platform, or "" for local mods.

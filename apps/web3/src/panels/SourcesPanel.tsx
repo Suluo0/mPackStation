@@ -5,7 +5,7 @@ import {
   type Mod, type ModVersion, type SearchAllItem,
 } from '../api/mods';
 import {
-  getModContentRun, listModContent, parseModContent,
+  getModContentRun, parseModContent,
   type ModContentRun,
 } from '../api/modContent';
 import {useFocus, useUrlPatch, useUrlState} from '../app/url';
@@ -42,13 +42,13 @@ const DOT: Record<string, string> = {installed: 'var(--mc-success)', pending: 'v
 const KIND_LABELS: Record<string, string> = {
   recipe: '配方', item_model: '物品模型', item_icon: '物品图标', texture: '纹理',
   lang: '语言', ammo_definition: '机器配方', structure: '结构', terrain: '地形',
-  loot: '战利品', advancement: '进度', tag: '标签', metadata: '元数据',
+  loot: '战利品', loot_table: '战利品', worldgen: '群系与地形', advancement: '进度', tag: '标签', metadata: '元数据',
 };
 const kindLabel = (k: string) => KIND_LABELS[k] ?? k;
 
 /* 玩法内容 vs 资源（第三轮反馈：资源类是模组自带文件，系统用它生成图标与翻译，
    不是作者要编辑的东西 → 折叠到第二组）。未知 kind 默认按玩法内容对待。 */
-const RESOURCE_KINDS = new Set(['texture', 'lang', 'item_icon', 'item_model', 'metadata']);
+const RESOURCE_KINDS = new Set(['texture', 'lang', 'item_icon', 'metadata']);
 
 function SourceTree() {
   const {packId, ns, q} = useUrlState();
@@ -499,11 +499,13 @@ function SourceTree() {
             onToggleExpand={() => setExpanded(x => x === m.id ? null : m.id)}
             onFilter={() => patch({ns: m.canonicalModId || 'minecraft', mode: 'index', type: null})}
             onContextMenu={e => builtinMenu.open(e, builtinItems(m))}
+            onParsed={load}
             badge={<span className="sub">原版</span>}/>
         ))}
         <ModGroups installed={installed} expanded={expanded} setExpanded={setExpanded}
           extraCats={pendingCats}
           patch={patch}
+          onParsed={load}
           onContextMenu={(e, m) => modMenu.open(e, modItems(m))}
           onGroupContextMenu={(e, name) => groupMenu.open(e, groupItems(name))}
           renamingCat={renamingCat} renameCatValue={renameCatValue}
@@ -632,12 +634,13 @@ function SearchHits({q}: {q: string}) {
    只有 lang/metadata/texture/item_icon 的模组对游戏没有任何变化 —— 折叠成一行。 */
 const GAMEPLAY_KINDS = new Set(['recipe', 'item_model', 'structure', 'worldgen', 'loot_table', 'advancement', 'tag']);
 
-function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, badge}: {
+function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, onParsed, badge}: {
   mod: Mod;
   expanded: boolean;
   onToggleExpand: () => void;
   onFilter: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  onParsed: () => void;
   badge?: ReactNode;
 }) {
   /* 空模组判定用后端给的精确计数（contentKinds），不再靠展开后取样数。
@@ -681,7 +684,7 @@ function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, badge}:
               <span className="sub">{mod.description}</span>
             </div>
           )}
-          <ModContent modId={mod.id} ns={mod.canonicalModId}/>
+          <ModContent mod={mod} ns={mod.canonicalModId} onParsed={onParsed}/>
         </>
       )}
     </>
@@ -694,7 +697,7 @@ function ModRow({mod, expanded, onToggleExpand, onFilter, onContextMenu, badge}:
 
    为什么是组件而不是函数：分组标题要能就地变成输入框（重命名），
    这需要它自己持有展开/编辑态；原来那个函数式渲染没法挂。 */
-function ModGroups({installed, expanded, setExpanded, extraCats, patch,
+function ModGroups({installed, expanded, setExpanded, extraCats, patch, onParsed,
   onContextMenu, onGroupContextMenu, renamingCat, renameCatValue, setRenameCatValue,
   onCommitRenameCat, onCancelRenameCat}: {
   installed: Mod[];
@@ -703,6 +706,7 @@ function ModGroups({installed, expanded, setExpanded, extraCats, patch,
   /* 前端暂存的空分类（新建后还没移入模组）：也要渲染成可折叠的分组。 */
   extraCats: string[];
   patch: (p: Record<string, string | null>, opts?: {push?: boolean}) => void;
+  onParsed: () => void;
   onContextMenu: (e: React.MouseEvent, m: Mod) => void;
   onGroupContextMenu: (e: React.MouseEvent, name: string) => void;
   renamingCat: string | null;
@@ -727,7 +731,8 @@ function ModGroups({installed, expanded, setExpanded, extraCats, patch,
     <ModRow key={m.id} mod={m} expanded={expanded === m.id}
       onToggleExpand={() => setExpanded(x => x === m.id ? null : m.id)}
       onFilter={() => patch({ns: m.canonicalModId, src: null, mode: 'index', type: null})}
-      onContextMenu={e => onContextMenu(e, m)}/>
+      onContextMenu={e => onContextMenu(e, m)}
+      onParsed={onParsed}/>
   );
 
   /* 一个分类都没有时不套标题，避免给「还没归类」凭空造一个组。 */
@@ -787,49 +792,36 @@ function ModGroups({installed, expanded, setExpanded, extraCats, patch,
   return <>{rows}</>;
 }
 
-/* 展开区：解析运行状态 + 内容分组（玩法内容在前，资源折叠在后；取样上限 1000 条）。 */
-function ModContent({modId, ns}: {modId: string; ns: string}) {
+/* 展开区：解析运行状态 + 内容分组（玩法内容在前，资源折叠在后）。
+   种类计数直接用清单接口带的精确聚合（mod.contentKinds，后端 GROUP BY 出的），
+   **不再拉 1000 条完整 payload 自己数** —— 那个响应好几 MB，8s 超时在外面走
+   mesh 时打不住，请求被静默吞掉后就只剩「解析数在、内容为空」的假象
+   （2026-10-04 用户在外实测踩中）。 */
+function ModContent({mod, ns, onParsed}: {mod: Mod; ns: string; onParsed: () => void}) {
   const {packId} = useUrlState();
   const patch = useUrlPatch();
+  const modId = mod.id;
   const [run, setRun] = useState<ModContentRun | null>(null);
-  const [kinds, setKinds] = useState<{kind: string; count: number}[]>([]);
-  const [sampled, setSampled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resOpen, setResOpen] = useState(false);
+
+  const kinds = useMemo(() => Object.entries(mod.contentKinds ?? {})
+    .map(([kind, count]) => ({kind, count}))
+    .sort((a, b) => b.count - a.count), [mod.contentKinds]);
 
   useEffect(() => {
     if (!packId || !modId) return;
     let alive = true;
     setLoading(true);
     setError(null);
-    Promise.all([
-      getModContentRun(packId, modId).catch(() => null),
-      listModContent(packId, modId, {limit: 1000}).catch(() => null),
-    ]).then(([r, list]) => {
+    getModContentRun(packId, modId).catch(() => null).then(r => {
       if (!alive) return;
       setRun(r);
-      if (list) {
-        const counter = new Map<string, number>();
-        for (const it of list.items) counter.set(it.kind, (counter.get(it.kind) ?? 0) + 1);
-        setKinds([...counter.entries()].map(([kind, count]) => ({kind, count})).sort((a, b) => b.count - a.count));
-        setSampled(list.total > list.items.length);
-      }
       setLoading(false);
     });
     return () => { alive = false; };
   }, [packId, modId]);
-
-  const refreshCounts = async () => {
-    if (!packId) return;
-    const list = await listModContent(packId, modId, {limit: 1000}).catch(() => null);
-    if (list) {
-      const counter = new Map<string, number>();
-      for (const it of list.items) counter.set(it.kind, (counter.get(it.kind) ?? 0) + 1);
-      setKinds([...counter.entries()].map(([kind, count]) => ({kind, count})).sort((a, b) => b.count - a.count));
-      setSampled(list.total > list.items.length);
-    }
-  };
 
   const parse = async () => {
     if (!packId) return;
@@ -843,7 +835,7 @@ function ModContent({modId, ns}: {modId: string; ns: string}) {
           setRun(r);
           if (r.status !== 'running' && r.status !== 'pending') {
             window.clearInterval(t);
-            await refreshCounts();
+            onParsed(); // 新计数在清单接口的 contentKinds 里，重拉清单即可
           }
         } catch { /* 下一轮再试 */ }
       }, 3000);
@@ -864,7 +856,7 @@ function ModContent({modId, ns}: {modId: string; ns: string}) {
       onClick={() => patch({ns, src: modId, mode: 'index', type: k.kind})}
       title={`在索引中浏览这个模组的${kindLabel(k.kind)}`}>
       <span className="grow">{kindLabel(k.kind)}</span>
-      <span className="sub">{k.count}{sampled ? '+' : ''}</span>
+      <span className="sub">{k.count}</span>
     </div>
   );
 
