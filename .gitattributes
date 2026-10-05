@@ -2,6 +2,37 @@
 # 强制 LF,避免 Windows 检出时 autocrlf 翻成 CRLF 导致开发库拒绝启动。
 *.sql text eol=lf
 
+# ── 源码与文档：一律 LF（2026-10-06 追加）────────────────────────────────
+# 起因是 gofmt：Windows 上 core.autocrlf=true 会把 .go 检出成 CRLF，
+# 而 gofmt 的输出是 LF，于是 `gofmt -l` 把**每一个** .go 都报成未格式化。
+# scripts/verify.ps1 因此在 Windows 上恒红于 Go formatting 一项 —— 假红，
+# Go 代码本身没问题（go test / go vet 全绿，macOS 上 gofmt 干净）。
+# 同类工具（prettier / black / rustfmt）也都按 LF 比对，故统一按 LF 落到工作区。
+# 实测：Windows 上 internal/config/config.go 曾为 CRLF=152 / 独立 LF=0。
+*.go    text eol=lf
+*.mod   text eol=lf
+*.sum   text eol=lf
+*.rs    text eol=lf
+*.py    text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+*.json  text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.md    text eol=lf
+*.toml  text eol=lf
+# PowerShell 7（本仓库硬前置）对 LF/CRLF 都不敏感，且没有任何 .bat/.cmd
+# 去调 powershell.exe —— 包装脚本走的是 cmd 或 git-bash。
+*.ps1   text eol=lf
+
+# 仓库里的 .sh 是给 git-bash 跑的（verify-contract.bat 就是 `bash <x>.sh`）。
+# LF-only 的 `#!/bin/bash` 遇到 CRLF 会变成「bad interpreter」，必须钉住。
+*.sh    text eol=lf
+
+# ── Windows 专属例外：必须 CRLF，放在最后（gitattributes 末条匹配优先）──
 # Windows 批处理必须在 CRLF 下解析:`:label` / `goto` 在 LF-only 的 .bat 里
 # 行为不可靠(已踩过)。仓库里存 LF,检出到 Windows 时自动转 CRLF。
 *.bat text eol=crlf
