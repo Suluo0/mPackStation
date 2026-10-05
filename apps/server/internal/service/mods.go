@@ -1,7 +1,6 @@
 package service
 
 import (
-	"unicode"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -13,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"mpackstation/internal/provider"
 	"mpackstation/internal/store"
@@ -610,8 +610,11 @@ func modSearchScore(query string, p provider.Project) int {
 	return 10
 }
 
-/* injectSlugMatch：结果里没有 slug 精确命中时，按 slug 直取 Modrinth 项目并置顶。
-   网络失败静默放弃（搜索本身已经给出可用结果），错误不外泄。 */
+/*
+injectSlugMatch：结果里没有 slug 精确命中时，按 slug 直取 Modrinth 项目并置顶。
+
+	网络失败静默放弃（搜索本身已经给出可用结果），错误不外泄。
+*/
 func (a *API) injectSlugMatch(ctx context.Context, slug string, items []ModSearchAllItem, loader string) []ModSearchAllItem {
 	if slug == "" {
 		return items

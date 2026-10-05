@@ -240,9 +240,13 @@ func (r *iconResources) model(id string, seen map[string]bool) (iconModel, bool)
 	}
 	return result, true
 }
-/* composite（R2）：命名子模型求并。子模型的 #变量 先就地解成本模型贴图
-   （否则子模型间同名变量互相踩），按 key 字典序遍历保证确定性；
-   合并结果只补缺不覆盖外层贴图。 */
+
+/*
+composite（R2）：命名子模型求并。子模型的 #变量 先就地解成本模型贴图
+
+	（否则子模型间同名变量互相踩），按 key 字典序遍历保证确定性；
+	合并结果只补缺不覆盖外层贴图。
+*/
 func (r *iconResources) composite(child iconModel, seen map[string]bool) (iconModel, bool) {
 	result := iconModel{Textures: map[string]string{}, Display: map[string]modelTransform{}}
 	if child.Parent != "" {

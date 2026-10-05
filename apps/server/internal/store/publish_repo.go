@@ -298,7 +298,8 @@ func (r *Repository) RegisterExportDir(ctx context.Context, dir ExportDirRecord)
 }
 
 // GetExportDir returns a named approved export directory.
-func (r *Repository) GetExportDir(ctx context.Context, name string) (ExportDirRecord, error) {	var d ExportDirRecord
+func (r *Repository) GetExportDir(ctx context.Context, name string) (ExportDirRecord, error) {
+	var d ExportDirRecord
 	err := r.db.QueryRowContext(ctx, `SELECT name,absolute_path,marker_verified_at,created_at FROM allowed_export_dirs WHERE name=?`, name).Scan(&d.Name, &d.AbsolutePath, &d.MarkerVerifiedAt, &d.CreatedAt)
 	if err == sql.ErrNoRows {
 		return ExportDirRecord{}, ErrNotFound

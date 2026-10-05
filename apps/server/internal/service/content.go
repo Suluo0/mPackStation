@@ -436,14 +436,14 @@ type QuestNode struct {
 	ModRefs       []any   `json:"modRefs"`
 	Position      int     `json:"position"`
 	// FTB-aligned optional extensions
-	Subtitle                  string  `json:"subtitle,omitempty"`
-	Shape                     string  `json:"shape,omitempty"`
-	Size                      float64 `json:"size,omitempty"`
-	Optional                  bool    `json:"optional,omitempty"`
-	Invisible                 bool    `json:"invisible,omitempty"`
-	DependencyRequirement     string  `json:"dependencyRequirement,omitempty"`
-	MinRequiredDependencies   int     `json:"minRequiredDependencies,omitempty"`
-	Tasks                     []any   `json:"tasks,omitempty"`
+	Subtitle                string  `json:"subtitle,omitempty"`
+	Shape                   string  `json:"shape,omitempty"`
+	Size                    float64 `json:"size,omitempty"`
+	Optional                bool    `json:"optional,omitempty"`
+	Invisible               bool    `json:"invisible,omitempty"`
+	DependencyRequirement   string  `json:"dependencyRequirement,omitempty"`
+	MinRequiredDependencies int     `json:"minRequiredDependencies,omitempty"`
+	Tasks                   []any   `json:"tasks,omitempty"`
 }
 type QuestEdge struct {
 	ID         string `json:"id"`
@@ -451,10 +451,10 @@ type QuestEdge struct {
 	ToNodeID   string `json:"toNodeId"`
 }
 type QuestDraft struct {
-	Book     *QuestBookMeta  `json:"book,omitempty"`
-	Chapters []QuestChapter  `json:"chapters"`
-	Nodes    []QuestNode     `json:"nodes"`
-	Edges    []QuestEdge     `json:"edges"`
+	Book     *QuestBookMeta `json:"book,omitempty"`
+	Chapters []QuestChapter `json:"chapters"`
+	Nodes    []QuestNode    `json:"nodes"`
+	Edges    []QuestEdge    `json:"edges"`
 }
 type QuestRevision struct {
 	ID          string     `json:"id"`
@@ -573,11 +573,11 @@ func unpackBookMeta(meta string) *QuestBookMeta {
 }
 
 var validDependencyRequirements = map[string]bool{
-	"":                 true,
-	"all_completed":    true,
-	"one_completed":    true,
-	"all_started":      true,
-	"one_started":      true,
+	"":              true,
+	"all_completed": true,
+	"one_completed": true,
+	"all_started":   true,
+	"one_started":   true,
 }
 
 func (a *API) GetQuest(ctx context.Context, packID string) (QuestBook, error) {
@@ -652,6 +652,7 @@ func (a *API) SaveQuestDraft(ctx context.Context, packID string, in QuestDraft, 
 	}
 	return questRevDTO(v, in), issues, nil
 }
+
 // QuestValidationResult is the quest validate/apply response body.
 type QuestValidationResult struct {
 	Status     string            `json:"status"`

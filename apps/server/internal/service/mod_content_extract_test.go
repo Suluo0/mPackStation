@@ -249,10 +249,10 @@ func TestParseRecipe_StandardTypes(t *testing.T) {
 
 func TestParseRecipe_DynamicDetection(t *testing.T) {
 	cases := []struct {
-		name      string
-		path      string
-		json      string
-		wantDyn   bool
+		name    string
+		path    string
+		json    string
+		wantDyn bool
 	}{
 		{"special_no_content", "data/x/recipe/special/wildcard.json", `{"type":"x:wildcard"}`, true},
 		{"normal_with_content", "data/x/recipe/normal.json", `{"type":"x:custom","ingredients":[],"result":{}}`, false},
@@ -383,7 +383,7 @@ func TestExtractModContent_LargeEntrySkipped(t *testing.T) {
 		t.Fatalf("create header: %v", err)
 	}
 	chunk := make([]byte, 1024*1024) // 1MB
-	for i := 0; i < 51; i++ {       // 51MB > 50MB cap
+	for i := 0; i < 51; i++ {        // 51MB > 50MB cap
 		w.Write(chunk)
 	}
 	zw.Close()

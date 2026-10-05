@@ -222,9 +222,11 @@ func TestIconTagRepresentativesAndCycles(t *testing.T) {
 	}
 }
 
-/* 0025 后置 + 图标渲染器补齐方案 R1/R2（2026-10-03）：
-   - loader 不再一票否决；item_layers / separate_transforms / composite 各有通路；
-   - composite 子模型的 #变量 就地解引用，合并按 key 字典序，贴图只补缺不覆盖。 */
+/*
+0025 后置 + 图标渲染器补齐方案 R1/R2（2026-10-03）：
+  - loader 不再一票否决；item_layers / separate_transforms / composite 各有通路；
+  - composite 子模型的 #变量 就地解引用，合并按 key 字典序，贴图只补缺不覆盖。
+*/
 func TestSeparateTransformsAndItemLayers(t *testing.T) {
 	r := newIconResources()
 	r.models["minecraft:item/generated"] = []byte(`{}`)

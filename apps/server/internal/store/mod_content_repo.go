@@ -18,15 +18,15 @@ var modContentSeq uint64
 // ModContentRecord is one extracted content row from a mod jar.
 type ModContentRecord struct {
 	ID, PackID, ModID, Modid, Version, Kind, Path, Key, Payload, ParseError string
-	IsDynamic, ParsedAt                                                         int64
+	IsDynamic, ParsedAt                                                     int64
 }
 
 // ModContentRunRecord is one parse run summary. UNIQUE(mod_id, sha1) makes
 // repeat parsing of the same jar version idempotent.
 type ModContentRunRecord struct {
-	ID, PackID, ModID, SHA1, Status, ErrorMessage          string
-	TotalFiles, ParsedCount, DynamicCount, ErrorCount      int
-	StartedAt, FinishedAt                                    int64
+	ID, PackID, ModID, SHA1, Status, ErrorMessage     string
+	TotalFiles, ParsedCount, DynamicCount, ErrorCount int
+	StartedAt, FinishedAt                             int64
 }
 
 func ModContentEvidence(packID, requestID string, at int64, action, aggregateID string, detail any) (ActivityRecord, []any, []any) {

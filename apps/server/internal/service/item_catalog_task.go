@@ -18,7 +18,9 @@ func (a *API) SubmitCatalogInit(ctx context.Context, packID, locale string) (*ta
 	if a == nil || a.queue == nil {
 		return nil, ErrUnavailable
 	}
-	if _, err := a.repo.GetPack(ctx, packID); err != nil { return nil, err }
+	if _, err := a.repo.GetPack(ctx, packID); err != nil {
+		return nil, err
+	}
 	payload, _ := json.Marshal(catalogInitPayload{PackID: packID, Locale: catalogLocale(locale)})
 	item, _, err := a.queue.Submit(ctx, task.SubmitRequest{PackID: strPtr(packID), Kind: task.KindCatalogInit, Title: "初始化 Minecraft 内容目录", Payload: payload, MaxAttempts: 3})
 	return item, err

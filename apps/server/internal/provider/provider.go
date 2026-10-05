@@ -50,12 +50,12 @@ type Project struct {
 	Loaders []string `json:"loaders,omitempty"`
 }
 type Version struct {
-	ID            string       `json:"id"`
-	ProjectID     string       `json:"projectId,omitempty"`
-	Name          string       `json:"name,omitempty"`
-	VersionNumber string       `json:"versionNumber,omitempty"`
-	GameVersions  []string     `json:"gameVersions,omitempty"`
-	Loaders       []string     `json:"loaders,omitempty"`
+	ID            string   `json:"id"`
+	ProjectID     string   `json:"projectId,omitempty"`
+	Name          string   `json:"name,omitempty"`
+	VersionNumber string   `json:"versionNumber,omitempty"`
+	GameVersions  []string `json:"gameVersions,omitempty"`
+	Loaders       []string `json:"loaders,omitempty"`
 	// DatePublished is RFC3339 when the provider reports it; versions are
 	// returned newest-first so "the first compatible entry" is the latest.
 	DatePublished string       `json:"datePublished,omitempty"`
@@ -71,9 +71,9 @@ type File struct {
 	// SHA512 只有 Modrinth 提供（GET /v2/project/{id}/version 的 files[].hashes
 	// 实测返回 {sha1, sha512}）。它是 .mrpack manifest 的必填哈希，此前被解析器
 	// 直接丢掉，导致装配出来的 manifest 里 sha512 恒为空串，Prism 一类严格读方会拒。
-	SHA512    string `json:"sha512"`
-	Size      int64  `json:"size"`
-	Primary   bool   `json:"primary"`
+	SHA512  string `json:"sha512"`
+	Size    int64  `json:"size"`
+	Primary bool   `json:"primary"`
 }
 
 // UnmarshalJSON normalizes the string and numeric identifiers and the
@@ -135,7 +135,7 @@ func (f *File) UnmarshalJSON(data []byte) error {
 				}
 			}
 		}
-} else if len(raw.Hashes) > 0 {
+	} else if len(raw.Hashes) > 0 {
 		var mrHashes struct {
 			SHA1   string `json:"sha1"`
 			SHA256 string `json:"sha256"`

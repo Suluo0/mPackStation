@@ -24,11 +24,11 @@ type FileEntry struct {
 
 // FsBrowseResult lists one level of directories plus common Minecraft roots.
 type FsBrowseResult struct {
-	Path        string     `json:"path"`
-	Parent      string     `json:"parent"`
-	Directories []DirEntry `json:"directories"`
+	Path        string      `json:"path"`
+	Parent      string      `json:"parent"`
+	Directories []DirEntry  `json:"directories"`
 	Files       []FileEntry `json:"files"`
-	Suggested   []DirEntry `json:"suggested"`
+	Suggested   []DirEntry  `json:"suggested"`
 }
 
 // SuggestedMinecraftDirs returns common local Minecraft instance roots for

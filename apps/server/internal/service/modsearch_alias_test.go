@@ -13,8 +13,8 @@ func TestExpandModSearchAlias(t *testing.T) {
 		{"精致存储", "sophisticated-storage"},
 		{"应用能源2", "ae2"},
 		{"ae2", "ae2"},
-		{"aer", "ae2"},     // 编辑距离 1
-		{"sop", ""},        // 无别名命中（排序分兜底）
+		{"aer", "ae2"}, // 编辑距离 1
+		{"sop", ""},    // 无别名命中（排序分兜底）
 		{"随便什么", ""},
 	}
 	for _, c := range cases {
@@ -29,7 +29,7 @@ func TestModSearchScoreOrdering(t *testing.T) {
 	mk := func(slug, name string) provider.Project {
 		return provider.Project{Slug: slug, Name: name, Downloads: 1000}
 	}
-	main := mk("ae2", "Applied Energistics 2")             // slug 精确 → 100
+	main := mk("ae2", "Applied Energistics 2")                      // slug 精确 → 100
 	addon := mk("ae2-emi-crafting", "AE2 EMI Crafting Integration") // 名称分词前缀 → 80
 	if modSearchScore(q, main) <= modSearchScore(q, addon) {
 		t.Fatalf("slug-exact must outrank title-prefix addon: %d vs %d", modSearchScore(q, main), modSearchScore(q, addon))
