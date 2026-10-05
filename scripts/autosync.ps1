@@ -227,8 +227,14 @@ function Invoke-Sync {
 
     if ($needGo.Count -gt 0 -or $needRust.Count -gt 0 -or $needNpm.Count -gt 0 -or $ForceRestart) {
         Restart-Services
+    } elseif ($changed.Count -gt 0 -and
+        @($changed | Where-Object { $_ -like 'apps/web3/src/*' }).Count -eq $changed.Count) {
+        Write-Log 'INFO' '改动全在 apps/web3/src/ 下，vite HMR 保存即生效，不重启服务'
     } else {
-        Write-Log 'INFO' '只有前端源码变化，vite HMR 自行生效，不重启服务'
+        # 例如只改了文档或验证脚本：既不用重建也不用重启。
+        # 原先这里也打"只有前端源码变化"，对 docs-only 提交是明确的误导。
+        $msg = "改动 {0} 个文件，均不触发重建，无需重启" -f $changed.Count
+        Write-Log 'INFO' $msg
     }
 }
 
