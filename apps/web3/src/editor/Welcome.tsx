@@ -104,6 +104,7 @@ function ImportPackForm({onImported}: {onImported: (id: string) => void}) {
   const [source, setSource] = useState<ImportSource>('modrinth');
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [drag, setDrag] = useState(false);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,8 +122,20 @@ function ImportPackForm({onImported}: {onImported: (id: string) => void}) {
     <div style={{display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center'}}>
       <Select value={source} onChange={setSource} style={{width: 150}} options={SOURCES}/>
       {source === 'local' ? (
-        <input type="file" accept=".zip,.mrpack" className="p-input"
-          onChange={e => { setFile(e.target.files?.[0] ?? null); setPreview(null); }}/>
+        <label className={`wl-dropzone${drag ? ' over' : ''}`}
+          onDragOver={e => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={e => {
+            e.preventDefault(); setDrag(false);
+            const f = e.dataTransfer.files?.[0];
+            if (f) { setFile(f); setPreview(null); }
+          }}>
+          <input type="file" accept=".zip,.mrpack"
+            onChange={e => { setFile(e.target.files?.[0] ?? null); setPreview(null); }}/>
+          {file
+            ? <span style={{color: 'var(--mc-text)'}}>{file.name}（{Math.max(1, Math.round(file.size / 1024))} KB）— 点击可重选</span>
+            : '把 zip / mrpack 拖到这里，或点击选择文件'}
+        </label>
       ) : (
         <Input placeholder="包链接" value={url} onChange={e => setUrl(e.target.value)} style={{width: 280}}/>
       )}

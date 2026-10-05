@@ -526,3 +526,15 @@
 .dock .dock-log { flex: 1; min-height: 0; }
 .dock-body { flex: 1; min-height: 0; overflow: auto; padding: 6px 10px; }
 .health-panel { display: flex; flex-direction: column; gap: 2px; }
+
+/* ── 导入拖放区（Welcome 本地 zip / mrpack，2026-10-05）── */
+.wl-dropzone {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 300px; min-height: 34px; padding: 4px 14px;
+  border: 1px dashed var(--mc-line-strong); border-radius: var(--mc-radius);
+  color: var(--mc-text-2); cursor: pointer; background: var(--mc-fill);
+  user-select: none;
+}
+.wl-dropzone:hover { border-color: var(--mc-primary); color: var(--mc-text); }
+.wl-dropzone.over { border-color: var(--mc-primary); background: var(--mc-primary-bg); color: var(--mc-primary-deep); }
+.wl-dropzone input[type="file"] { display: none; }
