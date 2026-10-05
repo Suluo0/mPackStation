@@ -57,3 +57,10 @@ export function saveCurseForgeKey(key: string): Promise<void> {
 export function clearCurseForgeKey(): Promise<void> {
   return del('/api/system/providers/curseforge/key');
 }
+
+export function fetchProjectRoot(): Promise<{path: string}> {
+  return get('/api/system/project-root', z.object({path: z.string()}));
+}
+export function saveProjectRoot(path: string): Promise<void> {
+  return putVoid('/api/system/project-root', {path});
+}

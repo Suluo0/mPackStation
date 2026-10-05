@@ -16,6 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"mpackstation/internal/config"
+	"mpackstation/internal/provider"
+
 	"mpackstation/internal/store"
 	"mpackstation/internal/task"
 )
@@ -218,19 +221,153 @@ func (s *ImportService) handleImportTask(ctx context.Context, ex *task.Execution
 	if err != nil {
 		return err
 	}
-	if err := ex.Progress(ctx, 10, "inspecting"); err != nil {
+	if err := ex.Progress(ctx, 5, "parsing manifest"); err != nil {
 		return err
 	}
-	name, mc, loader, err := parsePackMetadata(p.StagedPath)
+	mft, err := parseImportManifest(p.StagedPath)
 	if err != nil {
-		return &task.TaskError{Code: "import_parse_failed", Message: "pack archive could not be parsed"}
+		return &task.TaskError{Code: "import_parse_failed", Message: "pack archive could not be parsed: " + err.Error()}
 	}
 	api := &API{repo: s.repo, now: s.now}
-	if _, err := api.CreatePack(ctx, CreatePackInput{Name: name, MCVersion: mc, Loader: loader}, "task:"+ex.Task.ID); err != nil {
+	// 同名包占名（包括软删行——packs.name 的 UNIQUE 不区分状态）：名字追加短后缀
+	// 重试一次。导入不许因为重名半途失败（2026-10-05 用户指令）。
+	pack, err := api.CreatePack(ctx, CreatePackInput{Name: mft.Name, MCVersion: mft.MCVersion, Loader: mft.Loader, LoaderVersion: mft.LoaderVersion}, "task:"+ex.Task.ID)
+	if err != nil && strings.Contains(err.Error(), "pack_name_duplicate") {
+		pack, err = api.CreatePack(ctx, CreatePackInput{Name: fmt.Sprintf("%s (%s)", mft.Name, s.now().Format("0102-1504")), MCVersion: mft.MCVersion, Loader: mft.Loader, LoaderVersion: mft.LoaderVersion}, "task:"+ex.Task.ID)
+	}
+	if err != nil {
 		return err
 	}
+
+	// 项目目录（2026-10-05 用户定稿）：导入的整合包按「每个项目一个目录」落盘，
+	// 模组文件直接放进 mods/，并写我们自己的 metadata.json 记录。项目根目录
+	// 在设置里可改（appsettings.json，OS 用户配置目录）。
+	root, err := config.ResolveProjectRoot()
+	if err != nil {
+		return &task.TaskError{Code: "import_project_root", Message: err.Error()}
+	}
+	shortID := pack.ID
+	if len(shortID) > 8 {
+		shortID = shortID[len(shortID)-8:]
+	}
+	projDir := filepath.Join(root, config.SanitizeDirName(mft.Name)+"-"+shortID)
+	modsDir := filepath.Join(projDir, "mods")
+	if err := os.MkdirAll(modsDir, 0o755); err != nil {
+		return &task.TaskError{Code: "import_project_dir", Message: "create project directory failed: " + err.Error()}
+	}
+
+	// CurseForge 清单只有 projectID/fileID，没有直链——下载必须走 CF API，密钥是硬前置。
+	var cfAdapter *provider.HTTPAdapter
+	if mft.Kind == "curseforge_manifest" {
+		key := os.Getenv("CURSEFORGE_API_KEY")
+		if key == "" {
+			if secrets, ferr := config.LoadSecretsFile(config.SecretsPath()); ferr == nil {
+				key = secrets[curseforgeSecretKey]
+			}
+		}
+		if key == "" && s.repo != nil {
+			if saved, ferr := s.repo.GetSecret(ctx, curseforgeSecretKey); ferr == nil {
+				key = saved
+			}
+		}
+		if key == "" {
+			return &task.TaskError{Code: "import_cf_key_missing", Message: "CurseForge 清单的模组要用 CF API 下载：请先在设置里配置 CurseForge Key"}
+		}
+		if cfAdapter, err = provider.NewHTTPAdapter(provider.CurseForge, "https://api.curseforge.com", key, nil); err != nil {
+			return &task.TaskError{Code: "import_cf_key_missing", Message: "invalid CurseForge key"}
+		}
+	}
+
+	// 逐模组下载到项目目录（重试 3 次；任何文件重试后仍失败 = 导入失败并指名文件，
+	// 不允许半截导入——2026-10-05 用户指令）。
+	for i, spec := range mft.Files {
+		if err := ex.Progress(ctx, 10+80*float64(i)/float64(max(1, len(mft.Files))), "downloading "+filepath.Base(spec.Path)); err != nil {
+			return err
+		}
+		dest := filepath.Join(modsDir, filepath.Base(spec.Path))
+		var sha1 string
+		var size int64
+		dl := func() error {
+			if mft.Kind == "curseforge_manifest" {
+				sha1, size, err = cfAdapter.FetchCFFile(ctx, spec.CFProject, spec.CFFile, dest)
+				return err
+			}
+			sha1, size, err = provider.DownloadToFile(ctx, spec.URL, dest)
+			return err
+		}
+		if err := downloadWithRetry(ctx, 3, dl); err != nil {
+			return &task.TaskError{Code: "import_download_failed", Message: fmt.Sprintf("模组下载失败：%s（%v）", filepath.Base(spec.Path), err)}
+		}
+		if mft.Kind == "modrinth_index" && spec.Sha1 != "" && !strings.EqualFold(sha1, spec.Sha1) {
+			return &task.TaskError{Code: "import_checksum_failed", Message: fmt.Sprintf("模组校验失败：%s（sha1 不匹配）", filepath.Base(spec.Path))}
+		}
+		spec.Sha1 = sha1
+		spec.Size = size
+		mft.Files[i] = spec
+	}
+
+	// 自有 metadata 记录：项目目录里的模组台账（我们自己的格式，不依赖平台清单）。
+	meta := map[string]any{
+		"format":   "mpackstation-project",
+		"version":  1,
+		"imported": s.now().UnixMilli(),
+		"source":   map[string]any{"kind": mft.Kind, "archive": filepath.Base(p.StagedPath)},
+		"pack":     map[string]any{"name": mft.Name, "mcVersion": mft.MCVersion, "loader": mft.Loader, "loaderVersion": mft.LoaderVersion},
+	}
+	mods := make([]map[string]any, 0, len(mft.Files))
+	for _, spec := range mft.Files {
+		e := map[string]any{"fileName": filepath.Base(spec.Path), "sha1": spec.Sha1, "size": spec.Size, "required": spec.Required}
+		if mft.Kind == "modrinth_index" {
+			e["origin"] = map[string]any{"provider": "modrinth", "url": spec.URL}
+		} else {
+			e["origin"] = map[string]any{"provider": "curseforge", "projectID": spec.CFProject, "fileID": spec.CFFile}
+		}
+		mods = append(mods, e)
+	}
+	meta["mods"] = mods
+	rawMeta, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(projDir, "metadata.json"), rawMeta, 0o644); err != nil {
+		return &task.TaskError{Code: "import_project_meta", Message: "write metadata.json failed: " + err.Error()}
+	}
+
+	// 台账入库：每个模组一条 pack_mods（local 来源，文件在项目目录里）。
+	for i, spec := range mft.Files {
+		if err := ex.Progress(ctx, 90+8*float64(i)/float64(max(1, len(mft.Files))), "recording "+filepath.Base(spec.Path)); err != nil {
+			return err
+		}
+		display := strings.TrimSuffix(filepath.Base(spec.Path), filepath.Ext(spec.Path))
+		if _, err := api.AddLocalPackMod(ctx, pack.ID, LocalModInput{
+			DisplayName: display, FileName: filepath.Base(spec.Path),
+			SHA1: spec.Sha1, Size: spec.Size, Required: spec.Required,
+		}, "task:"+ex.Task.ID); err != nil {
+			return &task.TaskError{Code: "import_record_failed", Message: fmt.Sprintf("模组记录失败：%s（%v）", filepath.Base(spec.Path), err)}
+		}
+	}
 	_ = os.Remove(p.StagedPath)
-	return ex.Progress(ctx, 100, "imported")
+	return ex.Progress(ctx, 100, fmt.Sprintf("imported %d mods → %s", len(mft.Files), projDir))
+}
+
+// downloadWithRetry 有限重试（网络抖动重下即可，计数耗尽就返回最后一次错误）。
+func downloadWithRetry(ctx context.Context, attempts int, fn func() error) error {
+	var last error
+	for i := 0; i < attempts; i++ {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(i) * 2 * time.Second):
+			}
+		}
+		if err := fn(); err == nil {
+			return nil
+		} else {
+			last = err
+		}
+	}
+	return last
 }
 
 func validateImportInput(in ImportPreviewInput) error {
@@ -372,4 +509,160 @@ func parsePackMetadata(path string) (string, string, string, error) {
 		}
 	}
 	return name, mc, loader, nil
+}
+
+
+// importManifest 是两类清单的统一中间表示：Modrinth 的 modrinth.index.json 与
+// CurseForge 的 manifest.json（zip 包里本来就带，2026-10-05 确认）。字段对齐后
+// 下游（下载/记录/写 metadata）不再关心来源差异。
+type importManifest struct {
+	Kind          string // modrinth_index | curseforge_manifest
+	Name          string
+	MCVersion     string
+	Loader        string
+	LoaderVersion string
+	Files         []importFileSpec
+}
+
+type importFileSpec struct {
+	Path      string // 清单里的目标相对路径（mods/xxx.jar）
+	Sha1      string // mrpack 清单自带，下载后强校验；CF 下载后现算
+	Size      int64
+	URL       string // mrpack 直链（cdn.modrinth.com）
+	Required  bool
+	CFProject int64
+	CFFile    int64
+}
+
+// parseImportManifest 从暂存的 zip/mrpack 里解析清单。两种格式都有官方定义：
+// mrpack = modrinth.index.json（files[].downloads 是直链）；CF zip = manifest.json
+// （files[].projectID/fileID，下载要过 CF API，密钥是硬前置）。
+func parseImportManifest(path string) (*importManifest, error) {
+	r, e := zip.OpenReader(path)
+	if e != nil {
+		return nil, e
+	}
+	defer r.Close()
+	out := &importManifest{Name: "Imported pack", MCVersion: "1.20.1", Loader: "fabric"}
+	seen := false
+	for _, f := range r.File {
+		name := strings.TrimPrefix(f.Name, "/")
+		if name != "modrinth.index.json" && name != "manifest.json" {
+			continue
+		}
+		b, e := readZipEntry(f)
+		if e != nil {
+			continue
+		}
+		var raw map[string]any
+		if json.Unmarshal(b, &raw) != nil {
+			continue
+		}
+		seen = true
+		if v, ok := raw["name"].(string); ok && v != "" {
+			out.Name = v
+		}
+		switch name {
+		case "modrinth.index.json":
+			out.Kind = "modrinth_index"
+			if m, ok := raw["minecraft"].(map[string]any); ok {
+				if v, ok := m["version"].(string); ok && v != "" {
+					out.MCVersion = v
+				}
+			}
+			if deps, ok := raw["dependencies"].(map[string]any); ok {
+				for _, k := range []string{"fabric-loader", "neoforge", "forge", "quilt-loader"} {
+					if v, ok := deps[k].(string); ok && v != "" {
+						out.Loader = strings.TrimSuffix(k, "-loader")
+						out.LoaderVersion = v
+						break
+					}
+				}
+			}
+			files, _ := raw["files"].([]any)
+			for _, it := range files {
+				fm, ok := it.(map[string]any)
+				if !ok {
+					continue
+				}
+				spec := importFileSpec{Path: jsonStr(fm["path"]), Required: true}
+				if h, ok := fm["hashes"].(map[string]any); ok {
+					spec.Sha1 = jsonStr(h["sha1"])
+				}
+				if s, ok := fm["fileSize"].(float64); ok {
+					spec.Size = int64(s)
+				}
+				if env, ok := fm["env"].(map[string]any); ok {
+					if c, ok := env["client"].(string); ok && c == "unsupported" {
+						spec.Required = false
+					}
+				}
+				if dl, ok := fm["downloads"].([]any); ok && len(dl) > 0 {
+					spec.URL = jsonStr(dl[0])
+				}
+				if spec.Path != "" && spec.URL != "" {
+					out.Files = append(out.Files, spec)
+				}
+			}
+		case "manifest.json":
+			out.Kind = "curseforge_manifest"
+			if m, ok := raw["minecraft"].(map[string]any); ok {
+				if v, ok := m["version"].(string); ok && v != "" {
+					out.MCVersion = v
+				}
+				if mls, ok := m["modLoaders"].([]any); ok {
+					for _, ml := range mls {
+						mo, ok := ml.(map[string]any)
+						if !ok {
+							continue
+						}
+						id := jsonStr(mo["id"]) // 形如 "forge-47.2.0"
+						for _, k := range []string{"neoforge", "forge", "fabric", "quilt"} {
+							if strings.HasPrefix(id, k+"-") {
+								out.Loader = k
+								out.LoaderVersion = strings.TrimPrefix(id, k+"-")
+								break
+							}
+						}
+						if out.Loader != "" {
+							break
+						}
+					}
+				}
+			}
+			files, _ := raw["files"].([]any)
+			for _, it := range files {
+				fm, ok := it.(map[string]any)
+				if !ok {
+					continue
+				}
+				pid, _ := fm["projectID"].(float64)
+				fid, _ := fm["fileID"].(float64)
+				if pid == 0 || fid == 0 {
+					continue
+				}
+				out.Files = append(out.Files, importFileSpec{
+					Path:      fmt.Sprintf("mods/cf-%d-%d.jar", int64(pid), int64(fid)),
+					CFProject: int64(pid),
+					CFFile:    int64(fid),
+					Required:  fm["required"] != false,
+				})
+			}
+		}
+		if seen {
+			break // 正常只有一个清单；并存时以先读到的一份为准
+		}
+	}
+	if !seen {
+		return nil, fmt.Errorf("neither modrinth.index.json nor manifest.json in archive")
+	}
+	if out.Loader == "" {
+		out.Loader = "fabric"
+	}
+	return out, nil
+}
+
+func jsonStr(v any) string {
+	s, _ := v.(string)
+	return s
 }

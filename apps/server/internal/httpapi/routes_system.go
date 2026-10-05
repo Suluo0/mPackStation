@@ -77,6 +77,29 @@ func registerSystemRoutes(mux *http.ServeMux, app *service.API, version string) 
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	// 项目根目录（2026-10-05）：导入的整合包按每个项目一个目录落在这里面。
+	// 设置保存在 OS 用户配置目录的 appsettings.json，跨重启生效。
+	mux.HandleFunc("GET /api/system/project-root", func(w http.ResponseWriter, r *http.Request) {
+		path, err := app.GetProjectRoot()
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"path": path})
+	})
+	mux.HandleFunc("PUT /api/system/project-root", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Path string `json:"path"`
+		}
+		if !decodeJSON(w, r, &in) {
+			return
+		}
+		if err := app.SetProjectRoot(in.Path); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /api/tools/prism/install", func(w http.ResponseWriter, r *http.Request) {
 		t, reused, err := app.SubmitPrismInstall(r.Context())
 		if err != nil {

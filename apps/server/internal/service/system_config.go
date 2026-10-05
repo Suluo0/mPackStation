@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -136,4 +138,27 @@ func fileHasSecret(key string) bool {
 		return false
 	}
 	return secrets[key] != ""
+}
+
+// GetProjectRoot 返回当前生效的项目根目录（设置里指定过就用它，否则默认
+// ~/Documents/mPackStation Projects）。设置页与导入任务共用这一份口径。
+func (a *API) GetProjectRoot() (string, error) {
+	return config.ResolveProjectRoot()
+}
+
+// SetProjectRoot 保存用户指定的项目根目录：必须是绝对路径且能创建出来。
+func (a *API) SetProjectRoot(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" || !filepath.IsAbs(path) {
+		return &DomainError{Status: 400, Code: "invalid_argument", Message: "project root must be an absolute path"}
+	}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return &DomainError{Status: 400, Code: "invalid_argument", Message: "directory cannot be created: " + err.Error()}
+	}
+	s, err := config.LoadAppSettings()
+	if err != nil {
+		return err
+	}
+	s.ProjectRoot = filepath.Clean(path)
+	return config.SaveAppSettings(s)
 }

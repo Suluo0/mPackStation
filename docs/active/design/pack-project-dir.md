@@ -1,7 +1,11 @@
 # 项目目录结构（每包一个 folder）—— 事实与方案
 
-> 2026-10-04。来源：用户反馈「包管理应该像 Maven/Gradle 项目一样，每个项目有自己独立的目录」。
-> 本轮先落**事实基线与方案**；存储重构涉及数据迁移与打包链路，需要专门一轮实施。
+> 2026-10-04 落方案；2026-10-05 用户定稿导入模型并实施 **v1（已上线）**：
+> 导入的整合包在 `ResolveProjectRoot()`（默认 `~/Documents/mPackStation Projects`，
+> 设置页可改，存 appsettings.json）下按 `<包名>-<短id>/` 建项目目录，
+> `mods/` 存全部模组文件、`metadata.json` 记台账（自有格式：
+> format=mpackstation-project，逐条 fileName/sha1/size/required/origin）。
+> pack.toml 与 overrides 投影仍是二期。
 
 ## 现状（2026-10-04 排查确认，详见 docs/active/user_check/排查确认记录.md #3）
 

@@ -514,7 +514,10 @@ func (q *Queue) Progress(ctx context.Context, id, workerID string, epoch int64, 
 		return fmt.Errorf("begin progress: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	result, err := tx.ExecContext(ctx, `UPDATE tasks SET progress=?, message=?, updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_epoch=? AND lease_expires_at>?`, progress, message, now, id, workerID, epoch, now)
+	// 进度上报同时续租（心跳）：长任务（导入大包要逐个下载模组，几分钟起步）
+	// 若不续租，超过 leaseTTL 后下一次 Progress 就会被租约护栏击杀，任务永远
+	// 跑不完（2026-10-05 导入 37 模组实测踩中：三轮重试每轮死在 30 秒处）。
+	result, err := tx.ExecContext(ctx, `UPDATE tasks SET progress=?, message=?, updated_at=?, lease_expires_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_epoch=? AND lease_expires_at>?`, progress, message, now, now+q.leaseTTL.Milliseconds(), id, workerID, epoch, now)
 	if err != nil {
 		return fmt.Errorf("update progress: %w", err)
 	}

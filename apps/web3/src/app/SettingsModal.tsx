@@ -1,6 +1,6 @@
 import {useEffect, useState} from 'react';
 import {Modal} from 'antd';
-import {fetchHealth, saveCurseForgeKey, clearCurseForgeKey, type SystemHealth} from '../api/system';
+import {fetchHealth, fetchProjectRoot, saveCurseForgeKey, clearCurseForgeKey, saveProjectRoot, type SystemHealth} from '../api/system';
 import {useOnboarding} from './OnboardingContext';
 import {useUrlPatch} from './url';
 import {type ThemeName} from './theme';
@@ -17,12 +17,25 @@ export function SettingsModal({open}: {open: boolean}) {
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [key, setKey] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /* 项目目录：打开时读当前生效值；保存走 PUT，跨重启生效（OS 用户配置目录）。 */
+  const [projectRoot, setProjectRoot] = useState('');
+  const [rootSaved, setRootSaved] = useState('');
   /* 主题走 ThemeProvider，不是直接 applyTheme —— 后者的 antd 控件不会跟着变。 */
   const {preference, setTheme} = useTheme();
   const {ack, reload} = useOnboarding();
 
-  const load = () => fetchHealth().then(setHealth).catch(e => setError(e instanceof Error ? e.message : String(e)));
+  const load = () => {
+    fetchHealth().then(setHealth).catch(e => setError(e instanceof Error ? e.message : String(e)));
+    fetchProjectRoot().then(r => { setProjectRoot(r.path); setRootSaved(r.path); }).catch(() => setProjectRoot(''));
+  };
   useEffect(() => { if (open) void load(); }, [open]);
+
+  const saveRoot = async () => {
+    await saveProjectRoot(projectRoot.trim());
+    const r = await fetchProjectRoot();
+    setProjectRoot(r.path);
+    setRootSaved(r.path);
+  };
 
   const save = async () => {
     await saveCurseForgeKey(key.trim());
@@ -57,6 +70,15 @@ export function SettingsModal({open}: {open: boolean}) {
         {health?.curseforgeKeyConfigured && (
           <button type="button" className="p-btn" onClick={() => void clearCurseForgeKey().then(() => load()).catch((e: Error) => setError(String(e)))}>清除 Key</button>
         )}
+      </div>
+      <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12}}>
+        <div>项目目录（导入的整合包按每个项目一个文件夹落在这里）</div>
+        <div style={{display: 'flex', gap: 6}}>
+          <input className="p-input" style={{flex: 1}} value={projectRoot} placeholder="项目根目录的绝对路径"
+            onChange={e => setProjectRoot(e.target.value)}/>
+          <button type="button" className="p-btn primary" disabled={projectRoot.trim() === rootSaved}
+            onClick={() => void saveRoot().catch((e: Error) => setError(String(e)))}>保存目录</button>
+        </div>
       </div>
     </Modal>
   );
