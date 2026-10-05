@@ -20,6 +20,18 @@ LOG="$LOG_DIR/devsync.log"
 
 mkdir -p "$LOG_DIR"
 
+# 单实例锁：launchd 自动加载与手工 loop 可能同时存在，两个进程并发跑 git 会互相踩。
+# 陈旧锁（>5 分钟）视为上次被杀留下的残留，清掉重试一次。
+LOCK="$LOG_DIR/.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+    if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +5 2>/dev/null)" ]; then
+        rmdir "$LOCK" 2>/dev/null && mkdir "$LOCK" 2>/dev/null || exit 0
+    else
+        exit 0
+    fi
+fi
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+
 log() { printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$2" >> "$LOG"; }
 short() { git -C "$REPO_ROOT" rev-parse --short "${1:-HEAD}" 2>/dev/null || echo '?'; }
 
