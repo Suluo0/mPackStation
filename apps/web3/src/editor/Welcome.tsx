@@ -100,11 +100,38 @@ const readAsBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
+const isImportableName = (name: string) => {
+  const n = name.toLowerCase();
+  return n.endsWith('.zip') || n.endsWith('.mrpack');
+};
+
 function ImportPackForm({onImported}: {onImported: (id: string) => void}) {
   const [source, setSource] = useState<ImportSource>('modrinth');
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [drag, setDrag] = useState(false);
+  const [drag, setDrag] = useState(0);
+
+  /* 全页拖放（2026-10-05）：拖任何文件进来都出现虚线框。流程分两段——
+     类型不对直接拒绝（「这个文件类型不支持」）；类型对 → 立即做元数据检查
+     （inspect），出预览后才给「确认导入」。 */
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+    const enter = (e: DragEvent) => { if (hasFiles(e)) { e.preventDefault(); setDrag(c => c + 1); } };
+    const leave = (e: DragEvent) => { if (hasFiles(e) && !e.relatedTarget) setDrag(0); };
+    const over = (e: DragEvent) => { if (hasFiles(e)) e.preventDefault(); };
+    const drop = (e: DragEvent) => { setDrag(0); void handleDropFile(e.dataTransfer?.files?.[0]); };
+    document.addEventListener('dragenter', enter);
+    document.addEventListener('dragleave', leave);
+    document.addEventListener('dragover', over);
+    document.addEventListener('drop', drop);
+    return () => {
+      document.removeEventListener('dragenter', enter);
+      document.removeEventListener('dragleave', leave);
+      document.removeEventListener('dragover', over);
+      document.removeEventListener('drop', drop);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,20 +145,34 @@ function ImportPackForm({onImported}: {onImported: (id: string) => void}) {
     try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   };
 
+  const handleFile = async (f?: File | null) => {
+    if (!f) return;
+    if (!isImportableName(f.name)) {
+      setError('这个文件类型不支持 —— 只接受 .zip / .mrpack');
+      return;
+    }
+    setSource('local'); setFile(f); setPreview(null); setError(null);
+    await act(async () => { setPreview(await inspectImport({source: 'local', contentBase64: await readAsBase64(f)})); });
+  };
+
+  const handleDropFile = (f?: File | null) => { void handleFile(f); };
+
   return (
+    <>
+      {drag > 0 && (
+        <div className="wl-drag-overlay" onDragOver={e => e.preventDefault()}>
+          <div className="wl-drag-box">支持直接拖动 mrpack 或 zip 包到这里自动导入识别</div>
+        </div>
+      )}
     <div style={{display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center'}}>
       <Select value={source} onChange={setSource} style={{width: 150}} options={SOURCES}/>
       {source === 'local' ? (
-        <label className={`wl-dropzone${drag ? ' over' : ''}`}
-          onDragOver={e => { e.preventDefault(); setDrag(true); }}
-          onDragLeave={() => setDrag(false)}
-          onDrop={e => {
-            e.preventDefault(); setDrag(false);
-            const f = e.dataTransfer.files?.[0];
-            if (f) { setFile(f); setPreview(null); }
-          }}>
+        <label className={`wl-dropzone${drag > 0 ? ' over' : ''}`}
+          onDragOver={e => { e.preventDefault(); setDrag(1); }}
+          onDragLeave={() => setDrag(0)}
+          onDrop={e => { e.preventDefault(); setDrag(0); handleDropFile(e.dataTransfer?.files?.[0]); }}>
           <input type="file" accept=".zip,.mrpack"
-            onChange={e => { setFile(e.target.files?.[0] ?? null); setPreview(null); }}/>
+            onChange={e => { void handleFile(e.target.files?.[0] ?? null); }}/>
           {file
             ? <span style={{color: 'var(--mc-text)'}}>{file.name}（{Math.max(1, Math.round(file.size / 1024))} KB）— 点击可重选</span>
             : '把 zip / mrpack 拖到这里，或点击选择文件'}
@@ -162,5 +203,6 @@ function ImportPackForm({onImported}: {onImported: (id: string) => void}) {
       {notice && <span className="sub">{notice}</span>}
       {error && <span className="p-empty" style={{padding: 0}}>{error}</span>}
     </div>
+    </>
   );
 }

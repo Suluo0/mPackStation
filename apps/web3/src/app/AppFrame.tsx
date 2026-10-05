@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import {PackSummaryProvider} from './PackSummaryContext';
 import {CatalogProvider} from './CatalogContext';
 import {OnboardingProvider} from './OnboardingContext';
@@ -17,7 +17,23 @@ import {useUrlState} from './url';
 
 /* 单页三区（V3 §1）：顶栏 / 图标轨+工具面板 / 编辑区，外加可停靠底部与状态条。
    全局 Provider 挂这里；?settings=1 是设置弹窗的深链（关闭时清参数）。 */
+
+/* 全页拖放接管（2026-10-05）：浏览器对文件 drop 的默认行为是打开文件——
+   在本应用里一律屏蔽，drop 的处理权归页面自己的拖放区。 */
+function useGlobalDragGuard() {
+  useEffect(() => {
+    const prevent = (e: DragEvent) => e.preventDefault();
+    document.addEventListener('dragover', prevent);
+    document.addEventListener('drop', prevent);
+    return () => {
+      document.removeEventListener('dragover', prevent);
+      document.removeEventListener('drop', prevent);
+    };
+  }, []);
+}
+
 export function AppFrame() {
+  useGlobalDragGuard();
   const [paletteOpen, openPalette] = useHotkeys();
   const {settings} = useUrlState();
   const [panelW, setPanelW] = useState(() => {

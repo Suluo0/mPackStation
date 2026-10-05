@@ -538,3 +538,15 @@
 .wl-dropzone:hover { border-color: var(--mc-primary); color: var(--mc-text); }
 .wl-dropzone.over { border-color: var(--mc-primary); background: var(--mc-primary-bg); color: var(--mc-primary-deep); }
 .wl-dropzone input[type="file"] { display: none; }
+
+/* ── 全页拖放虚线框（Welcome 导入，2026-10-05）── */
+.wl-drag-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: color-mix(in srgb, var(--mc-bg) 55%, transparent);
+  display: flex; align-items: center; justify-content: center;
+}
+.wl-drag-box {
+  border: 2px dashed var(--mc-primary); border-radius: var(--mc-radius-lg, 10px);
+  padding: 36px 56px; font-size: 15px; color: var(--mc-primary-deep);
+  background: var(--mc-fill); pointer-events: none;
+}
