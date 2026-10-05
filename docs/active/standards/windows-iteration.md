@@ -540,8 +540,60 @@ git 仓库的两个视图 —— 「统一源码」本来就是 git 在提供。
 本身问题**（`plutil -lint` OK、权限 644、去 xattr 无效）。`crontab` 同样被 TCC 挡
 （`operation not permitted`，需要 Full Disk Access）。
 
+试过但**同样失败**的其他路径：`launchctl bootstrap user/$UID`、legacy `launchctl load -w`、
+`osascript -e 'do shell script …'`（继承同一个会话）。`dangerouslyDisableSandbox` 也无解 ——
+那是工具层沙箱，外层 audit session 仍在。
+
 → **永久注册必须在用户自己的终端里跑一次** `bash scripts/devsync-install.sh`。
 过渡期用脱离会话的 loop 顶着（`start_new_session=True`，重启后失效）；plist 已就位，
 预期下次登录由 launchd 自动加载。
+
+### 实测踩到的真 bug：launchd 打不开外置卷（2026-10-06 已修）
+
+用户自己跑完 install 后，job **确实加载了、也确实在按时触发**，但**一次都没成功执行过**：
+
+```
+launchctl print gui/$UID/com.mpack.devsync
+  runs = 16 → 18（35 秒 +2，正好 30 秒一拍）   ← 调度完全正常
+  last exit code = 78: EX_CONFIG              ← 每次 spawn 都失败
+```
+
+而且 `StandardOutPath` 指向的文件**从未被创建** —— 说明失败发生在**打开重定向文件之前**。
+
+**排除过程**：用 launchd 那套极简 PATH（`/usr/bin:/bin:/usr/sbin:/sbin`）手工复现
+`devsync.sh` → **exit 0**；`git` 就在 `/usr/bin/git`；目录权限正常。→ 脚本、PATH、
+权限都没问题，**根因在 launchd 的 spawn 阶段**。
+
+**根因：macOS 26 的 launchd 打不开外置卷上的文件。** 对照本机两个正常工作的第三方 agent，
+日志恰好都在本地盘：
+
+| job | 日志位置 | 状态 |
+|---|---|---|
+| `io.lifeos.collector` | `~/.lifeos/`（本地） | exit 0 ✓ |
+| `com.xunsu.dufs-nas` | `~/Library/Logs/`（本地） | 正在跑 ✓ |
+| `com.mpack.devsync` | 仓库内（外置卷） | exit 78 ✗ |
+
+注意 **dufs 的运行时参数就是外置卷上的目录**，服务照样正常 —— 所以
+**运行时访问外置卷是允许的，被卡住的只有 spawn 那一刻要打开的路径**。
+
+**改法**：launchd 的入口和它要打开的日志一律落本地盘，外置卷上的真身由 wrapper
+在运行时调用。`devsync-install.sh` 改为生成两级结构：
+
+- 本地盘包裹：`~/Library/Application Support/mPackStation/devsync-launchd.sh`
+  → 内容只有一行 `exec /bin/bash "<仓库>/scripts/devsync.sh"`
+- plist 的 `StandardOutPath` / `StandardErrorPath` → `~/Library/Logs/mpack-devsync.*.log`
+- `scripts/devsync.sh`（真身）不动，留在仓库里
+- 卸载时一并删 wrapper；`bootstrap` 失败时打印可执行的自救提示
+
+**三个把我误导过的陷阱**（记下来避免重犯）：
+
+1. 日志里出现过一条"已拉取"成功记录，差点据此判定"launchd 能工作、只是触发慢"——
+   其实那是**我自己手工复现脚本时写的**。判定谁写的要看**时间戳对齐 + `runs` 增量**，
+   不能只看"有成功记录"。
+2. `grep -E '^\s*runs'` 在 BSD grep 下**不匹配**（`\s` 非 POSIX），导致第一轮 180s 轮询
+   读不到 `runs`，误判成"launchd 压根没触发"。要用 `[[:space:]]`。
+3. `launchctl list` 在受限会话里**返回空**，看起来像"没加载"。权威判据是
+   `launchctl print gui/$UID/<label>`。另：`log show` 会被 **zsh 的 `log` 内建**吃掉
+   （报 `failed to load module zsh/watch`），必须写 `/usr/bin/log`。
 
 
