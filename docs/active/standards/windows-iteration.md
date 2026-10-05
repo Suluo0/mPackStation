@@ -208,7 +208,7 @@ pwsh scripts/dev-reset.ps1 -KeepProjects   # 只重置数据库
 | Prism 工具安装 | 那条路强依赖 `cmd.exe` + `.bat`，仅 Windows 可用 | 与内核链路互不影响 |
 | cmd/bash 混合 | `verify-contract.bat` 会调 git-bash 跑 `.sh` | 需要 git-bash 在 PATH（或用 PowerShell 入口） |
 
-## 8. 实测记录（2026-10-06 首次真机执行）
+## 8. 实测记录（2026-10-06，两轮真机执行）
 
 机器：Windows 11（build 26200）/ Go 1.27.0 / Node 24.19.0 / rustc 1.98.0 / VS2019 Community。
 
@@ -231,15 +231,41 @@ pwsh scripts/dev-reset.ps1 -KeepProjects   # 只重置数据库
    引入时点是 `6c0aa5d`，此后内核再没被编译过（Mac 无 cargo，Windows 没跑过 cargo build），
    即**内核自 10-03 起在 Windows 上一直编不过**。
 
+**第二轮实测（2026-10-06，把开发迁到 PC 的会话）：**
+
+| 入口 | 结果 |
+| --- | --- |
+| `dev-stop.ps1 -ByPort` | 通过。`server : pid=2676 stopped (tree)` / `web : pid=13596 stopped (tree)`，端口确认释放 |
+| `verify.ps1 -SkipInstall` | 大部分通过，见下 |
+
+`verify.ps1 -SkipInstall` 逐项结果：Go tests、Go vet、前端 type check、前端
+production build（3632 模块 / 4.37s）、新增的 PowerShell 脚本风格检查 —— **全绿**；
+唯一红的是 `Go formatting`。
+
+**但 `Go formatting` 的红是假红，属基础设施问题，不是代码缺陷。**
+
+根因：仓库本地 `core.autocrlf=true`，而 `.gitattributes` 只覆盖了 `*.sql`（lf）与
+`*.bat` / `*.cmd`（crlf），**没有 `*.go` 的规则**。于是 Windows 检出的 `.go` 全是 CRLF
+（实测 `internal/config/config.go`：CRLF=152、独立 LF=0；`cmd/server/main.go`：184/0），
+而 `gofmt` 输出 LF，`gofmt -l` 就把**每一个** `.go` 文件都报成 unformatted。
+`git status` 反而是干净的（git 按 autocrlf 归一化后认为无改动），Go 代码本身也没问题
+（`go test ./...`、`go vet ./...` 全绿；macOS 上 gofmt 干净）。
+
+也就是说：Windows 上 `verify.ps1` 会**恒红在这一项**。修法见 §10 —— 在该动
+`.gitattributes` 之前，别把这条当代码问题去追。
+
 **仍未实测（下次上 Windows 请重点确认）：**
 
-1. `dev-stop.ps1` / `dev-reset.ps1` / `build.ps1` / `package.ps1` / `test.ps1` / `verify.ps1`
-   都没真机跑过。
-2. 内核只是**编译通过**，没在 Windows 上跑过实际功能（安装整合包、启动游戏）。
+1. `dev-reset.ps1` / `build.ps1` / `package.ps1` / `test.ps1` 还没真机跑过
+   （`dev-stop.ps1`、`verify.ps1` 已在本轮跑过）。
+2. `verify.ps1` 不带 `-SkipInstall` 的路径没试过 —— 它会跑 `npm ci`，
+   而 `npm ci` 会重建 `node_modules`，**与正在运行的 vite（node 持有文件）在 Windows
+   上很可能冲突**。要跑完整 verify，先 `dev-stop.ps1` 停服务。
+3. 内核只是**编译通过**，没在 Windows 上跑过实际功能（安装整合包、启动游戏）。
    `cfg(windows)` 分支（`winreg` 注册表探测、`CREATE_NEW_PROCESS_GROUP` detach、
    `tasklist` 存活检查、`%APPDATA%` 数据目录）仍是纯静态存在。
-3. `build.ps1` / `package.ps1` 不产出内核 exe，分发包里也没有它——完整分发验证前需先补。
-4. `build-and-deploy.md` 里描述的 Windows 迭代尚未形成回归证据。
+4. `build.ps1` / `package.ps1` 不产出内核 exe，分发包里也没有它——完整分发验证前需先补。
+5. `build-and-deploy.md` 里描述的 Windows 迭代尚未形成回归证据。
 
 **坑：`Invoke-WebRequest` 会走系统代理。** 机器上开着本地代理（如 Clash 的
 `127.0.0.1:7897`）时，对 `127.0.0.1` 的探测请求可能被代理接管而长时间挂住，
@@ -258,6 +284,7 @@ pull + 重启"。
 pwsh scripts/autosync.ps1                     # 常驻（启动时服务没跑会先拉起）
 pwsh scripts/autosync.ps1 -Once               # 只跑一轮，用于验证
 pwsh scripts/autosync.ps1 -IntervalSec 15     # 调轮询间隔，默认 30s
+pwsh scripts/autosync.ps1 -Once -ForceRestart # 无新提交也强制重启（验证重启路径用）
 ```
 
 它只做四件事：`git fetch` → 比对 SHA → 按改动路径决定重建什么 → 需要时重启服务。
@@ -274,6 +301,49 @@ pwsh scripts/autosync.ps1 -IntervalSec 15     # 调轮询间隔，默认 30s
 改完先提交，否则同步会停住并提示。
 
 日志：`.tmp/autosync/autosync.log`（已 gitignore）。
+
+### 三条容易踩的实现约束（2026-10-06 实测得出）
+
+**1. 不能用 `& pwsh -File scripts/dev.ps1` 调 dev.ps1 —— 调用方永远等不到 EOF。**
+`dev.ps1` 用 `Start-Process` 拉起的 go/node 常驻服务会继承调用方的输出句柄，
+于是「dev.ps1 进程早已退出」但调用方一直等不到流关闭，实测 120s 不返回。
+`autosync.ps1` 因此统一走 `Start-Process` + `WaitForExit(超时)`，输出落
+`.tmp/autosync/<脚本名>.out.log`，再自己轮询端口判断成败 —— **不看退出码**。
+
+**2. 停服务必须 `dev-stop.ps1 -ByPort`，只按 PID 文件停是不够的。**
+PID 文件可能缺失或过期：服务在别的会话里手工起过，或 `go run` 父进程先退出、
+真正持有端口的 `server.exe` 变成孤儿。那种情况下旧进程停不掉，随后 `dev.ps1`
+的 `Assert-PortFree` 会直接抛错，而端口上仍挂着旧进程 —— 于是「端口在监听」
+被误判成重启成功。`Restart-Services` 现在带 `-ByPort`，并在重启后比对监听
+PID：**端口在监听 ≠ 服务重启过**，未变化就明确记 WARN。
+
+**3. `autosync.ps1` 自身的改动不会自举。**
+远端更新了 `scripts/autosync.ps1` 后，磁盘文件会被正常 pull 下来，但**内存里
+跑着的仍是任务启动时加载的那份代码**，本次不会生效。改完 autosync 自己的逻辑，
+必须重启计划任务：
+
+```powershell
+Stop-ScheduledTask -TaskName 'mPackStation-autosync'
+Start-ScheduledTask -TaskName 'mPackStation-autosync'
+```
+
+（没有 `Restart-ScheduledTask` 这个 cmdlet，只有 Stop/Start 两步。）
+这条是实测踩出来的：修完 145feb7 后任务仍按旧代码打出
+「只有前端源码变化，vite HMR 自行生效」，而那次实际改的是 `scripts/autosync.ps1`。
+
+### 实测记录（2026-10-06）
+
+| 场景 | 结果 |
+| --- | --- |
+| 任务启动、服务没跑 → 自动拉起 | 通过。`01:16:10 启动` → `01:16:13 服务已就绪（pid=8612,10324）`，全程 3s |
+| `-Once -ForceRestart` 重启路径 | 通过。`01:20:29 无新提交 → 重启` → `01:20:34 服务已就绪（pid=9056,13344）`，监听 PID 确认换新 |
+| 远端提交 → 自动拉取 | 通过。`01:23:24 发现新提交 e26c4a22 → 145feb71（1 个文件）` |
+| `dev-stop.ps1 -ByPort` 清孤儿 | 通过。`server : pid=2676 stopped (tree)` / `web : pid=13596 stopped (tree)`，端口确认释放 |
+
+**别在 SSH 前台等 autosync。** 它内部拉起的常驻服务会牵连会话，实测前台调用
+收到 SIGTERM（exit 137）而远端动作其实已完成 —— 看起来像失败，实际是好的。
+验证请用 `-Once` 并把输出落盘，或直接读 `.tmp/autosync/autosync.log`
+（日志是 UTF-8；经 SSH 回显中文会乱码，取回本地看或用 `scp`）。
 
 ### 从别的机器用浏览器访问
 
@@ -296,8 +366,24 @@ $action = New-ScheduledTaskAction -Execute 'pwsh.exe' `
   -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$repo\scripts\autosync.ps1`"" `
   -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -AtLogOn
+# 这一段不能省。按默认值建出来的任务：ExecutionTimeLimit 是 3 天，会把常驻轮询
+# 掐死；DisallowStartIfOnBatteries / StopIfGoingOnBatteries 默认 True，
+# 笔记本一旦用电池就不启动、或中途被停掉。
+$settings = New-ScheduledTaskSettingsSet `
+  -ExecutionTimeLimit ([TimeSpan]::Zero) `
+  -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+  -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
+  -MultipleInstances IgnoreNew -StartWhenAvailable
 Register-ScheduledTask -TaskName 'mPackStation-autosync' -Action $action -Trigger $trigger `
-  -Description 'mPackStation: 轮询远端分支并保持 dev 服务可用' -Force
+  -Settings $settings -Description 'mPackStation: 轮询远端分支并保持 dev 服务可用' -Force
+```
+
+注册后核对一遍（期望：`PT0S`、重启 3 次、电池不停）：
+
+```powershell
+(Get-ScheduledTask -TaskName 'mPackStation-autosync').Settings |
+  Select-Object ExecutionTimeLimit, RestartCount, RestartInterval,
+                DisallowStartIfOnBatteries, StopIfGoingOnBatteries, MultipleInstances
 ```
 
 停掉/卸载：
@@ -306,3 +392,47 @@ Register-ScheduledTask -TaskName 'mPackStation-autosync' -Action $action -Trigge
 Stop-ScheduledTask -TaskName 'mPackStation-autosync'
 Unregister-ScheduledTask -TaskName 'mPackStation-autosync' -Confirm:$false
 ```
+
+## 10. 换行符策略（待定项，2026-10-06 提出）
+
+第 8 节记录的 `Go formatting` 假红，根因是 `.gitattributes` 里没有 `*.go` 的规则，
+叠加仓库本地 `core.autocrlf=true`，导致 Windows 检出的 Go 源码全是 CRLF。
+
+两个修法，**尚未决定**（会改变跨平台行为，且本仓库历史上被换行符坑过 ——
+见 `.gitattributes` 里 `*.sql` 那条注释提到的 sha256 校验）：
+
+**方案 A：仓库级，补 `.gitattributes`（推荐，一次修好所有平台）**
+
+```gitattributes
+# 源码一律 LF：gofmt / prettier / 各类 lint 都按 LF 比对，CRLF 会造成恒定的假红。
+*.go   text eol=lf
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.ps1  text eol=lf
+*.sh   text eol=lf
+```
+
+配套需要在**每台已有工作区**上重新检出（属性只影响后续 checkout）：
+先 `git status` 必须是干净的，然后
+
+```bash
+git config core.autocrlf false
+git rm --cached -r .
+git reset --hard
+```
+
+先跑 `git status` 是为了确认没有未提交改动 —— `git reset --hard` 会丢掉它们。
+Windows 上 `.bat` / `.cmd` 仍由现有属性保持 CRLF，不受影响。
+
+**方案 B：仅本机，改 `core.autocrlf`**
+
+只解决这一台机器，新克隆/新机器会再次踩到。而且因为 `*.ps1` 等没有属性覆盖，
+单改 `core.autocrlf=false` 会让工作区里所有 CRLF 文件被 git 视为已修改，
+仍然需要上面同样的重新检出步骤。**不推荐单独使用。**
+
+在决定之前，Windows 上跑 `verify.ps1` 请用 `-SkipInstall`，
+并忽略 `Go formatting` 那一项。
+
