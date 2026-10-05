@@ -39,7 +39,9 @@ export type ImportConfirm = z.infer<typeof importConfirmSchema>;
 export type InspectImportInput = {
   source: ImportSource;
   url?: string;
-  /** 本地 zip 的 base64 内容(不含 data: 前缀) */
+  /** 本机文件的绝对路径（2026-10-05 定稿：直接把文件地址发后端读盘，不走内容上传） */
+  path?: string;
+  /** 旧契约保留：base64 内容（不再使用，仅为兼容） */
   contentBase64?: string;
 };
 
@@ -48,6 +50,7 @@ export function inspectImport(input: InspectImportInput): Promise<ImportPreview>
     source: sourcePayload[input.source],
     url: input.url ?? '',
     content: input.contentBase64 ?? '',
+    path: input.path ?? '',
   }, importPreviewSchema);
 }
 

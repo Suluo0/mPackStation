@@ -1,3 +1,8 @@
 # 迁移文件以字节级 sha256 做完整性校验,换行符变化会被视为篡改。
 # 强制 LF,避免 Windows 检出时 autocrlf 翻成 CRLF 导致开发库拒绝启动。
 *.sql text eol=lf
+
+# Windows 批处理必须在 CRLF 下解析:`:label` / `goto` 在 LF-only 的 .bat 里
+# 行为不可靠(已踩过)。仓库里存 LF,检出到 Windows 时自动转 CRLF。
+*.bat text eol=crlf
+*.cmd text eol=crlf

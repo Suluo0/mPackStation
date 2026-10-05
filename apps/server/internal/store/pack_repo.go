@@ -229,6 +229,21 @@ func (r *Repository) ListPacks(ctx context.Context, includeArchived bool) ([]Pac
 	return result, rows.Err()
 }
 
+// FindActivePackByName 按名字找活跃包（导入的找或建语义：同名活跃包复用，
+// 软删行不算——它持有的名字冲突要靠调用方报错解决）。
+func (r *Repository) FindActivePackByName(ctx context.Context, name string) (PackRecord, error) {
+	var p PackRecord
+	err := r.db.QueryRowContext(ctx, `SELECT id,name,mc_version,loader,loader_version,description,icon_path,status,created_at,updated_at,last_edited_at FROM packs WHERE name=? AND status='active' LIMIT 1`, name).
+		Scan(&p.ID, &p.Name, &p.MCVersion, &p.Loader, &p.LoaderVersion, &p.Description, &p.IconPath, &p.Status, &p.CreatedAt, &p.UpdatedAt, &p.LastEditedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return PackRecord{}, ErrNotFound
+	}
+	if err != nil {
+		return PackRecord{}, fmt.Errorf("find pack by name: %w", err)
+	}
+	return p, nil
+}
+
 func (r *Repository) DashboardPacks(ctx context.Context) ([]PackSummaryRecord, error) {
 	const query = `SELECT p.id,p.name,p.mc_version,p.loader,p.loader_version,p.description,p.icon_path,p.status,p.created_at,p.updated_at,p.last_edited_at,
 		COALESCE((SELECT pv.version FROM pack_current_version pcv JOIN pack_versions pv ON pv.id=pcv.pack_version_id WHERE pcv.pack_id=p.id), '0.1.0'),

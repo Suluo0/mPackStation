@@ -12,16 +12,16 @@ func registerImportRoutes(mux *http.ServeMux, importer *service.ImportService) {
 			writeError(w, r, service.ErrUnavailable)
 			return
 		}
-		var body struct{ Source, URL, Content string }
+		var body struct{ Source, URL, Content, Path string }
 		if !decodeJSON(w, r, &body) {
 			return
 		}
 		content, err := base64.StdEncoding.DecodeString(body.Content)
-		if body.Source == service.ImportSourceLocalZip && err != nil {
+		if body.Source == service.ImportSourceLocalZip && body.Content != "" && err != nil {
 			apiError(w, r, http.StatusBadRequest, "invalid_argument", "content must be base64")
 			return
 		}
-		v, err := importer.Inspect(r.Context(), service.ImportPreviewInput{Source: body.Source, URL: body.URL, Content: content})
+		v, err := importer.Inspect(r.Context(), service.ImportPreviewInput{Source: body.Source, URL: body.URL, Content: content, Path: body.Path})
 		if err != nil {
 			writeError(w, r, err)
 			return

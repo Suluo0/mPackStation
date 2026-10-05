@@ -7,9 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
-	"sort"
 	"time"
 )
 
@@ -315,6 +315,103 @@ func (h *HTTPAdapter) Project(ctx context.Context, id string) (Project, error) {
 	}
 	return Project{ID: id, Slug: x.Slug, Name: name, Summary: summary, IconURL: icon, Downloads: downloads, Loaders: loaders}, nil
 }
+
+// versionWire 是「一个版本」在两家平台上的并集字段视图（Modrinth 的 snake_case
+// 与 CurseForge 的 camelCase 混在一处），解码后在 toVersion 里归一成领域类型。
+type versionWire struct {
+	ID             json.RawMessage `json:"id"`
+	Name           string          `json:"name"`
+	DisplayName    string          `json:"displayName"`
+	VersionNumber  string          `json:"version_number"`
+	GameVersions   []string        `json:"game_versions"`
+	GameVersionsCF []string        `json:"gameVersions"`
+	Loaders        []string        `json:"loaders"`
+	Files          []File          `json:"files"`
+	DownloadURL    string          `json:"downloadUrl"`
+	FileName       string          `json:"fileName"`
+	FileLength     int64           `json:"fileLength"`
+	Hashes         []struct {
+		Value string `json:"value"`
+		Algo  int    `json:"algo"`
+	} `json:"hashes"`
+	Dependencies []struct {
+		ProjectID      string `json:"project_id"`
+		ProjectIDCamel string `json:"projectId"`
+		VersionID      string `json:"version_id"`
+		VersionIDCamel string `json:"versionId"`
+		Kind           string `json:"dependency_type"`
+		Relation       string `json:"relationType"`
+		Constraint     string `json:"version_range"`
+	} `json:"dependencies"`
+	DatePublished string `json:"date_published"` // Modrinth
+	FileDate      string `json:"fileDate"`       // CurseForge
+}
+
+// toVersion 把线上视图归一成领域 Version。pid 是所属项目 ID：单版本端点的响应里
+// 不一定带项目，调用方知道自己是按哪个项目查的。
+func (x versionWire) toVersion(pid string) (Version, error) {
+	versionID, e := normalizeID(x.ID)
+	if e != nil {
+		return Version{}, fmt.Errorf("decode provider version id: %w", e)
+	}
+	name := x.Name
+	if name == "" {
+		name = x.DisplayName
+	}
+	gameVersions := x.GameVersions
+	loaders := x.Loaders
+	if len(gameVersions) == 0 && len(x.GameVersionsCF) > 0 {
+		// CurseForge mixes game versions, loader names and side markers
+		// ("Client"/"Server") into one array; split them out here.
+		for _, gv := range x.GameVersionsCF {
+			switch strings.ToLower(gv) {
+			case "client", "server":
+				// side marker, not a game version
+			case "forge", "neoforge", "fabric", "quilt", "liteloader", "cauldron":
+				loaders = append(loaders, gv)
+			default:
+				gameVersions = append(gameVersions, gv)
+			}
+		}
+	}
+	files := x.Files
+	if len(files) == 0 && (x.DownloadURL != "" || x.FileName != "") {
+		files = []File{{Name: x.FileName, DownloadURL: x.DownloadURL, Size: x.FileLength, Primary: true}}
+		for _, hash := range x.Hashes {
+			if hash.Algo == 1 {
+				files[0].SHA1 = hash.Value
+			}
+			if hash.Algo == 2 {
+				files[0].SHA256 = hash.Value
+			}
+		}
+	}
+	deps := make([]Dependency, 0, len(x.Dependencies))
+	for _, d := range x.Dependencies {
+		depPID := d.ProjectID
+		if depPID == "" {
+			depPID = d.ProjectIDCamel
+		}
+		depVID := d.VersionID
+		if depVID == "" {
+			depVID = d.VersionIDCamel
+		}
+		kind := d.Kind
+		if kind == "" {
+			kind = d.Relation
+		}
+		deps = append(deps, Dependency{ProjectID: depPID, VersionID: depVID, Constraint: d.Constraint, Kind: kind, Reason: "provider dependency"})
+	}
+	date := x.DatePublished
+	if date == "" {
+		date = x.FileDate
+	}
+	if t, e := time.Parse(time.RFC3339, date); e == nil {
+		date = t.UTC().Format(time.RFC3339)
+	}
+	return Version{ID: versionID, ProjectID: pid, Name: name, VersionNumber: x.VersionNumber, GameVersions: gameVersions, Loaders: loaders, DatePublished: date, Files: files, Dependencies: deps}, nil
+}
+
 func (h *HTTPAdapter) Versions(ctx context.Context, id string) ([]Version, error) {
 	var payload json.RawMessage
 	path := "/v2/project/" + url.PathEscape(id) + "/version"
@@ -330,99 +427,17 @@ func (h *HTTPAdapter) Versions(ctx context.Context, id string) ([]Version, error
 	if e := json.Unmarshal(payload, &envelope); e == nil && len(envelope.Data) > 0 && string(envelope.Data) != "null" {
 		payload = envelope.Data
 	}
-	var raw []struct {
-		ID             json.RawMessage `json:"id"`
-		Name           string          `json:"name"`
-		DisplayName    string          `json:"displayName"`
-		VersionNumber  string          `json:"version_number"`
-		GameVersions   []string        `json:"game_versions"`
-		GameVersionsCF []string        `json:"gameVersions"`
-		Loaders        []string        `json:"loaders"`
-		Files          []File          `json:"files"`
-		DownloadURL    string          `json:"downloadUrl"`
-		FileName       string          `json:"fileName"`
-		FileLength     int64           `json:"fileLength"`
-		Hashes         []struct {
-			Value string `json:"value"`
-			Algo  int    `json:"algo"`
-		} `json:"hashes"`
-		Dependencies []struct {
-			ProjectID      string `json:"project_id"`
-			ProjectIDCamel string `json:"projectId"`
-			VersionID      string `json:"version_id"`
-			VersionIDCamel string `json:"versionId"`
-			Kind           string `json:"dependency_type"`
-			Relation       string `json:"relationType"`
-			Constraint     string `json:"version_range"`
-		} `json:"dependencies"`
-		DatePublished string `json:"date_published"` // Modrinth
-		FileDate      string `json:"fileDate"`       // CurseForge
-	}
+	var raw []versionWire
 	if e := json.Unmarshal(payload, &raw); e != nil {
 		return nil, fmt.Errorf("decode versions: %w", e)
 	}
 	out := make([]Version, 0, len(raw))
 	for _, x := range raw {
-		versionID, e := normalizeID(x.ID)
-		if e != nil {
-			return nil, fmt.Errorf("decode provider version id: %w", e)
+		v, ve := x.toVersion(id)
+		if ve != nil {
+			return nil, ve
 		}
-		name := x.Name
-		if name == "" {
-			name = x.DisplayName
-		}
-		gameVersions := x.GameVersions
-		loaders := x.Loaders
-		if len(gameVersions) == 0 && len(x.GameVersionsCF) > 0 {
-			// CurseForge mixes game versions, loader names and side markers
-			// ("Client"/"Server") into one array; split them out here.
-			for _, gv := range x.GameVersionsCF {
-				switch strings.ToLower(gv) {
-				case "client", "server":
-					// side marker, not a game version
-				case "forge", "neoforge", "fabric", "quilt", "liteloader", "cauldron":
-					loaders = append(loaders, gv)
-				default:
-					gameVersions = append(gameVersions, gv)
-				}
-			}
-		}
-		files := x.Files
-		if len(files) == 0 && (x.DownloadURL != "" || x.FileName != "") {
-			files = []File{{Name: x.FileName, DownloadURL: x.DownloadURL, Size: x.FileLength, Primary: true}}
-			for _, hash := range x.Hashes {
-				if hash.Algo == 1 {
-					files[0].SHA1 = hash.Value
-				}
-				if hash.Algo == 2 {
-					files[0].SHA256 = hash.Value
-				}
-			}
-		}
-		deps := make([]Dependency, 0, len(x.Dependencies))
-		for _, d := range x.Dependencies {
-			pid := d.ProjectID
-			if pid == "" {
-				pid = d.ProjectIDCamel
-			}
-			vid := d.VersionID
-			if vid == "" {
-				vid = d.VersionIDCamel
-			}
-			kind := d.Kind
-			if kind == "" {
-				kind = d.Relation
-			}
-			deps = append(deps, Dependency{ProjectID: pid, VersionID: vid, Constraint: d.Constraint, Kind: kind, Reason: "provider dependency"})
-		}
-		date := x.DatePublished
-		if date == "" {
-			date = x.FileDate
-		}
-		if t, e := time.Parse(time.RFC3339, date); e == nil {
-			date = t.UTC().Format(time.RFC3339)
-		}
-		out = append(out, Version{ID: versionID, ProjectID: id, Name: name, VersionNumber: x.VersionNumber, GameVersions: gameVersions, Loaders: loaders, DatePublished: date, Files: files, Dependencies: deps})
+		out = append(out, v)
 	}
 	// Providers do not guarantee order (CurseForge files come oldest-first).
 	// Normalize to newest-first so the default "first compatible" pick is the
@@ -435,6 +450,48 @@ func (h *HTTPAdapter) Versions(ctx context.Context, id string) ([]Version, error
 	sort.SliceStable(out, func(i, j int) bool { return dates[i].After(dates[j]) })
 	return out, nil
 }
+
+// versionByID 按版本 ID 直取单个版本（Modrinth: GET /v2/version/{id}）。
+func (h *HTTPAdapter) versionByID(ctx context.Context, pid, vid string) (Version, error) {
+	var payload json.RawMessage
+	if e := h.call(ctx, "GET", "/v2/version/"+url.PathEscape(vid), nil, &payload); e != nil {
+		return Version{}, e
+	}
+	var x versionWire
+	if e := json.Unmarshal(payload, &x); e != nil {
+		return Version{}, fmt.Errorf("decode version: %w", e)
+	}
+	return x.toVersion(pid)
+}
+
+// versionFor 取「要下载的那个版本」：能按 ID 直取就直取（一次小响应），否则退回
+// 列出项目全部版本再筛（CurseForge 只有这条路）。
+//
+// 之前 Download 一律走 Metadata → Versions(项目)：大项目一次响应能到 12MB+
+// （BiomesOPlenty 实测 12.9MB），会被 call() 里 8MB 的读上限截断成非法 JSON，
+// 下载直接失败。按 ID 直取既绕开这个坑，也把导入 132 个模组的调用量减半。
+func (h *HTTPAdapter) versionFor(ctx context.Context, pid, vid string) (Version, error) {
+	if h.name == Modrinth && strings.TrimSpace(vid) != "" {
+		v, e := h.versionByID(ctx, pid, vid)
+		if e == nil {
+			return v, nil
+		}
+		if e != ErrNotFound {
+			return Version{}, e
+		}
+	}
+	vs, e := h.Versions(ctx, pid)
+	if e != nil {
+		return Version{}, e
+	}
+	for _, v := range vs {
+		if vid == "" || v.ID == vid {
+			return v, nil
+		}
+	}
+	return Version{}, ErrNotFound
+}
+
 func (h *HTTPAdapter) Metadata(ctx context.Context, pid, vid string) (Metadata, error) {
 	p, e := h.Project(ctx, pid)
 	if e != nil {
@@ -451,15 +508,29 @@ func (h *HTTPAdapter) Metadata(ctx context.Context, pid, vid string) (Metadata, 
 	}
 	return Metadata{}, ErrNotFound
 }
+
+// downloadClient 返回用于文件传输的客户端：适配器默认客户端只有 30 秒总超时，
+// 而单个模组动辄几十上百 MB（实测 Cobblemon 122.8MB、本机到模组 CDN 约 2.4MB/s，
+// 需要 50 秒+），用元数据那份超时必然被掐断成 provider unavailable。文件传输用
+// 独立的长超时，元数据调用维持原超时不变。
+func (h *HTTPAdapter) downloadClient() *http.Client {
+	if h.client == nil || h.client.Timeout == 0 {
+		return h.client
+	}
+	c := *h.client
+	c.Timeout = 10 * time.Minute
+	return &c
+}
+
 func (h *HTTPAdapter) Download(ctx context.Context, q DownloadRequest) (DownloadResult, error) {
-	m, e := h.Metadata(ctx, q.ProjectID, q.VersionID)
+	ver, e := h.versionFor(ctx, q.ProjectID, q.VersionID)
 	if e != nil {
 		return DownloadResult{}, e
 	}
 	var chosen *File
-	for i := range m.Version.Files {
-		if m.Version.Files[i].Primary || len(m.Version.Files) == 1 {
-			chosen = &m.Version.Files[i]
+	for i := range ver.Files {
+		if ver.Files[i].Primary || len(ver.Files) == 1 {
+			chosen = &ver.Files[i]
 			break
 		}
 	}
@@ -470,7 +541,7 @@ func (h *HTTPAdapter) Download(ctx context.Context, q DownloadRequest) (Download
 	if e != nil {
 		return DownloadResult{}, ErrUnavailable
 	}
-	resp, e := h.client.Do(req)
+	resp, e := h.downloadClient().Do(req)
 	if e != nil {
 		return DownloadResult{}, ErrUnavailable
 	}
@@ -487,7 +558,7 @@ func (h *HTTPAdapter) Download(ctx context.Context, q DownloadRequest) (Download
 		return DownloadResult{}, fmt.Errorf("provider download exceeds %d MB limit", maxBytes/(1024*1024))
 	}
 	return DownloadResult{
-		ProjectID: q.ProjectID, VersionID: m.Version.ID,
+		ProjectID: q.ProjectID, VersionID: ver.ID,
 		FileName: chosen.Name, DownloadURL: chosen.DownloadURL,
 		SHA1: chosen.SHA1, SHA256: chosen.SHA256, Size: chosen.Size,
 		Content: content,

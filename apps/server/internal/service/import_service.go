@@ -13,7 +13,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"mpackstation/internal/config"
@@ -45,6 +47,9 @@ type ImportPreviewInput struct {
 	Source  string
 	URL     string
 	Content []byte
+	// Path 是本机整合包文件的绝对路径（2026-10-05 用户定稿：导入不走内容上传，
+	// 后端直接读盘）。与 Content 二选一；local_zip 来源两者都接受。
+	Path string `json:"path"`
 }
 
 // ImportPreview is the two-phase import handshake DTO. D-4: keys are always
@@ -69,6 +74,9 @@ type ImportService struct {
 	queue   *task.Queue
 	dataDir string
 	now     func() time.Time
+	// registry 是组合根注入的 provider 适配器表，与 API 共用同一个实例：
+	// 设置页热注册 CurseForge key 时导入侧同步生效。导入不自己造适配器。
+	registry *provider.Registry
 }
 
 func NewImportService(db *sql.DB) *ImportService {
@@ -80,6 +88,34 @@ func NewImportService(db *sql.DB) *ImportService {
 	s.dataDir, _ = s.repo.DatabaseDir(context.Background())
 	s.queue, _ = task.NewQueue(db)
 	return s
+}
+
+// SetProviderRegistry 注入 provider 适配器（组合根调用一次）。
+func (s *ImportService) SetProviderRegistry(r *provider.Registry) {
+	if s != nil {
+		s.registry = r
+	}
+}
+
+// importAdapter 取既有 provider 适配器。清单只是"要哪些模组"的清单，下载一律
+// 走这条既有管道，导入侧不再自带下载器。
+func (s *ImportService) importAdapter(kind string) (provider.Adapter, error) {
+	name := provider.Modrinth
+	if kind == "curseforge_manifest" {
+		name = provider.CurseForge
+	}
+	if s.registry == nil {
+		return nil, &task.TaskError{Code: "import_provider_unavailable", Message: "provider 适配器未装配"}
+	}
+	ad, err := s.registry.Get(string(name))
+	if err != nil {
+		msg := fmt.Sprintf("%s 适配器不可用", name)
+		if name == provider.CurseForge {
+			msg += "：CurseForge 清单的模组要用 CF API 下载，请先在设置里配置 CurseForge Key"
+		}
+		return nil, &task.TaskError{Code: "import_provider_unavailable", Message: msg}
+	}
+	return ad, nil
 }
 
 func (s *ImportService) Inspect(ctx context.Context, in ImportPreviewInput) (ImportPreview, error) {
@@ -102,6 +138,36 @@ func (s *ImportService) Inspect(ctx context.Context, in ImportPreviewInput) (Imp
 	id := newID("import")
 	tokenBytes := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", id, s.now().UnixNano())))
 	token := hex.EncodeToString(tokenBytes[:])
+	// 本机路径来源（2026-10-05 用户定稿）：后端直接读盘，不走 base64 内容上传。
+	// 暂存文件（base64 上传的落点）在导入完成后会清掉；用户自己的原文件永不删除。
+	userPath := strings.TrimSpace(in.Path)
+	if in.Source == ImportSourceLocalZip && userPath != "" {
+		if !filepath.IsAbs(userPath) {
+			return ImportPreview{}, ErrInvalidArgument
+		}
+		fi, err := os.Stat(userPath)
+		if err != nil || fi.IsDir() {
+			return ImportPreview{}, ErrImportUnsafeArchive
+		}
+		if !strings.EqualFold(filepath.Ext(userPath), ".zip") && !strings.EqualFold(filepath.Ext(userPath), ".mrpack") {
+			return ImportPreview{}, ErrImportUnsafeArchive
+		}
+		entryCount, packName, err := inspectArchive(userPath, true)
+		if err != nil {
+			return ImportPreview{}, err
+		}
+		now := s.now()
+		exp := now.Add(10 * time.Minute)
+		h := sha256.Sum256([]byte(fmt.Sprintf("path:%s:%d", userPath, fi.Size())))
+		inputHash := hex.EncodeToString(h[:])
+		id := newID("import")
+		tokenBytes := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", id, s.now().UnixNano())))
+		token := hex.EncodeToString(tokenBytes[:])
+		if err := s.repo.CreateImportPreview(ctx, store.ImportPreviewRecord{ID: id, TokenHash: hashToken(token), InputHash: inputHash, Source: in.Source, StagedPath: userPath, ExpiresAt: sql.NullInt64{Int64: exp.UnixMilli(), Valid: true}, CreatedAt: sql.NullInt64{Int64: now.UnixMilli(), Valid: true}}); err != nil {
+			return ImportPreview{}, err
+		}
+		return ImportPreview{ID: id, Token: token, InputHash: inputHash, Source: in.Source, ExpiresAt: exp.UTC().Format(time.RFC3339Nano), EntryCount: entryCount, PackName: packName}, nil
+	}
 	stageDir := filepath.Join(s.dataDir, "tmp")
 	if stageDir == "tmp" || stageDir == "." {
 		stageDir = os.TempDir()
@@ -256,54 +322,83 @@ func (s *ImportService) handleImportTask(ctx context.Context, ex *task.Execution
 		return &task.TaskError{Code: "import_project_dir", Message: "create project directory failed: " + err.Error()}
 	}
 
-	// CurseForge 清单只有 projectID/fileID，没有直链——下载必须走 CF API，密钥是硬前置。
-	var cfAdapter *provider.HTTPAdapter
-	if mft.Kind == "curseforge_manifest" {
-		key := os.Getenv("CURSEFORGE_API_KEY")
-		if key == "" {
-			if secrets, ferr := config.LoadSecretsFile(config.SecretsPath()); ferr == nil {
-				key = secrets[curseforgeSecretKey]
-			}
-		}
-		if key == "" && s.repo != nil {
-			if saved, ferr := s.repo.GetSecret(ctx, curseforgeSecretKey); ferr == nil {
-				key = saved
-			}
-		}
-		if key == "" {
-			return &task.TaskError{Code: "import_cf_key_missing", Message: "CurseForge 清单的模组要用 CF API 下载：请先在设置里配置 CurseForge Key"}
-		}
-		if cfAdapter, err = provider.NewHTTPAdapter(provider.CurseForge, "https://api.curseforge.com", key, nil); err != nil {
-			return &task.TaskError{Code: "import_cf_key_missing", Message: "invalid CurseForge key"}
-		}
+	// 模组下载一律走既有 provider 管道，导入只负责「清单 → 下载请求」的翻译：
+	//  - Modrinth 清单：files[].downloads[0] 是 CDN 直链，形如
+	//    https://cdn.modrinth.com/data/<projectID>/versions/<versionID>/<file>，
+	//    取其中两段 ID 即可复用「按版本下载」。
+	//  - CurseForge 清单：只有 projectID/fileID（fileID 就是版本 ID），同一管道。
+	adapter, aerr := s.importAdapter(mft.Kind)
+	if aerr != nil {
+		return aerr
 	}
 
-	// 逐模组下载到项目目录（重试 3 次；任何文件重试后仍失败 = 导入失败并指名文件，
-	// 不允许半截导入——2026-10-05 用户指令）。
-	for i, spec := range mft.Files {
-		if err := ex.Progress(ctx, 10+80*float64(i)/float64(max(1, len(mft.Files))), "downloading "+filepath.Base(spec.Path)); err != nil {
-			return err
-		}
-		dest := filepath.Join(modsDir, filepath.Base(spec.Path))
-		var sha1 string
-		var size int64
-		dl := func() error {
-			if mft.Kind == "curseforge_manifest" {
-				sha1, size, err = cfAdapter.FetchCFFile(ctx, spec.CFProject, spec.CFFile, dest)
-				return err
+	// 逐条走既有下载管道。心跳独立于下载：单个模组要下几十秒到几分钟
+	// （Cobblemon 122MB 实测 50 秒+），期间没有 Progress 上报，30 秒任务租约
+	// 照样过期——Progress 是同时续租的唯一入口（见 task.Queue.Progress）。
+	var lastPct atomic.Int64
+	lastPct.Store(10)
+	stopBeat := make(chan struct{})
+	go func() {
+		t := time.NewTicker(10 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-stopBeat:
+				return
+			case <-t.C:
+				_ = ex.Progress(ctx, float64(lastPct.Load()), "downloading…")
 			}
-			sha1, size, err = provider.DownloadToFile(ctx, spec.URL, dest)
-			return err
 		}
-		if err := downloadWithRetry(ctx, 3, dl); err != nil {
-			return &task.TaskError{Code: "import_download_failed", Message: fmt.Sprintf("模组下载失败：%s（%v）", filepath.Base(spec.Path), err)}
+	}()
+	total := len(mft.Files)
+	for i := range mft.Files {
+		spec := &mft.Files[i]
+		pid, vid, ok := importDownloadIDs(spec, mft.Kind)
+		if !ok {
+			close(stopBeat)
+			return &task.TaskError{Code: "import_download_unsupported",
+				Message: "该模组的下载地址不是 Modrinth CDN 直链，既有下载管道覆盖不了：" + spec.URL}
 		}
-		if mft.Kind == "modrinth_index" && spec.Sha1 != "" && !strings.EqualFold(sha1, spec.Sha1) {
-			return &task.TaskError{Code: "import_checksum_failed", Message: fmt.Sprintf("模组校验失败：%s（sha1 不匹配）", filepath.Base(spec.Path))}
+		res, derr := adapter.Download(ctx, provider.DownloadRequest{ProjectID: pid, VersionID: vid})
+		if derr != nil {
+			close(stopBeat)
+			return &task.TaskError{Code: "import_download_failed",
+				Message: fmt.Sprintf("模组下载失败：%s（%v）", filepath.Base(spec.Path), derr)}
 		}
-		spec.Sha1 = sha1
-		spec.Size = size
-		mft.Files[i] = spec
+		if spec.Sha1 != "" && res.SHA1 != "" && !strings.EqualFold(spec.Sha1, res.SHA1) {
+			close(stopBeat)
+			return &task.TaskError{Code: "import_download_failed",
+				Message: fmt.Sprintf("模组校验失败：%s（sha1 不匹配）", filepath.Base(spec.Path))}
+		}
+		rel := strings.TrimSpace(spec.Path)
+		if rel == "" {
+			rel = "mods/" + res.FileName
+		}
+		dest, perr := safeImportPath(projDir, rel)
+		if perr != nil {
+			close(stopBeat)
+			return &task.TaskError{Code: "import_unsafe_path", Message: "清单里的模组路径不合法：" + rel}
+		}
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			close(stopBeat)
+			return &task.TaskError{Code: "import_project_dir", Message: err.Error()}
+		}
+		if err := os.WriteFile(dest, res.Content, 0o644); err != nil {
+			close(stopBeat)
+			return &task.TaskError{Code: "import_project_dir", Message: err.Error()}
+		}
+		spec.Sha1, spec.Size = res.SHA1, int64(len(res.Content))
+		pct := 10 + 80*float64(i+1)/float64(max(1, total))
+		lastPct.Store(int64(pct))
+		_ = ex.Progress(ctx, pct, fmt.Sprintf("downloading %d/%d", i+1, total))
+	}
+	close(stopBeat)
+
+	// overrides/：构建产物把平台之外的 jar 直接放在包里（overrides/mods/*.jar），
+	// 这部分不联网，解压落盘即可。顺序固定先 overrides/ 后 client-overrides/，
+	// 同路径后者胜出（mrpack 规范）。
+	if _, err := extractOverrides(p.StagedPath, projDir); err != nil {
+		return &task.TaskError{Code: "import_overrides_failed", Message: err.Error()}
 	}
 
 	// 自有 metadata 记录：项目目录里的模组台账（我们自己的格式，不依赖平台清单）。
@@ -346,34 +441,17 @@ func (s *ImportService) handleImportTask(ctx context.Context, ex *task.Execution
 			return &task.TaskError{Code: "import_record_failed", Message: fmt.Sprintf("模组记录失败：%s（%v）", filepath.Base(spec.Path), err)}
 		}
 	}
-	_ = os.Remove(p.StagedPath)
-	return ex.Progress(ctx, 100, fmt.Sprintf("imported %d mods → %s", len(mft.Files), projDir))
-}
-
-// downloadWithRetry 有限重试（网络抖动重下即可，计数耗尽就返回最后一次错误）。
-func downloadWithRetry(ctx context.Context, attempts int, fn func() error) error {
-	var last error
-	for i := 0; i < attempts; i++ {
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(time.Duration(i) * 2 * time.Second):
-			}
-		}
-		if err := fn(); err == nil {
-			return nil
-		} else {
-			last = err
-		}
+	// 暂存临时文件（base64 上传落点）清掉；用户自己的原文件永不删除。
+	if isStagedTemp(p.StagedPath, s.dataDir) {
+		_ = os.Remove(p.StagedPath)
 	}
-	return last
+	return ex.Progress(ctx, 100, fmt.Sprintf("imported %d mods → %s", len(mft.Files), projDir))
 }
 
 func validateImportInput(in ImportPreviewInput) error {
 	switch in.Source {
 	case ImportSourceLocalZip:
-		if len(in.Content) == 0 {
+		if len(in.Content) == 0 && strings.TrimSpace(in.Path) == "" {
 			return ErrInvalidArgument
 		}
 	case ImportSourceCurseForgeURL, ImportSourceModrinthURL:
@@ -470,47 +548,6 @@ func readZipEntry(f *zip.File) ([]byte, error) {
 	defer r.Close()
 	return io.ReadAll(io.LimitReader(r, 1<<20))
 }
-func parsePackMetadata(path string) (string, string, string, error) {
-	r, e := zip.OpenReader(path)
-	if e != nil {
-		return "", "", "", e
-	}
-	defer r.Close()
-	name, mc, loader := "Imported pack", "1.20.1", "fabric"
-	for _, f := range r.File {
-		if f.Name != "manifest.json" && f.Name != "modrinth.index.json" {
-			continue
-		}
-		b, e := readZipEntry(f)
-		if e != nil {
-			continue
-		}
-		var m map[string]any
-		if json.Unmarshal(b, &m) != nil {
-			continue
-		}
-		if v, ok := m["name"].(string); ok && v != "" {
-			name = v
-		}
-		if v, ok := m["minecraft"].(map[string]any); ok {
-			if x, ok := v["version"].(string); ok && x != "" {
-				mc = x
-			}
-		}
-		if v, ok := m["dependencies"].(map[string]any); ok {
-			for _, k := range []string{"fabric-loader", "forge", "neoforge", "quilt-loader"} {
-				if _, ok := v[k]; ok {
-					loader = strings.TrimSuffix(k, "-loader")
-					if loader == "forge" || loader == "neoforge" {
-						break
-					}
-				}
-			}
-		}
-	}
-	return name, mc, loader, nil
-}
-
 
 // importManifest 是两类清单的统一中间表示：Modrinth 的 modrinth.index.json 与
 // CurseForge 的 manifest.json（zip 包里本来就带，2026-10-05 确认）。字段对齐后
@@ -565,18 +602,24 @@ func parseImportManifest(path string) (*importManifest, error) {
 		switch name {
 		case "modrinth.index.json":
 			out.Kind = "modrinth_index"
-			if m, ok := raw["minecraft"].(map[string]any); ok {
-				if v, ok := m["version"].(string); ok && v != "" {
+			// mrpack 规范把 MC 版本放在 dependencies.minecraft（字符串值），
+			// 没有顶层 minecraft 对象；只认后者会让版本恒为初始默认值。
+			if deps, ok := raw["dependencies"].(map[string]any); ok {
+				if v, ok := deps["minecraft"].(string); ok && v != "" {
 					out.MCVersion = v
 				}
-			}
-			if deps, ok := raw["dependencies"].(map[string]any); ok {
 				for _, k := range []string{"fabric-loader", "neoforge", "forge", "quilt-loader"} {
 					if v, ok := deps[k].(string); ok && v != "" {
 						out.Loader = strings.TrimSuffix(k, "-loader")
 						out.LoaderVersion = v
 						break
 					}
+				}
+			}
+			// 兼容非规范的顶层 minecraft.version（早期或第三方生成器）。
+			if m, ok := raw["minecraft"].(map[string]any); ok {
+				if v, ok := m["version"].(string); ok && v != "" {
+					out.MCVersion = v
 				}
 			}
 			files, _ := raw["files"].([]any)
@@ -665,4 +708,117 @@ func parseImportManifest(path string) (*importManifest, error) {
 func jsonStr(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+// isStagedTemp 判断路径是不是导入流程自己的暂存文件（base64 上传落点）。
+// 用户通过路径导入的原文件不属于我们，永不删除。
+func isStagedTemp(path, dataDir string) bool {
+	stageDir := filepath.Join(dataDir, "tmp")
+	if stageDir == "tmp" || stageDir == "." {
+		stageDir = os.TempDir()
+	}
+	rel, err := filepath.Rel(stageDir, path)
+	if err != nil {
+		return false
+	}
+	return !strings.HasPrefix(rel, "..")
+}
+
+// importDownloadIDs 把一个清单文件翻译成既有下载管道认识的一对 ID。
+// Modrinth 从 CDN 直链里取，CurseForge 清单直接给了 projectID/fileID。
+func importDownloadIDs(spec *importFileSpec, kind string) (string, string, bool) {
+	if kind == "curseforge_manifest" {
+		if spec.CFProject == 0 || spec.CFFile == 0 {
+			return "", "", false
+		}
+		return strconv.FormatInt(spec.CFProject, 10), strconv.FormatInt(spec.CFFile, 10), true
+	}
+	return modrinthIDsFromURL(spec.URL)
+}
+
+// modrinthIDsFromURL 从 mrpack 清单的 CDN 直链里取出 projectID/versionID：
+// https://cdn.modrinth.com/data/<projectID>/versions/<versionID>/<file>
+func modrinthIDsFromURL(raw string) (string, string, bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", "", false
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	for i := 0; i+3 < len(parts); i++ {
+		if parts[i] == "data" && parts[i+2] == "versions" {
+			return parts[i+1], parts[i+3], true
+		}
+	}
+	return "", "", false
+}
+
+// safeImportPath 把清单里的相对路径落到项目目录内，拒绝任何越出项目目录的路径。
+func safeImportPath(root, rel string) (string, error) {
+	clean := filepath.Clean(filepath.FromSlash(rel))
+	if clean == "" || clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
+		return "", ErrImportUnsafeArchive
+	}
+	dest := filepath.Join(root, clean)
+	if !strings.HasPrefix(dest, filepath.Clean(root)+string(os.PathSeparator)) {
+		return "", ErrImportUnsafeArchive
+	}
+	return dest, nil
+}
+
+// extractOverrides 把 mrpack 的 overrides/ 与 client-overrides/ 解到实例根目录，
+// 返回落盘文件数。macOS 的 .DS_Store 一类垃圾条目跳过。
+func extractOverrides(archivePath, destRoot string) (int, error) {
+	r, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return 0, ErrImportUnsafeArchive
+	}
+	defer r.Close()
+	root := filepath.Clean(destRoot)
+	count := 0
+	for _, group := range []string{"overrides/", "client-overrides/"} {
+		for _, f := range r.File {
+			if !strings.HasPrefix(f.Name, group) || f.FileInfo().IsDir() {
+				continue
+			}
+			if err := validateArchiveName(f.Name); err != nil {
+				return count, err
+			}
+			rel := strings.TrimPrefix(f.Name, group)
+			if rel == "" || strings.HasSuffix(rel, ".DS_Store") {
+				continue
+			}
+			dest, perr := safeImportPath(root, rel)
+			if perr != nil {
+				return count, perr
+			}
+			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+				return count, err
+			}
+			if err := writeZipEntryToFile(f, dest); err != nil {
+				return count, err
+			}
+			count++
+		}
+	}
+	return count, nil
+}
+
+// writeZipEntryToFile 流式落盘一个 zip 条目（overrides 里可能有几十 MB 的 jar，
+// 不能用 readZipEntry 的 1MB 上限）。
+func writeZipEntryToFile(f *zip.File, dest string) error {
+	src, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	out, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, io.LimitReader(src, 1<<30)); err != nil {
+		_ = out.Close()
+		_ = os.Remove(dest)
+		return err
+	}
+	return out.Close()
 }

@@ -14,11 +14,20 @@ type DirEntry struct {
 	Path string `json:"path"`
 }
 
+// FileEntry is one regular file in the browsed directory (导入文件选择用：
+// 前端按扩展名过滤，路径直接回传后端，不走内容上传——2026-10-05 用户定稿)。
+type FileEntry struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+}
+
 // FsBrowseResult lists one level of directories plus common Minecraft roots.
 type FsBrowseResult struct {
 	Path        string     `json:"path"`
 	Parent      string     `json:"parent"`
 	Directories []DirEntry `json:"directories"`
+	Files       []FileEntry `json:"files"`
 	Suggested   []DirEntry `json:"suggested"`
 }
 
@@ -93,6 +102,7 @@ func (a *API) BrowseDirectories(ctx context.Context, path string) (FsBrowseResul
 			Path:        abs,
 			Parent:      filepath.Dir(abs),
 			Directories: []DirEntry{},
+			Files:       []FileEntry{},
 			Suggested:   SuggestedMinecraftDirs(),
 		}, nil
 	}
@@ -101,12 +111,17 @@ func (a *API) BrowseDirectories(ctx context.Context, path string) (FsBrowseResul
 		return FsBrowseResult{}, ErrInvalidArgument
 	}
 	dirs := make([]DirEntry, 0, len(entries))
+	files := make([]FileEntry, 0, len(entries))
 	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
 		name := e.Name()
 		if strings.HasPrefix(name, ".") && name != ".minecraft" {
+			continue
+		}
+		if !e.IsDir() {
+			// 常规文件也列出（导入文件选择：路径直接回传后端读盘，不走内容上传）
+			if fi, err := e.Info(); err == nil && fi.Mode().IsRegular() {
+				files = append(files, FileEntry{Name: name, Path: filepath.Join(abs, name), Size: fi.Size()})
+			}
 			continue
 		}
 		dirs = append(dirs, DirEntry{Name: name, Path: filepath.Join(abs, name)})
@@ -119,6 +134,7 @@ func (a *API) BrowseDirectories(ctx context.Context, path string) (FsBrowseResul
 		Path:        abs,
 		Parent:      parent,
 		Directories: dirs,
+		Files:       files,
 		Suggested:   SuggestedMinecraftDirs(),
 	}, nil
 }

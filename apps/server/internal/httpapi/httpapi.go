@@ -93,7 +93,10 @@ func NewRouterWithProviders(db *sql.DB, version string, reg *provider.Registry, 
 	}
 	p7 := service.NewP7Service(db)
 	p7.SetProviderRegistry(reg)
-	return newRouter(app, service.NewTaskAPI(db), p7, service.NewImportService(db), version)
+	importer := service.NewImportService(db)
+	// 导入与 API 共用同一份适配器表：设置页热注册 CurseForge key 时导入同步生效。
+	importer.SetProviderRegistry(reg)
+	return newRouter(app, service.NewTaskAPI(db), p7, importer, version)
 }
 
 func newRouter(app *service.API, taskAPI *service.TaskAPI, p7 *service.P7Service, importer *service.ImportService, version string) http.Handler {

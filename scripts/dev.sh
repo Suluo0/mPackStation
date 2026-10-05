@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # mPackStation dev：一键启动唯一标准服务（后端 18872 + 前端 5271，AGENTS.md 定稿）。
-# macOS / Linux；Windows 侧沿用仓库内历史脚本不再维护。
+# macOS / Linux；Windows 用 scripts/dev.ps1（同端口、同数据目录口径，2026-10-05 对齐）。
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

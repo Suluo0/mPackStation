@@ -130,11 +130,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("open task queue: %v", err)
 	}
+	// provider 适配器要在导入服务建好之前装配：导入任务的下载走这条既有管道，
+	// 且与 API 共用同一份实例（设置页热注册 key 时导入同步生效）。
+	registry := providerRegistry(db)
 	workerService := service.NewP7Service(db)
 	if err := workerService.RegisterTaskHandlersOnQueue(queue); err != nil {
 		log.Fatalf("register task handlers: %v", err)
 	}
 	importService := service.NewImportService(db)
+	importService.SetProviderRegistry(registry)
 	if err := importService.RegisterTaskHandlerOnQueue(queue); err != nil {
 		log.Fatalf("register import handler: %v", err)
 	}
@@ -150,7 +154,6 @@ func main() {
 		}
 	}()
 
-	registry := providerRegistry(db)
 	// 启动后探测一次双平台可达性并写入 settings, 让状态卡片反映真实结果
 	// 而不是永远停在"未探测"。尽力而为, 失败不影响启动。
 	go func() {

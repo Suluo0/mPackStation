@@ -11,10 +11,18 @@ export const fsDirSchema = z.object({
   path: z.string(),
 });
 
+export const fsFileSchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  size: z.number(),
+});
+
 export const fsBrowseSchema = z.object({
   path: z.string(),
   parent: z.string(),
   directories: z.array(fsDirSchema),
+  /* 常规文件（导入文件选择：路径直接回传后端读盘，2026-10-05）。 */
+  files: z.array(fsFileSchema).default([]),
   suggested: z.array(fsDirSchema),
 });
 export type FsBrowse = z.infer<typeof fsBrowseSchema>;

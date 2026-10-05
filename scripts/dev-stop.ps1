@@ -39,7 +39,7 @@ Stop-RecordedProcess -Name 'server' -PidFile (Join-Path $logDir 'server.pid')
 Stop-RecordedProcess -Name 'web'    -PidFile (Join-Path $logDir 'web.pid')
 
 if ($ByPort) {
-    foreach ($port in @(5273, 18871)) {
+    foreach ($port in @(18872, 5271)) {
         $owners = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty OwningProcess -Unique
         foreach ($ownerPid in $owners) {
@@ -51,7 +51,7 @@ if ($ByPort) {
 }
 
 $stillUp = @()
-foreach ($port in @(5273, 18871)) {
+foreach ($port in @(18872, 5271)) {
     if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
         $stillUp += $port
     }
@@ -60,4 +60,4 @@ if ($stillUp) {
     Write-Host "WARNING: ports still listening: $($stillUp -join ', '). Re-run with -ByPort to force." -ForegroundColor Yellow
     exit 1
 }
-Write-Host "mPackStation dev environment stopped. Ports 5273/18871 are free."
+Write-Host "mPackStation dev environment stopped. Ports 18872/5271 are free."

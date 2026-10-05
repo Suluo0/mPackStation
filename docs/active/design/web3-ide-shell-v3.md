@@ -67,7 +67,7 @@
 - **新开 `apps/web3/`，不引用 web2**（沿用 web→web2 的并行惯例；web/web2 保留作对照，均不再动）。
 - `src/api/` 整目录从 web2 迁入，零改动（1025 行 + fixtures）。任务日志解析（`fetchTaskLog`）随 launcher.ts 迁入。
 - Context 层迁入并做一处适配：`PackSummaryContext` / `CatalogContext` 的 packId 来源从 `useParams().id` 改为 URL `?pack=`（`app/url.ts` 收口）。焦点/迎新/热键原样。
-- dev server 固定 **5275**，代理默认回日常后端 18871（`VITE_API_TARGET` 可覆盖）。禁碰 5173/18765/18766/18871 与 `/tmp/mpack-data`。
+- dev server 固定 **5271**，代理默认回后端 18872（`VITE_API_TARGET` 可覆盖）。禁碰 5173/5273/5274/5275/5276/18871/18880 等历史端口。
 - 令牌注入同 web2 机制（`VITE_MPACK_TOKEN` 环境变量优先，否则 `data/runtime-token`），禁硬编码。
 
 ### 编辑区 v0 形态（探针边界）

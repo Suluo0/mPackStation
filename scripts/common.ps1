@@ -7,8 +7,30 @@ $ErrorActionPreference = 'Stop'
 
 $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $script:ServerDir = Join-Path $script:RepoRoot 'apps/server'
-$script:WebDir = Join-Path $script:RepoRoot 'apps/web'
+# 唯一前端入口 = apps/web3（IDE 式单页）。apps/web、apps/web2 是已退役的旧前端，
+# 端口/鉴权口径都已作废，不要再指过去（2026-10-05 对齐 AGENTS.md）。
+$script:WebDir = Join-Path $script:RepoRoot 'apps/web3'
+$script:LauncherDir = Join-Path $script:RepoRoot 'launcherCore'
 $script:DistRoot = Join-Path $script:RepoRoot 'dist'
+
+# 唯一开发数据目录（对应 macOS/Linux 的 /tmp/mpack-data）。
+# 空库可直接跑，迎新流程会引导建包；要重置换一个目录或删掉即可。
+function Get-DevDataDir {
+    if ($env:MPACK_DEV_DATA) { return $env:MPACK_DEV_DATA }
+    return (Join-Path $env:TEMP 'mpack-data')
+}
+
+# 后端 / 前端 标准端口（AGENTS.md 定稿，勿散落成字面量）。
+$script:ServerPort = 18872
+$script:WebPort = 5271
+
+# 启动器内核的分发位置。注意后端自己的查找口径是 `<数据目录的父目录>/.tools/launcher/`
+# （service/api.go 的 workbenchRoot = Dir(dataDir)），数据目录落在 %TEMP% 时那个推导
+# 会指向 %TEMP%\.tools，很不直观。所以这里固定放仓库内，并由 dev 脚本通过
+# MPACK_LAUNCHER_BIN 显式指给后端（该环境变量优先级最高）。
+function Get-LauncherExePath {
+    return (Join-Path $script:RepoRoot '.tools/launcher/mpack-launcher.exe')
+}
 
 function Require-Command {
     param([Parameter(Mandatory)][string]$Name)

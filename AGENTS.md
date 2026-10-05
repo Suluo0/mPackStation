@@ -9,8 +9,11 @@
   `scripts/dev.sh` 不再传 `--host`，以免命令行覆盖 vite 配置。
 - **禁止另开实例、禁止使用任何历史端口**：5173 / 5273 / 5274 / 5275 / 5276 / 18871 / 18880 一律不再使用；
   需要隔离环境时先停下来问用户，不许自行起新端口或新数据目录。
-- `scripts/dev.sh` / `dev-stop.sh` 是唯一起停方式；改动会话不得绕过它手工起服务。
+- `scripts/dev.sh` / `dev-stop.sh` 是 macOS/Linux 的唯一起停方式；Windows 对应 `scripts/dev.ps1` / `dev-stop.ps1`（或 `.bat` 版），两套端口与数据目录口径一致。
+  **2026-10-05 修订**：Windows 脚本此前一直指向已作废的 `apps/web`(web1) 与 `18871/5273`，且 `dev.sh` 曾单方面声明「Windows 版退役」——现按本文铁律重新对齐，Windows 侧恢复为受支持入口（详见 `docs/active/standards/windows-iteration.md`）。
+  改动会话不得绕过这些入口手工起服务。
 - `/tmp/mpack-data` 是唯一共享开发数据目录；**对它做重启、迁移、目录重建之前，必须获得用户当轮明示**。
+  Windows 对应 `%TEMP%\mpack-data`（可用 `MPACK_DEV_DATA` 覆盖），属本机测试目录，重置用 `scripts/dev-reset.ps1`（归档而非直接删）。
 - 并行会话共用此工作区时：迁移编号先 `ls apps/server/internal/store/migrations/` 再取号；
   改任何文件前先重读（对方可能已改）；不碰对方正在跑的进程。
 - 历史背景：2026-10-03 因双会话并行 + 环境重置，/tmp/mpack-data 与 /tmp/mpack-chain 数据被清空
