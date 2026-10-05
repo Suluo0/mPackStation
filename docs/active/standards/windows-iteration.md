@@ -23,13 +23,30 @@
 
 | 组件 | 用途 | 版本参考 | 只有谁需要 |
 | --- | --- | --- | --- |
+| **PowerShell 7（`pwsh`）** | **全部脚本入口** | 5.1 不行，必须 7 | **全部** |
 | Go | 后端 | `go.mod` = 1.27 | 全部 |
 | Node.js + npm | 前端（web3） | Vite 7 要求 Node ≥ 20.19 或 ≥ 22.12 | 全部（不开前端界面可跳过） |
 | Rust + cargo | 启动器内核 `mpack-launcher` | edition 2021 | 启动器 |
+| MSVC C++ 工具链 | Rust 的 `*-pc-windows-msvc` 目标需要链接器 | VS 2019+，需含 `VC.Tools.x86.x64` | 启动器 |
 | JDK 21 | 启动 MC 1.21.1 | 内核按 MC 版本推算要求 | 启动器 |
+
+**`pwsh` 是硬前置**：`build.sh` / `package.sh` / `test.sh` / `verify.sh` 四个入口的
+第一件事就是 `exec pwsh -NoProfile -File ...`，缺了它直接报错退出。Windows 自带的是
+Windows PowerShell 5.1（`powershell.exe`），**不叫 pwsh、也不满足要求**：
+
+```powershell
+winget install --id Microsoft.PowerShell --source winget
+```
 
 Go 侧无 cgo（`modernc.org/sqlite`），无需 C 工具链。仓库内若存在
 `.tools/go/bin/go.exe` 会优先使用，无需额外配置 PATH。
+
+MSVC 是否够用可以直接问 vswhere（有输出即带 C++ 组件）：
+
+```powershell
+& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+  -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property displayName
+```
 
 内核与 JDK 都可以后补：缺失时启动器任务会在**提交阶段**同步返回 503，不会留下
 半死的任务，其余能力完全不受影响。
@@ -55,7 +72,10 @@ pwsh scripts/build-launcher.ps1 -TargetDir D:\cargo-target\mpack
 ## 3. 首次跑通
 
 ```powershell
-# 1) 依赖
+# 0) 前置：PowerShell 7（见第 1 节，只有 5.1 会直接跑不动脚本）
+winget install --id Microsoft.PowerShell --source winget
+
+# 1) 依赖（dev.ps1 不会替你装 npm 依赖，必须先来这一步）
 cd apps/web3 ; npm ci ; cd ..\..
 
 # 2) 起后端 + 前端（后端 18872 / 前端 5271）
@@ -63,6 +83,10 @@ pwsh scripts/dev.ps1
 
 # 3) 浏览器打开 http://127.0.0.1:5271/
 ```
+
+> `npm ci` 结尾可能报 `esbuild postinstall 被 allowScripts 拦下`。这是 npm 12 的脚本
+> 白名单机制，**可以忽略**：esbuild 的平台二进制走 optionalDependencies 分发，
+> `node_modules\@esbuild\win32-x64\esbuild.exe` 已经在位，vite 能正常起。
 
 首次进入是空库，迎新流程会引导建包或导入整合包。
 
@@ -184,15 +208,101 @@ pwsh scripts/dev-reset.ps1 -KeepProjects   # 只重置数据库
 | Prism 工具安装 | 那条路强依赖 `cmd.exe` + `.bat`，仅 Windows 可用 | 与内核链路互不影响 |
 | cmd/bash 混合 | `verify-contract.bat` 会调 git-bash 跑 `.sh` | 需要 git-bash 在 PATH（或用 PowerShell 入口） |
 
-## 8. 未验证事项
+## 8. 实测记录（2026-10-06 首次真机执行）
 
-以下是本次改动**没有实测**的部分，第一次在 Windows 上跑时请重点确认：
+机器：Windows 11（build 26200）/ Go 1.27.0 / Node 24.19.0 / rustc 1.98.0 / VS2019 Community。
 
-1. `scripts/dev.ps1` / `dev-reset.ps1` / `build-launcher.ps1` 只做过静态检查
-   （括号平衡、路径拼接、变量名），**没有在 Windows 上实跑**。
-2. `launcherCore` 未在 Windows 上 `cargo build` 过。代码里有 `cfg(windows)`
-   分支（`winreg` 注册表探测、`CREATE_NEW_PROCESS_GROUP` detach、`tasklist` 存活
-   检查、`%APPDATA%` 数据目录），但未实编译验证。
-3. `build.ps1` / `package.ps1` 不产出内核 exe，分发包里也没有它——如果要在
-   Windows 上做完整的分发验证，需要先补这一步。
+**已在真机跑通：**
+
+| 入口 | 结果 |
+| --- | --- |
+| `build-launcher.ps1` | 通过，release 编译 33s，产物落到 `.tools\launcher\mpack-launcher.exe` |
+| `dev.ps1` | 通过，`127.0.0.1:18872` 与 `127.0.0.1:5271` 均 200，数据目录 = `%TEMP%\mpack-data` |
+| `launcherCore` 在 Windows 编译 | 通过（先修了 `install.rs` 的 `cfg!` 平台门，见下） |
+
+**真机执行暴露的两个 bug（已修）：**
+
+1. `build-launcher.ps1` 声明了 `[switch]$Debug`。带 `[CmdletBinding()]` 的脚本不能再
+   声明 cmdlet 公共参数同名（Debug / Verbose / ErrorAction 等），否则解析期就
+   `MetadataError`。已改 `-DebugBuild`。
+2. `launcherCore/src/java/install.rs` 用 `if cfg!(windows) { return Ok(()); }` 做平台门。
+   `cfg!` 是**运行期宏**，被门住的 `use std::os::unix::fs::PermissionsExt;` 仍参与编译，
+   Windows 上直接 E0433/E0599。已改成 `#[cfg(unix)]` / `#[cfg(windows)]` 双函数。
+   引入时点是 `6c0aa5d`，此后内核再没被编译过（Mac 无 cargo，Windows 没跑过 cargo build），
+   即**内核自 10-03 起在 Windows 上一直编不过**。
+
+**仍未实测（下次上 Windows 请重点确认）：**
+
+1. `dev-stop.ps1` / `dev-reset.ps1` / `build.ps1` / `package.ps1` / `test.ps1` / `verify.ps1`
+   都没真机跑过。
+2. 内核只是**编译通过**，没在 Windows 上跑过实际功能（安装整合包、启动游戏）。
+   `cfg(windows)` 分支（`winreg` 注册表探测、`CREATE_NEW_PROCESS_GROUP` detach、
+   `tasklist` 存活检查、`%APPDATA%` 数据目录）仍是纯静态存在。
+3. `build.ps1` / `package.ps1` 不产出内核 exe，分发包里也没有它——完整分发验证前需先补。
 4. `build-and-deploy.md` 里描述的 Windows 迭代尚未形成回归证据。
+
+**坑：`Invoke-WebRequest` 会走系统代理。** 机器上开着本地代理（如 Clash 的
+`127.0.0.1:7897`）时，对 `127.0.0.1` 的探测请求可能被代理接管而长时间挂住，
+看起来像"服务没起来"。用 curl 并显式绕开代理：
+
+```powershell
+curl.exe -s --noproxy "*" http://127.0.0.1:18872/api/health
+```
+
+## 9. 远端推 → 本机自动跟上
+
+本机作为**消费端**时，用 `scripts/autosync.ps1` 常驻轮询远端，省掉"每次都要记得
+pull + 重启"。
+
+```powershell
+pwsh scripts/autosync.ps1                     # 常驻（启动时服务没跑会先拉起）
+pwsh scripts/autosync.ps1 -Once               # 只跑一轮，用于验证
+pwsh scripts/autosync.ps1 -IntervalSec 15     # 调轮询间隔，默认 30s
+```
+
+它只做四件事：`git fetch` → 比对 SHA → 按改动路径决定重建什么 → 需要时重启服务。
+
+| 改动路径 | 动作 |
+| --- | --- |
+| `apps/web3/src/**` | 什么都不做（vite HMR 自己生效） |
+| `apps/server/**` | 重启 dev 服务 |
+| `launcherCore/**` | `cargo build` 后再重启 |
+| `apps/web3/package*.json` | `npm ci` 后再重启 |
+
+两条安全规则：**工作区有未提交改动时拒绝拉取**（记 WARN 到 `.tmp/autosync/autosync.log`），
+只用 `--ff-only` 不做 merge。也就是说本机默认是只读消费端；确实要在本机改代码时，
+改完先提交，否则同步会停住并提示。
+
+日志：`.tmp/autosync/autosync.log`（已 gitignore）。
+
+### 从别的机器用浏览器访问
+
+两端按铁律**只绑回环**，所以别的机器访问不了，也不该为此改绑 `0.0.0.0`。
+用 SSH 隧道把回环端口带过来即可，安全边界不变：
+
+```bash
+ssh -N -L 5271:127.0.0.1:5271 -L 18872:127.0.0.1:18872 suluo@10.144.144.2
+```
+
+然后在本机浏览器开 `http://127.0.0.1:5271/`。
+
+### 让 autosync 常驻
+
+SSH 会话里起的进程会随会话结束而受影响，用计划任务让它独立于任何终端：
+
+```powershell
+$repo = 'D:\workIn\mPackStation'
+$action = New-ScheduledTaskAction -Execute 'pwsh.exe' `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$repo\scripts\autosync.ps1`"" `
+  -WorkingDirectory $repo
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+Register-ScheduledTask -TaskName 'mPackStation-autosync' -Action $action -Trigger $trigger `
+  -Description 'mPackStation: 轮询远端分支并保持 dev 服务可用' -Force
+```
+
+停掉/卸载：
+
+```powershell
+Stop-ScheduledTask -TaskName 'mPackStation-autosync'
+Unregister-ScheduledTask -TaskName 'mPackStation-autosync' -Confirm:$false
+```
