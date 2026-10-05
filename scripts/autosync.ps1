@@ -148,8 +148,9 @@ function Restart-Services {
 
     $after = (Get-ListenerPids) -join ','
     if ($after -and $after -eq $before) {
-        Write-Log 'WARN' ("重启后监听 PID 未变（{0}）—— 服务很可能没真正重启，" +
+        $msg = ("重启后监听 PID 未变（{0}）—— 服务很可能没真正重启，" +
             "请查 .tmp/autosync/dev.out.log / dev.err.log。") -f $after
+        Write-Log 'WARN' $msg
     }
 }
 
@@ -167,7 +168,8 @@ function Invoke-Sync {
         # 而这里已经 return 了，于是「没有新提交但想强制重启」永远打不到 ——
         # 恰恰是最需要它的场景（手工验证、改了环境变量、想重置进程状态）。
         if ($ForceRestart) {
-            Write-Log 'INFO' ("无新提交（{0}），-ForceRestart 生效 → 重启服务") -f (Get-Short $localSha)
+            $msg = "无新提交（{0}），-ForceRestart 生效 → 重启服务" -f (Get-Short $localSha)
+            Write-Log 'INFO' $msg
             Restart-Services
         }
         return

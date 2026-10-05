@@ -18,6 +18,8 @@ function Run-Check {
     catch { $failures.Add("${Label}: $($_.Exception.Message)") }
 }
 
+Run-Check 'PowerShell script style' { & (Join-Path $PSScriptRoot 'lint-script-style.ps1') }
+
 Run-Check 'Go formatting' {
     Push-Location $script:ServerDir
     try {
