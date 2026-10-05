@@ -84,38 +84,73 @@ function Invoke-RepoScript {
     param(
         [Parameter(Mandatory)][string]$Name,
         # dev.ps1 / dev-stop.ps1 秒级收尾；cargo build 首次可能几分钟，单独放宽。
-        [int]$TimeoutSec = 120
+        [int]$TimeoutSec = 120,
+        # 透传给被调脚本的额外参数（例如 dev-stop.ps1 -ByPort）。
+        [string[]]$ExtraArgs = @()
     )
     $stem = [IO.Path]::GetFileNameWithoutExtension($Name)
     $outFile = Join-Path $logDir "${stem}.out.log"
     $errFile = Join-Path $logDir "${stem}.err.log"
-    $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot $Name))
+    $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot $Name)) + $ExtraArgs
 
     $proc = Start-Process -FilePath 'pwsh' -ArgumentList $psArgs -WorkingDirectory $script:RepoRoot `
         -RedirectStandardOutput $outFile -RedirectStandardError $errFile `
         -WindowStyle Hidden -PassThru
     if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
-        Write-Log 'WARN' ("{0} 在 {1}s 内未退出；不断定失败，继续按端口判断。" +
-            "输出见 .tmp/autosync/{2}.out.log") -f $Name, $TimeoutSec, $stem
+        # 注意 -f 必须在括号内先把字符串拼好，不能写成 `Write-Log 'WARN' (...) -f ...`：
+        # 那个位置会被解析成 Write-Log 的参数名，直接抛参数绑定异常（本文件犯过两次）。
+        $msg = "{0} 在 {1}s 内未退出；不断定失败，继续按端口判断。输出见 .tmp/autosync/{2}.out.log" -f $Name, $TimeoutSec, $stem
+        Write-Log 'WARN' $msg
         return $false
     }
     return $true
+}
+
+# 取当前真正持有两个 dev 端口的进程 PID（去重排序）。
+# 用途不是"生死判定"而是"是否换过"：端口在监听 ≠ 服务重启过。
+function Get-ListenerPids {
+    $pids = @()
+    foreach ($port in @($script:ServerPort, $script:WebPort)) {
+        $pids += @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty OwningProcess)
+    }
+    return @($pids | Sort-Object -Unique)
 }
 
 function Start-Services {
     Write-Log 'INFO' '启动 dev 服务（后端 18872 / 前端 5271）'
     $null = Invoke-RepoScript 'dev.ps1'
     if (Wait-ServiceUp -TimeoutSec 90) {
-        Write-Log 'INFO' '服务已就绪（双端口均在监听）'
+        Write-Log 'INFO' ("服务已就绪（双端口均在监听，pid={0}）" -f ((Get-ListenerPids) -join ','))
     } else {
         Write-Log 'WARN' '90s 内未见到双端口监听，检查 .tmp/dev/*.log 与 .tmp/autosync/dev.out.log'
     }
 }
 
 function Restart-Services {
-    $null = Invoke-RepoScript 'dev-stop.ps1'
-    Start-Sleep -Seconds 2
+    $before = (Get-ListenerPids) -join ','
+
+    # 必须带 -ByPort。只按 PID 文件停是不够的：PID 文件可能缺失或过期
+    # （例如服务是在另一个会话里手工起的，或 `go run` 父进程先退出、真正
+    # 持有端口的 server.exe 变成孤儿）。那种情况下旧进程停不掉，随后
+    # dev.ps1 的 Assert-PortFree 会直接抛错，而端口上仍挂着旧进程——
+    # 于是 Wait-ServiceUp 看到"端口在监听"，日志打出"服务已就绪"，
+    # 实际后端根本没重启。这正是最不该发生的静默失败。
+    $null = Invoke-RepoScript 'dev-stop.ps1' -ExtraArgs @('-ByPort')
+
+    $deadline = (Get-Date).AddSeconds(20)
+    while ((Get-Date) -lt $deadline -and (Test-ServiceUp)) { Start-Sleep -Milliseconds 500 }
+    if (Test-ServiceUp) {
+        Write-Log 'WARN' '停止后 20s 端口仍被占用；dev.ps1 会因 Assert-PortFree 失败，本次重启大概率无效。'
+    }
+
     Start-Services
+
+    $after = (Get-ListenerPids) -join ','
+    if ($after -and $after -eq $before) {
+        Write-Log 'WARN' ("重启后监听 PID 未变（{0}）—— 服务很可能没真正重启，" +
+            "请查 .tmp/autosync/dev.out.log / dev.err.log。") -f $after
+    }
 }
 
 function Invoke-Sync {
