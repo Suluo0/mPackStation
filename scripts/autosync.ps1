@@ -258,7 +258,11 @@ while ($true) {
         # 本任务存在的理由（见计划任务描述）。
         if (-not (Test-ServiceUp)) {
             Write-Log 'WARN' 'dev 服务未在监听，重新拉起'
-            Start-Services
+            # 这里必须是 Restart-Services 而不是 Start-Services：dev.ps1 开头有
+            # Assert-PortFree，只要两个端口里有一个还被占着（例如只死了一侧），
+            # 它会直接抛错、结果两个都不启动，死掉的那侧就永远起不来了。
+            # 先 -ByPort 停干净再起，才是幂等的。
+            Restart-Services
         }
         Invoke-Sync
     } catch {
