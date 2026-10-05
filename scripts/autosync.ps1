@@ -66,21 +66,49 @@ function Test-ServiceUp {
     return $true
 }
 
-# 用独立进程调用这些脚本：它们内部有 exit，用 & 直接调会把本会话一起结束。
+function Wait-ServiceUp {
+    param([int]$TimeoutSec = 90)
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-ServiceUp) { return $true }
+        Start-Sleep -Seconds 2
+    }
+    return $false
+}
+
+# 为什么不用 `& pwsh -File ...`：
+# dev.ps1 用 Start-Process 拉起的 go / node 常驻服务会继承调用方的输出句柄，
+# 于是「dev.ps1 进程早已退出」但调用方永远等不到 EOF —— 实测 & 调用 120s 不返回。
+# 改成 Start-Process + 带超时的 WaitForExit，把这件事兜住；脚本输出落盘便于排查。
 function Invoke-RepoScript {
-    param([Parameter(Mandatory)][string]$Name, [string[]]$ExtraArgs = @())
-    $args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot $Name)) + $ExtraArgs
-    & pwsh @args
-    return $LASTEXITCODE
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        # dev.ps1 / dev-stop.ps1 秒级收尾；cargo build 首次可能几分钟，单独放宽。
+        [int]$TimeoutSec = 120
+    )
+    $stem = [IO.Path]::GetFileNameWithoutExtension($Name)
+    $outFile = Join-Path $logDir "${stem}.out.log"
+    $errFile = Join-Path $logDir "${stem}.err.log"
+    $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot $Name))
+
+    $proc = Start-Process -FilePath 'pwsh' -ArgumentList $psArgs -WorkingDirectory $script:RepoRoot `
+        -RedirectStandardOutput $outFile -RedirectStandardError $errFile `
+        -WindowStyle Hidden -PassThru
+    if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
+        Write-Log 'WARN' ("{0} 在 {1}s 内未退出；不断定失败，继续按端口判断。" +
+            "输出见 .tmp/autosync/{2}.out.log") -f $Name, $TimeoutSec, $stem
+        return $false
+    }
+    return $true
 }
 
 function Start-Services {
     Write-Log 'INFO' '启动 dev 服务（后端 18872 / 前端 5271）'
-    $code = Invoke-RepoScript 'dev.ps1'
-    if ($code -ne 0) {
-        Write-Log 'WARN' "dev.ps1 未完全就绪（exit $code），看 .tmp/dev/ 下的日志"
+    $null = Invoke-RepoScript 'dev.ps1'
+    if (Wait-ServiceUp -TimeoutSec 90) {
+        Write-Log 'INFO' '服务已就绪（双端口均在监听）'
     } else {
-        Write-Log 'INFO' '服务已就绪'
+        Write-Log 'WARN' '90s 内未见到双端口监听，检查 .tmp/dev/*.log 与 .tmp/autosync/dev.out.log'
     }
 }
 
@@ -105,13 +133,14 @@ function Invoke-Sync {
     $dirty = & git -C $script:RepoRoot status --porcelain
     if ($dirty) {
         $count = ($dirty | Measure-Object).Count
-        Write-Log 'WARN' ("远端有新提交 {0}，但工作区有 {1} 项未提交改动 —— 跳过。" +
+        $msg = ("远端有新提交 {0}，但工作区有 {1} 项未提交改动 —— 跳过。" +
             "确认无用后执行：git checkout -- . ; git clean -fd") -f (Get-Short $remoteSha), $count
+        Write-Log 'WARN' $msg
         return
     }
 
     $changed = @(& git -C $script:RepoRoot diff --name-only $localSha $remoteSha)
-    Write-Log 'INFO' ("发现新提交 {0} → {1}（{2} 个文件）" -f (Get-Short $localSha), (Get-Short $remoteSha), $changed.Count)
+    Write-Log 'INFO' (("发现新提交 {0} → {1}（{2} 个文件）") -f (Get-Short $localSha), (Get-Short $remoteSha), $changed.Count)
 
     & git -C $script:RepoRoot merge --ff-only "origin/$Branch" --quiet
     if ($LASTEXITCODE -ne 0) {
@@ -125,8 +154,8 @@ function Invoke-Sync {
     $needMigration = @($changed | Where-Object { $_ -like 'apps/server/internal/store/migrations/*' })
 
     if ($needMigration.Count -gt 0) {
-        Write-Log 'WARN' ("本次含数据库迁移：{0}。" +
-            "下次启动会自动应用；若想从干净库开始，跑 scripts/dev-reset.ps1") -f ($needMigration -join ', ')
+        $msg = "本次含数据库迁移（{0} 个）。下次启动会自动应用；若想从干净库开始，跑 scripts/dev-reset.ps1" -f $needMigration.Count
+        Write-Log 'WARN' $msg
     }
 
     if ($needGo.Count -gt 0) { Write-Log 'INFO' ("后端改动 {0} 个文件" -f $needGo.Count) }
@@ -145,8 +174,9 @@ function Invoke-Sync {
 
     if ($needRust.Count -gt 0) {
         Write-Log 'INFO' 'launcherCore 有变 → cargo build'
-        $code = Invoke-RepoScript 'build-launcher.ps1'
-        if ($code -ne 0) { Write-Log 'ERROR' "cargo build 失败（exit $code），后端会沿用旧内核" }
+        if (-not (Invoke-RepoScript 'build-launcher.ps1' -TimeoutSec 900)) {
+            Write-Log 'WARN' 'cargo build 未在 900s 内收尾，看 .tmp/autosync/build-launcher.out.log'
+        }
     }
 
     if ($needGo.Count -gt 0 -or $needRust.Count -gt 0 -or $needNpm.Count -gt 0 -or $ForceRestart) {
