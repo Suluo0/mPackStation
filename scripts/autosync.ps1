@@ -123,7 +123,11 @@ function Start-Services {
     if (Wait-ServiceUp -TimeoutSec 90) {
         Write-Log 'INFO' ("服务已就绪（双端口均在监听，pid={0}）" -f ((Get-ListenerPids) -join ','))
     } else {
-        Write-Log 'WARN' '90s 内未见到双端口监听，检查 .tmp/dev/*.log 与 .tmp/autosync/dev.out.log'
+        # 失败原因多半在"停服务"那一步，所以 dev-stop.*.log 必须一起看。
+        # 实测最常见的是完整性级别不匹配：进程比本任务权限高时 taskkill 报
+        # 「拒绝访问」，端口清不掉，随后 dev.ps1 的 Assert-PortFree 直接抛错。
+        Write-Log 'WARN' ('90s 内未见到双端口监听。依次查：.tmp/autosync/dev-stop.out.log（停服务是否成功）、' +
+            '.tmp/autosync/dev.err.log（dev.ps1 的报错）、.tmp/dev/*.error.log')
     }
 }
 

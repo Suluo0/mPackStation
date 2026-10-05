@@ -302,7 +302,7 @@ pwsh scripts/autosync.ps1 -Once -ForceRestart # 无新提交也强制重启（�
 
 日志：`.tmp/autosync/autosync.log`（已 gitignore）。
 
-### 三条容易踩的实现约束（2026-10-06 实测得出）
+### 四条容易踩的实现约束（2026-10-06 实测得出）
 
 **1. 不能用 `& pwsh -File scripts/dev.ps1` 调 dev.ps1 —— 调用方永远等不到 EOF。**
 `dev.ps1` 用 `Start-Process` 拉起的 go/node 常驻服务会继承调用方的输出句柄，
@@ -331,6 +331,36 @@ Start-ScheduledTask -TaskName 'mPackStation-autosync'
 这条是实测踩出来的：修完 145feb7 后任务仍按旧代码打出
 「只有前端源码变化，vite HMR 自行生效」，而那次实际改的是 `scripts/autosync.ps1`。
 
+**4. 别用提升权限的会话手工起服务 —— 计划任务会杀不掉它们。**
+Windows OpenSSH 对管理员用户下发的是**完整提升令牌**（实测 `whoami /groups` 给出
+`Mandatory Label\High Mandatory Level`，`IsInRole(Administrator)=True`）。
+于是从 SSH 会话里起的 dev 服务是 **High** 完整性级别，而 `mPackStation-autosync`
+按默认（非提升）注册、是 **Medium**。**Medium 杀不掉 High**：`taskkill` 全线报
+「拒绝访问」→ `dev-stop.ps1 -ByPort` 停不掉 → 端口清不掉 → `dev.ps1` 的
+`Assert-PortFree` 跟着抛错 → 重启与保活能力**整个失效**。
+
+2026-10-06 复现链路：
+
+```
+dev-stop.out.log : server : pid=4192 failed to stop (taskkill exit 128)
+                   port 18872 held by pid=9056 (server); killing tree
+                   WARNING: ports still listening: 18872.
+dev-stop.err.log : 错误: 无法终止 PID 9056 ... 原因: 拒绝访问。
+autosync.log     : 01:31:01 [WARN] dev 服务未在监听，重新拉起
+                   01:31:04 [INFO] 启动 dev 服务（后端 18872 / 前端 5271）
+                   01:32:37 [WARN] 90s 内未见到双端口监听
+```
+
+处置：
+
+- **推荐**：服务一律交给计划任务起。**不要**从 SSH 会话手工跑 `dev.ps1`。
+  已经在提升会话里起过，就在**同一个会话**里 `dev-stop.ps1 -ByPort` 清掉，
+  任务会在下一轮（≤30s 检测 + 重建，实测 01:33:09 → 01:33:14 完成）自己接手。
+  本轮就是这样恢复的。
+- 备选（**未采用，待定**）：给任务加最高权限
+  `Register-ScheduledTask ... -RunLevel Highest`，它就能管理任何完整性级别的进程。
+  代价是 autosync 连带 `git` / `npm` / `cargo` 全部以提升权限运行。
+
 ### 实测记录（2026-10-06）
 
 | 场景 | 结果 |
@@ -339,6 +369,7 @@ Start-ScheduledTask -TaskName 'mPackStation-autosync'
 | `-Once -ForceRestart` 重启路径 | 通过。`01:20:29 无新提交 → 重启` → `01:20:34 服务已就绪（pid=9056,13344）`，监听 PID 确认换新 |
 | 远端提交 → 自动拉取 | 通过。`01:23:24 发现新提交 e26c4a22 → 145feb71（1 个文件）` |
 | `dev-stop.ps1 -ByPort` 清孤儿 | 通过。`server : pid=2676 stopped (tree)` / `web : pid=13596 stopped (tree)`，端口确认释放 |
+| 保活：杀掉 vite 后自动恢复 | 通过。`01:31:01 未在监听 → 重新拉起` →（首次因权限失败，`01:32:37` 记 WARN）→ `01:33:09` 重试 → `01:33:14 服务已就绪（pid=3044,17548）` |
 
 **别在 SSH 前台等 autosync。** 它内部拉起的常驻服务会牵连会话，实测前台调用
 收到 SIGTERM（exit 137）而远端动作其实已完成 —— 看起来像失败，实际是好的。
