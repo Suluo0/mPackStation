@@ -1,6 +1,8 @@
 [CmdletBinding()]
+# 注意：参数名不能叫 -Debug。cmdlet 的公共参数已占用 Debug/Verbose/ErrorAction 等名字，
+# 带 [CmdletBinding()] 的脚本再声明同名的会直接 MetadataError（2026-10-06 在 Windows 上实测）。
 param(
-    [switch]$Debug,
+    [switch]$DebugBuild,
     [string]$TargetDir,
     [switch]$SkipCopy
 )
@@ -20,7 +22,7 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     throw "cargo not found. 安装 Rust 工具链：https://rustup.rs （安装后重开终端）"
 }
 
-$buildProfile = if ($Debug) { 'debug' } else { 'release' }
+$buildProfile = if ($DebugBuild) { 'debug' } else { 'release' }
 $cargoArgs = @('build')
 if (-not $Debug) { $cargoArgs += '--release' }
 
