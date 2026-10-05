@@ -79,14 +79,13 @@ export function BottomDock() {
 
   if (!dock) return null;
 
-  /* 三页签（2026-10-05 用户反馈）：日志 / 问题 / 健康 —— 顶栏徽标与状态条的
-     健康分点击后直接落到对应页签，不再弹窗。日志页签保持原 MasterDetail。 */
+  /* 两页签（2026-10-05 用户反馈：健康不是独立页面——打开问题就应先看到健康概览）：
+     顶栏徽标与状态条健康分点击后直接落到问题页签，不再弹窗。日志页签保持原 MasterDetail。 */
   const tabs = [
     {key: 'log' as const, label: `日志${tasks.length ? ` · ${tasks.length}` : ''}`},
     {key: 'problems' as const, label: `问题${pendingConflicts.length ? ` · ${pendingConflicts.length}` : ''}`},
-    {key: 'health' as const, label: '健康'},
   ];
-  const openTab = (key: 'log' | 'problems' | 'health') =>
+  const openTab = (key: 'log' | 'problems') =>
     patch(dock && dtab === key ? {dock: null} : {dock: '1', dtab: key});
 
   return (
@@ -104,8 +103,12 @@ export function BottomDock() {
         <span style={{flex: 1}}/>
         <Button onClick={() => patch({dock: null})}>收起</Button>
       </header>
-      {dtab === 'problems' && <div className="dock-body dock-scroll"><ProblemsPanel/></div>}
-      {dtab === 'health' && <div className="dock-body dock-scroll"><HealthPanel/></div>}
+      {dtab === 'problems' && (
+        <div className="dock-body dock-scroll">
+          <HealthPanel/>
+          <ProblemsPanel/>
+        </div>
+      )}
       {dtab === 'log' && (
     <MasterDetail<Task>
       className="dock-log"

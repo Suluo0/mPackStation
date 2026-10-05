@@ -10,8 +10,9 @@ import {useUrlPatch} from '../app/url';
    建包/导包成功后打勾并自动切进新包。表单迁自 web2 PacksPage（零改动逻辑）。 */
 const LOADERS = loaderEnum.options;
 const SOURCES: {value: ImportSource; label: string}[] = [
-  {value: 'curseforge', label: 'CurseForge 链接'},
   {value: 'modrinth', label: 'Modrinth 链接'},
+  {value: 'curseforge', label: 'CurseForge 链接'},
+  {value: 'local', label: '本地 zip / mrpack'},
 ];
 
 export function Welcome() {
@@ -31,7 +32,7 @@ export function Welcome() {
       </div>
 
       <div className="wl-card">
-        <div className="wl-title">从链接导入</div>
+        <div className="wl-title">导入整合包</div>
         <ImportPackForm onImported={id => patch({pack: id, mode: null, tool: 'focus'}, {push: true})}/>
       </div>
 
@@ -90,9 +91,19 @@ function CreatePackForm({onCreated}: {onCreated: (id: string) => void}) {
   );
 }
 
+/* 本地文件 → base64（导入链路的 local_zip 来源从一开始就要的就是这个形态）。 */
+const readAsBase64 = (f: File) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1] ?? '');
+    r.onerror = () => reject(new Error('本地文件读取失败'));
+    r.readAsDataURL(f);
+  });
+
 function ImportPackForm({onImported}: {onImported: (id: string) => void}) {
   const [source, setSource] = useState<ImportSource>('modrinth');
   const [url, setUrl] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,12 +120,24 @@ function ImportPackForm({onImported}: {onImported: (id: string) => void}) {
   return (
     <div style={{display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center'}}>
       <Select value={source} onChange={setSource} style={{width: 150}} options={SOURCES}/>
-      <Input placeholder="包链接" value={url} onChange={e => setUrl(e.target.value)} style={{width: 280}}/>
-      <Button loading={busy} disabled={!url.trim()} onClick={() => act(async () => { setNotice(null); setPreview(await inspectImport({source, url: url.trim()})); })}>解析</Button>
+      {source === 'local' ? (
+        <input type="file" accept=".zip,.mrpack" className="p-input"
+          onChange={e => { setFile(e.target.files?.[0] ?? null); setPreview(null); }}/>
+      ) : (
+        <Input placeholder="包链接" value={url} onChange={e => setUrl(e.target.value)} style={{width: 280}}/>
+      )}
+      <Button loading={busy}
+        disabled={source === 'local' ? !file : !url.trim()}
+        onClick={() => act(async () => {
+          setNotice(null);
+          setPreview(source === 'local' && file
+            ? await inspectImport({source: 'local', contentBase64: await readAsBase64(file)})
+            : await inspectImport({source, url: url.trim()}));
+        })}>解析</Button>
       {preview && (
         <>
           <span className="sub">{preview.packName || '(未命名)'} · {preview.entryCount} 个条目</span>
-          <Button type="primary" loading={busy} disabled={!url.trim()}
+          <Button type="primary" loading={busy} disabled={source === 'local' ? !file : !url.trim()}
             onClick={() => act(async () => {
               const done = await confirmImport(preview, crypto.randomUUID());
               setPreview(null); setUrl(''); created();

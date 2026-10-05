@@ -29,11 +29,11 @@ export function StatusBar() {
           错挂着系统环境文案 —— 环境提示移到圆点的 title 上。 */}
       {/* 健康分可点：打开底部 dock 的「健康」页签（2026-10-05：弹窗取消）。 */}
       <button type="button"
-        className={`seg-btn${dock === true && dtab === 'health' ? ' on' : ''}`}
+        className={`seg-btn${dock === true && dtab === 'problems' ? ' on' : ''}`}
         title={health && (health.pendingErrors > 0 || health.pendingWarnings > 0) || alerts.crashes > 0 || alerts.updatable > 0
           ? `扣分项：错误 ${health?.pendingErrors ?? 0}（-8/个） · 警告 ${health?.pendingWarnings ?? 0}（-3/个） · 崩溃 ${alerts.crashes}（-6/次） · 可更新 ${alerts.updatable}（-1/个）\n点击在下方工作台查看`
           : '没有任何扣分项'}
-        onClick={() => patch({dock: '1', dtab: 'health'})}>
+        onClick={() => patch({dock: '1', dtab: 'problems'})}>
         <span className="dot" style={{background: envOk === null ? 'var(--mc-muted)' : envOk ? 'var(--mc-success)' : 'var(--mc-fail)'}}
           title={sys ? `Modrinth ${sys.modrinthReachable ? '可达' : '不可达'} · CurseForge ${sys.curseforgeReachable ? '可达' : '不可达'} · 存储可写 ${sys.storageWritable ? '是' : '否'}` : ''}/>
         {packId ? `健康 ${score}` : '工作台'}

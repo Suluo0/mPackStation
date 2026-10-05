@@ -5,6 +5,22 @@ import {useUrlPatch, useUrlState} from '../app/url';
 /* 魔改态 v0：文档列表 + Design|Code Split 布局（V3 §6 用户决策 6）。
    探针边界：payload 只读展示，可写编辑器/校验/应用/历史由 3C 按原规格落地；
    分隔线可拖，用来定这个布局本身。 */
+/* JSON 语法高亮（2026-10-05 用户反馈：键/字符串/数字/字面量分色，编辑起来直观）。
+   转义后按 token 上色；pre 打底上色、textarea 透明文字叠加（同字体同行高），
+   光标与选区属于 textarea，滚动由 textarea 同步给 pre。 */
+function highlightJSON(src: string): string {
+  const esc = src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return esc.replace(
+    /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+    (m: string, str: string, colon: string, kw: string, num: string) => {
+      if (str) return `<span class="${colon ? 'j-key' : 'j-str'}">${str}</span>${colon ?? ''}`;
+      if (kw) return `<span class="j-kw">${kw}</span>`;
+      if (num) return `<span class="j-num">${num}</span>`;
+      return m;
+    },
+  );
+}
+
 export function ModeEdit() {
   const {packId, doc} = useUrlState();
   const patch = useUrlPatch();
@@ -119,10 +135,18 @@ export function ModeEdit() {
               )}
             </div>
             <div className="sp-body">
-              {rev
-                ? <textarea className="split-json" value={text} spellCheck={false}
-                    onChange={e => { setText(e.target.value); setDirty(true); }}/>
-                : <div className="ed-placeholder">{doc ? '这份文档还没有修订内容。' : '左侧选一份文档。'}</div>}
+              {rev ? (
+                <div className="code-shell">
+                  <pre className="code-hl" aria-hidden
+                    dangerouslySetInnerHTML={{__html: highlightJSON(text) + '\n'}}/>
+                  <textarea className="code-input" value={text} spellCheck={false} wrap="off"
+                    onChange={e => { setText(e.target.value); setDirty(true); }}
+                    onScroll={e => {
+                      const pre = e.currentTarget.previousElementSibling as HTMLElement | null;
+                      if (pre) { pre.scrollTop = e.currentTarget.scrollTop; pre.scrollLeft = e.currentTarget.scrollLeft; }
+                    }}/>
+                </div>
+              ) : <div className="ed-placeholder">{doc ? '这份文档还没有修订内容。' : '左侧选一份文档。'}</div>}
             </div>
           </div>
           <div className="split-divider" onMouseDown={startDrag} role="separator" aria-orientation="vertical">◇</div>

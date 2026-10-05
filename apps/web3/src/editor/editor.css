@@ -1102,3 +1102,18 @@ kbd {
 .sp-acts { display: inline-flex; gap: 4px; margin-left: auto; }
 .eh-lens:disabled { opacity: .4; cursor: not-allowed; }
 .eh-lens:disabled:hover { background: transparent; }
+
+/* ── Code 面板语法高亮（pre 上色打底 + textarea 透明叠加，2026-10-05）── */
+.code-shell { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.code-shell .code-hl, .code-shell .code-input {
+  position: absolute; inset: 0; margin: 0; border: 0; padding: 8px 10px;
+  font-family: var(--mc-font-mono); font-size: 12px; line-height: 1.6;
+  white-space: pre; overflow: auto; background: transparent;
+}
+.code-shell .code-hl { pointer-events: none; color: var(--mc-text); z-index: 0; }
+.code-shell .code-input { z-index: 1; color: transparent; caret-color: var(--mc-text); resize: none; outline: none; }
+.code-shell .code-input::selection { background: rgba(201, 120, 59, .30); }
+.code-hl .j-key { color: var(--mc-primary); font-weight: 600; }
+.code-hl .j-str { color: var(--mc-success); }
+.code-hl .j-num { color: var(--mc-orange); }
+.code-hl .j-kw { color: var(--mc-fail); font-weight: 600; }

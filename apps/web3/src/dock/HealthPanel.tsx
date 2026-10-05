@@ -22,7 +22,7 @@ export function HealthPanel() {
   if (sys) {
     rows.push({label: 'Modrinth', value: sys.modrinthReachable ? '可达' : '不可达', bad: !sys.modrinthReachable});
     rows.push({label: 'CurseForge', value: sys.curseforgeReachable ? '可达' : '不可达', bad: !sys.curseforgeReachable});
-    rows.push({label: 'CurseForge 密钥', value: sys.curseforgeKeyConfigured ? '已配置' : '未配置 —— 设置页里填一次，会存进用户目录，重启不再丢', bad: !sys.curseforgeKeyConfigured});
+    rows.push({label: 'CurseForge 密钥', value: sys.curseforgeKeyConfigured ? '已配置' : '未配置（到「设置」填写）', bad: !sys.curseforgeKeyConfigured});
     rows.push({label: '存储空间', value: sys.storageWritable ? '可写' : '不可写', bad: !sys.storageWritable});
   }
 
