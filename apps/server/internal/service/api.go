@@ -528,7 +528,8 @@ func (a *API) SystemHealth(ctx context.Context) (SystemHealth, error) {
 		return SystemHealth{}, err
 	}
 	w, f := storageInfo(a.dataDir)
-	return SystemHealth{CurseForgeKeyConfigured: s.CurseForgeKeyConfigured, ModrinthReachable: s.ModrinthReachable, CurseForgeReachable: s.CurseForgeReachable, ModrinthStatus: s.ModrinthStatus, CurseForgeStatus: s.CurseForgeStatus, StorageWritable: w, StorageFreeBytes: f}, nil
+	configured := s.CurseForgeKeyConfigured || fileHasSecret("curseforge_api_key")
+	return SystemHealth{CurseForgeKeyConfigured: configured, ModrinthReachable: s.ModrinthReachable, CurseForgeReachable: s.CurseForgeReachable, ModrinthStatus: s.ModrinthStatus, CurseForgeStatus: s.CurseForgeStatus, StorageWritable: w, StorageFreeBytes: f}, nil
 }
 func (a *API) SystemStatus(ctx context.Context) (SystemStatus, error) {
 	if err := a.ready(); err != nil {
@@ -550,7 +551,7 @@ func (a *API) Onboarding(ctx context.Context) (Onboarding, error) {
 		return Onboarding{}, err
 	}
 	var out Onboarding
-	out.Steps.CurseForgeKey = o.CurseForgeKey
+	out.Steps.CurseForgeKey = o.CurseForgeKey || fileHasSecret("curseforge_api_key")
 	out.Steps.FirstPack = o.FirstPack
 	out.Steps.FirstMod = o.FirstMod
 	// 离线启动优先：自研 mPackLauncher 不要求正版/Microsoft 登录。

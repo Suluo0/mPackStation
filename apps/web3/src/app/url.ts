@@ -54,6 +54,11 @@ export function useUrlState() {
       mode: isMode(mode) ? mode : 'index',
       tool: isTool(tool) ? tool : 'focus',
       dock: params.get('dock') === '1',
+      /* 底部 dock 的页签：log / problems / health。徽标与状态条点击时用
+         patch({dock:'1', dtab:...}) 直接落到对应页签，不再弹窗。 */
+      dtab: params.get('dtab') === 'problems' || params.get('dtab') === 'health'
+        ? (params.get('dtab') as 'problems' | 'health')
+        : 'log' as const,
       item: params.get('item'),
       focusKind: params.get('f') as string | null,
       focusId: params.get('fid'),

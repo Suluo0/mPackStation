@@ -1100,3 +1100,5 @@ kbd {
 
 /* Code 面板头部的动作按钮（保存草稿 / 校验） */
 .sp-acts { display: inline-flex; gap: 4px; margin-left: auto; }
+.eh-lens:disabled { opacity: .4; cursor: not-allowed; }
+.eh-lens:disabled:hover { background: transparent; }

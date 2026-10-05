@@ -43,14 +43,22 @@ export function EditorHeader() {
         )}
         <span style={{flex: 1}}/>
         <nav className="eh-lenses">
-          {MODES.map(m => (
-            <button key={m.mode} type="button"
-              className={`eh-lens${m.mode === mode ? ' on' : ''}`}
-              onClick={() => patch({mode: m.mode})}>
-              {m.label}
-              {HOTKEYS[m.mode] && <sup className="eh-key">{HOTKEYS[m.mode]}</sup>}
-            </button>
-          ))}
+          {MODES.map(m => {
+            /* 关系/链路都要有聚焦物品才有内容（2026-10-05 用户反馈）：
+                没焦点就禁用，不让人点进去看空态。 */
+            const needsFocus = m.mode === 'graph' || m.mode === 'chain';
+            const disabled = needsFocus && !focus;
+            return (
+              <button key={m.mode} type="button"
+                className={`eh-lens${m.mode === mode ? ' on' : ''}`}
+                disabled={disabled}
+                title={disabled ? '先在索引中选中一个物品（点目录或 ⌘K）' : undefined}
+                onClick={() => patch({mode: m.mode})}>
+                {m.label}
+                {HOTKEYS[m.mode] && <sup className="eh-key">{HOTKEYS[m.mode]}</sup>}
+              </button>
+            );
+          })}
         </nav>
       </div>
       {focus && detail && item && (

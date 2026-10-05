@@ -534,7 +534,15 @@ function SourceTree() {
         <div className="p-title">内容目录</div>
         <div className="p-row">
           <span className="dot" style={{background: busyCatalog ? 'var(--mc-orange)' : status?.status === 'failed' ? 'var(--mc-fail)' : 'var(--mc-success)'}}/>
-          <span className="grow sub">{busyCatalog ? '目录构建中…' : status ? `revision ${status.builtRevision}` : '未构建'}</span>
+          {/* 用户不关心 revision 计数（2026-10-05）：只用人话表达目录状态，
+              出问题时（过期/失败）才亮出来，平时安静。 */}
+          <span className="grow sub">{busyCatalog
+            ? '目录构建中…'
+            : !status
+              ? '目录未构建'
+              : (status.stale || status.status === 'failed' || status.status === 'pending')
+                ? '物品目录需要重建 —— 到「构建」面板点一次重建'
+                : '目录已就绪'}</span>
         </div>
       </div>
       {modMenu.menu}

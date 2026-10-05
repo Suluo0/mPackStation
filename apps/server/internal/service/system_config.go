@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 	"time"
 
+	"mpackstation/internal/config"
 	"mpackstation/internal/provider"
 )
 
@@ -45,6 +47,12 @@ func (a *API) SetCurseForgeKey(ctx context.Context, key string) error {
 	if err := a.repo.PutSecret(ctx, curseforgeSecretKey, key, a.now().UnixMilli()); err != nil {
 		return err
 	}
+	// 双写密钥文件（OS 用户配置目录，2026-10-05）：/tmp 里的开发库重启即清，
+	// 只写库的话每次启动都要重新配 key（用户反馈点名）。文件为跨重启权威，
+	// 失败只记日志 —— 库里那份仍可用，不阻塞保存。
+	if err := mergeSecretsFile(curseforgeSecretKey, key); err != nil {
+		log.Printf("persist curseforge key to secrets file: %v", err)
+	}
 	if reg := a.p5Registry(); reg != nil {
 		reg.Set(ad)
 	}
@@ -63,6 +71,9 @@ func (a *API) ClearCurseForgeKey(ctx context.Context) error {
 	}
 	if err := a.repo.DeleteSecret(ctx, curseforgeSecretKey); err != nil {
 		return err
+	}
+	if err := mergeSecretsFile(curseforgeSecretKey, ""); err != nil {
+		log.Printf("remove curseforge key from secrets file: %v", err)
 	}
 	if reg := a.p5Registry(); reg != nil {
 		reg.Remove(provider.CurseForge)
@@ -91,4 +102,38 @@ func (a *API) ProbeProviderStatus(ctx context.Context) {
 		cancel()
 		_ = a.repo.SetSetting(ctx, "provider."+string(ad.Name())+".reachable", reachable, a.now().UnixMilli())
 	}
+}
+
+// mergeSecretsFile 把一个密钥写进/移出用户配置目录的 secrets.json（value 为空串
+// = 移除）。文件与库双写：库里那份让启动装配与既有关联查询继续工作，文件那份
+// 保证凭据在 /tmp 数据目录被清后依然存在。
+func mergeSecretsFile(key, value string) error {
+	path := config.SecretsPath()
+	if path == "" {
+		return nil // 无用户配置目录的极端环境：退化为只写库
+	}
+	secrets, err := config.LoadSecretsFile(path)
+	if err != nil {
+		return err
+	}
+	if value == "" {
+		delete(secrets, key)
+	} else {
+		secrets[key] = value
+	}
+	return config.SaveSecretsFile(path, secrets)
+}
+
+// fileHasSecret 查密钥文件里是否有某个凭据（2026-10-05）：状态与引导清单原本只看
+// 数据库 secrets 表，而开发库在 /tmp 会被清，文件里的跨重启凭据得一并算数。
+func fileHasSecret(key string) bool {
+	path := config.SecretsPath()
+	if path == "" {
+		return false
+	}
+	secrets, err := config.LoadSecretsFile(path)
+	if err != nil {
+		return false
+	}
+	return secrets[key] != ""
 }

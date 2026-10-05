@@ -3,6 +3,8 @@ import {fetchTaskLog, type TaskLogEvent} from '../api/launcher';
 import {cancelTask, pauseTask, resumeTask, retryTask, type Task} from '../api/tasks';
 import {useUrlPatch, useUrlState} from '../app/url';
 import {usePackSummary} from '../app/PackSummaryContext';
+import {ProblemsPanel} from './ProblemsPanel';
+import {HealthPanel} from './HealthPanel';
 import {Button} from '../ui/Button';
 import {DetailFields} from '../ui/DetailFields';
 import {MasterDetail} from '../ui/MasterDetail';
@@ -38,9 +40,9 @@ function elapsed(t: Task): string {
    布局走 ui/MasterDetail：以前这里手写过「选中项不在列表里就回落到第一条」，
    那份兜底现在由组件统一给。 */
 export function BottomDock() {
-  const {dock} = useUrlState();
+  const {dock, dtab} = useUrlState();
   const patch = useUrlPatch();
-  const {tasks} = usePackSummary();
+  const {tasks, pendingConflicts} = usePackSummary();
 
   const [selected, setSelected] = useState<string | null>(null);
   const [lines, setLines] = useState<TaskLogEvent[]>([]);
@@ -77,12 +79,38 @@ export function BottomDock() {
 
   if (!dock) return null;
 
+  /* 三页签（2026-10-05 用户反馈）：日志 / 问题 / 健康 —— 顶栏徽标与状态条的
+     健康分点击后直接落到对应页签，不再弹窗。日志页签保持原 MasterDetail。 */
+  const tabs = [
+    {key: 'log' as const, label: `日志${tasks.length ? ` · ${tasks.length}` : ''}`},
+    {key: 'problems' as const, label: `问题${pendingConflicts.length ? ` · ${pendingConflicts.length}` : ''}`},
+    {key: 'health' as const, label: '健康'},
+  ];
+  const openTab = (key: 'log' | 'problems' | 'health') =>
+    patch(dock && dtab === key ? {dock: null} : {dock: '1', dtab: key});
+
   return (
+    <section className="md dock">
+      <header className="md-head">
+        <span className="md-title">工作台</span>
+        <span className="dock-tabs">
+          {tabs.map(tb => (
+            <button key={tb.key} type="button"
+              className={`dock-tab${dtab === tb.key ? ' on' : ''}`}
+              aria-pressed={dtab === tb.key}
+              onClick={() => openTab(tb.key)}>{tb.label}</button>
+          ))}
+        </span>
+        <span style={{flex: 1}}/>
+        <Button onClick={() => patch({dock: null})}>收起</Button>
+      </header>
+      {dtab === 'problems' && <div className="dock-body dock-scroll"><ProblemsPanel/></div>}
+      {dtab === 'health' && <div className="dock-body dock-scroll"><HealthPanel/></div>}
+      {dtab === 'log' && (
     <MasterDetail<Task>
-      className="dock"
-      title="Log"
+      className="dock-log"
+      title="任务日志"
       titleExtra={tasks.length > 0 ? `${tasks.length} 个任务` : null}
-      actions={<Button onClick={() => patch({dock: null})}>收起</Button>}
       items={tasks}
       itemKey={t => t.id}
       selectedId={selected}
@@ -145,5 +173,7 @@ export function BottomDock() {
         </>
       )}
     />
+      )}
+    </section>
   );
 }

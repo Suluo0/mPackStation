@@ -510,3 +510,19 @@
   line-height: 20px;
 }
 .palette-empty { color: var(--mc-muted); padding: var(--mc-sp-sm) 0; }
+
+/* ── 底部 dock 三页签（日志/问题/健康，2026-10-05）───────────── */
+.dock-tabs { display: inline-flex; gap: 2px; margin-left: 10px; }
+.dock-tab {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: var(--mc-radius);
+  padding: 2px 10px;
+  cursor: pointer;
+  color: var(--mc-text-2);
+}
+.dock-tab:hover { background: var(--mc-hover); }
+.dock-tab.on { background: var(--mc-primary-bg); color: var(--mc-primary-deep); border-color: var(--mc-primary); }
+.dock .dock-log { flex: 1; min-height: 0; }
+.dock-body { flex: 1; min-height: 0; overflow: auto; padding: 6px 10px; }
+.health-panel { display: flex; flex-direction: column; gap: 2px; }

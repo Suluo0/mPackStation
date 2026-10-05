@@ -1,25 +1,14 @@
-import {useEffect, useRef, useState} from 'react';
+import {useState} from 'react';
 import {addMod, ignoreConflict, listModVersions, resolveConflict, resolvePack, type Conflict} from '../api/mods';
-import {usePackSummary} from './PackSummaryContext';
+import {usePackSummary} from '../app/PackSummaryContext';
 
-/* 顶栏问题徽标的弹出层：冲突就地处置（VSCode Problems 的对齐物）。
+/* 问题面板（VSCode Problems 的对齐物）：原来是顶栏徽标的弹出层，
+   2026-10-05 起并入底部 dock 的「问题」页签 —— 弹窗取消，数据和处置动作不变。
    数据与徽标同源（usePackSummary.pendingConflicts），处置后 refresh 让三处信号同时更新。 */
-export function ProblemsPopover({onClose}: {onClose: () => void}) {
+export function ProblemsPanel() {
   const {packId, pack, pendingConflicts, refresh} = usePackSummary();
   const [busy, setBusy] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      /* 健康分按钮（StatusBar）也挂一个本弹层实例，同样算开关本身。 */
-      if (ref.current?.contains(target) || target.closest('.problems-chip, [data-problems-toggle]')) return;
-      onClose();
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [onClose]);
 
   const act = async (id: string, kind: 'resolve' | 'ignore') => {
     if (!packId) return;
@@ -78,7 +67,7 @@ export function ProblemsPopover({onClose}: {onClose: () => void}) {
   };
 
   return (
-    <div className="ps-menu problems-menu" ref={ref}>
+    <div className="dock-problems">
       {error && <div className="p-empty">{error}</div>}
       {rows.length === 0 && !error && <div className="ps-empty">没有待解决冲突。</div>}
       {rows.map(c => (
@@ -105,3 +94,4 @@ export function ProblemsPopover({onClose}: {onClose: () => void}) {
     </div>
   );
 }
+

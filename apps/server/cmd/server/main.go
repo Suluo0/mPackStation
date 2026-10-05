@@ -27,9 +27,9 @@ var version = "dev"
 
 // providerRegistry assembles real provider adapters. Modrinth works without a
 // token for public catalog reads; CurseForge is enabled when a key exists —
-// the CURSEFORGE_API_KEY environment variable wins, otherwise the key saved
-// from the settings page (secrets table) is used.
-// (https://console.curseforge.com).
+// the CURSEFORGE_API_KEY environment variable wins, then the secrets file in
+// the user config dir, then the key saved from the settings page (secrets
+// table, migrated to the file on first sight). (https://console.curseforge.com).
 func providerRegistry(db *sql.DB) *provider.Registry {
 	adapters := []provider.Adapter{}
 	// Adapter paths already carry the API version prefix (/v2, /v1), so the
@@ -39,9 +39,24 @@ func providerRegistry(db *sql.DB) *provider.Registry {
 		adapters = append(adapters, mr)
 	}
 	key := os.Getenv("CURSEFORGE_API_KEY")
+	if key == "" {
+		// 密钥文件（OS 用户配置目录，2026-10-05）：/tmp 开发库重启即清，
+		// 凭据跨重启靠这份文件。读失败静默退回数据库。
+		if secrets, ferr := config.LoadSecretsFile(config.SecretsPath()); ferr == nil {
+			key = secrets["curseforge_api_key"]
+		} else {
+			log.Printf("load secrets file: %v", ferr)
+		}
+	}
 	if key == "" && db != nil {
 		if saved, err := store.NewRepository(db).GetSecret(context.Background(), "curseforge_api_key"); err == nil {
 			key = saved
+			// 旧库迁移：数据库里有、文件里没有 → 落一次文件，此后文件为权威。
+			if fileSecrets, ferr := config.LoadSecretsFile(config.SecretsPath()); ferr == nil && fileSecrets["curseforge_api_key"] == "" {
+				if serr := config.SaveSecretsFile(config.SecretsPath(), map[string]string{"curseforge_api_key": saved}); serr != nil {
+					log.Printf("migrate curseforge key to secrets file: %v", serr)
+				}
+			}
 		} else {
 			log.Printf("load saved curseforge key: %v", err)
 		}

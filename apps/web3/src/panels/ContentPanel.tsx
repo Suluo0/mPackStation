@@ -66,7 +66,7 @@ export function ContentPanel() {
         )}
         {docs.map(d => (
           <div key={d.id} className="p-row click" title={d.slug}
-            onClick={() => patch({doc: d.id})}>
+            onClick={() => patch({mode: 'edit', doc: d.id})}>
             <span className="grow">{d.title}</span>
             <span className="sub">{d.activeRevisionId ? '已应用' : '草稿'}</span>
           </div>

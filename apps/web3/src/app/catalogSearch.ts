@@ -84,6 +84,40 @@ export function searchCatalogItems(items: CatalogItem[], needle: string, ns: str
     }
     return out.sort((a, b) => a.item.id.localeCompare(b.item.id));
   }
+  /* JEI 式前缀（与索引态 ?q= 同一口径）：# 标签、@ 来源、/ 正则、裸词文本。
+     在纯函数层实现而不是各调用点自己分派 —— 共享这个函数的每一个搜索面
+     （索引态、⌘K、编排态图标框）自动获得同一套语法。 */
+  if (q.startsWith('#')) {
+    return searchCatalogByTag(items, q.slice(1))
+      .filter(m => !ns || m.item.id.startsWith(`${ns}:`))
+      .map(m => ({item: m.item, score: m.score}));
+  }
+  if (q.startsWith('@')) {
+    const p = q.slice(1);
+    if (!p) return [];
+    const out: ItemMatch[] = [];
+    for (const item of items) {
+      if (ns && !item.id.startsWith(`${ns}:`)) continue;
+      const nsp = item.id.split(':')[0] ?? '';
+      if (nsp.toLowerCase().startsWith(p)) out.push({item, score: 0});
+    }
+    return out.sort((a, b) => a.item.id.localeCompare(b.item.id));
+  }
+  if (q.startsWith('/')) {
+    const out: ItemMatch[] = [];
+    try {
+      const re = new RegExp(q.slice(1), 'i');
+      for (const item of items) {
+        if (ns && !item.id.startsWith(`${ns}:`)) continue;
+        if (re.test(item.id) || re.test(item.displayName) || (item.names ?? []).some(n => re.test(n.name))) {
+          out.push({item, score: 3});
+        }
+      }
+    } catch {
+      return []; // 非法正则当无匹配
+    }
+    return out.sort((a, b) => a.item.id.localeCompare(b.item.id));
+  }
   const out: ItemMatch[] = [];
   for (const item of items) {
     if (ns && !item.id.startsWith(`${ns}:`)) continue;
