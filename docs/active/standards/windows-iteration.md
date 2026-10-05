@@ -424,46 +424,54 @@ Stop-ScheduledTask -TaskName 'mPackStation-autosync'
 Unregister-ScheduledTask -TaskName 'mPackStation-autosync' -Confirm:$false
 ```
 
-## 10. 换行符策略（待定项，2026-10-06 提出）
+## 10. 换行符策略（2026-10-06 已实施）
 
-第 8 节记录的 `Go formatting` 假红，根因是 `.gitattributes` 里没有 `*.go` 的规则，
-叠加仓库本地 `core.autocrlf=true`，导致 Windows 检出的 Go 源码全是 CRLF。
+第 8 节记录的 `Go formatting` 假红已修掉。根因与修法留档如下，避免复发。
 
-两个修法，**尚未决定**（会改变跨平台行为，且本仓库历史上被换行符坑过 ——
-见 `.gitattributes` 里 `*.sql` 那条注释提到的 sha256 校验）：
+**根因**：`.gitattributes` 里没有 `*.go` 规则，叠加仓库本地 `core.autocrlf=true`，
+Windows 检出的 Go 源码全是 CRLF，而 `gofmt` 输出 LF ⇒ `gofmt -l` 把每个 `.go`
+都报成未格式化。
 
-**方案 A：仓库级，补 `.gitattributes`（推荐，一次修好所有平台）**
+**采用的修法**：在 `.gitattributes` 补齐源码/文档的 LF 规则（`*.go` `*.mod` `*.sum`
+`*.rs` `*.py` `*.ts` `*.tsx` `*.js` `*.mjs` `*.cjs` `*.json` `*.css` `*.html`
+`*.md` `*.toml` `*.ps1` `*.sh` → `text eol=lf`），并把 `*.bat` / `*.cmd` → `eol=crlf`
+的例外块移到文件末尾（gitattributes 末条匹配优先）。**没有**改 `core.autocrlf`
+—— 属性优先级更高，够用，改动面更小。
 
-```gitattributes
-# 源码一律 LF：gofmt / prettier / 各类 lint 都按 LF 比对，CRLF 会造成恒定的假红。
-*.go   text eol=lf
-*.ts   text eol=lf
-*.tsx  text eol=lf
-*.js   text eol=lf
-*.json text eol=lf
-*.md   text eol=lf
-*.ps1  text eol=lf
-*.sh   text eol=lf
-```
+### 每台已有工作区都要重新检出一次
 
-配套需要在**每台已有工作区**上重新检出（属性只影响后续 checkout）：
-先 `git status` 必须是干净的，然后
+属性只影响**后续 checkout**，已有工作区里的文件不会自动重写。改完 `git status`
+依然是干净的（归一化比较抹掉了差异）—— 这正是它最容易被忽略的原因。
 
 ```bash
-git config core.autocrlf false
-git rm --cached -r .
+git status                # 必须先确认干净：下一步的 reset --hard 会丢弃未提交改动
+git rm --cached -r . --quiet
 git reset --hard
 ```
 
-先跑 `git status` 是为了确认没有未提交改动 —— `git reset --hard` 会丢掉它们。
-Windows 上 `.bat` / `.cmd` 仍由现有属性保持 CRLF，不受影响。
+实测 Windows 侧 `internal/config/config.go` 由 `CRLF=152 / LF=0` 变为
+`CRLF=0 / LF=152`；`dev.bat` / `dev-stop.bat` 正确保持 `CRLF=53` / `CRLF=27`。
 
-**方案 B：仅本机，改 `core.autocrlf`**
+### 两个顺带发现（都比预想严重）
 
-只解决这一台机器，新克隆/新机器会再次踩到。而且因为 `*.ps1` 等没有属性覆盖，
-单改 `core.autocrlf=false` 会让工作区里所有 CRLF 文件被 git 视为已修改，
-仍然需要上面同样的重新检出步骤。**不推荐单独使用。**
+**1. macOS 工作区里也有 60 个 CRLF 文件，`git status` 完全看不出来。**
+`core.autocrlf=input` 在读取时把 CRLF 归一化掉，于是工作区 CRLF、索引 LF，
+git 仍报 clean。实测 macOS 侧有 24 个 `.go` + 30 个 `.md` + `scripts/dev-stop.ps1`
++ `scripts/prism-install.sh` + `internal/store/schema.sql` 是纯 CRLF。
+`prism-install.sh` 尤其危险 —— CRLF 的 `#!/bin/bash` 在 git-bash 下是
+「bad interpreter」。**「改完属性 git status 没变化，所以不用管」这个判断是错的。**
 
-在决定之前，Windows 上跑 `verify.ps1` 请用 `-SkipInstall`，
-并忽略 `Go formatting` 那一项。
+**2. 13 个 Go 文件有真实格式偏差，一直被 CRLF 噪音盖住。**
+换行符修好后 `gofmt -l` 从 100+ 降到 13，剩下的是结构性字段对齐与一处
+`} else if` 缩进到第 0 列。已用 `gofmt -w` 修掉（纯空白变更，`go vet` /
+`go test ./...` 全绿）。macOS（Go 1.27.1）与 Windows（Go 1.27.0）的 gofmt
+对这 13 个文件判断完全一致，不会出现两边格式互相翻烧饼。
+
+### 一个反直觉之处
+
+`.bat` / `.cmd` 声明了 `eol=crlf`，但在 macOS 上检出仍是 LF
+（`git ls-files --eol` 显示 `attr/text eol=crlf` 而 `w/lf`）—— `core.autocrlf=input`
+下 `eol=crlf` 未生效。**无害且符合原设计意图**：仓库存 LF、只在 Windows 检出成
+CRLF，而 `.bat` 本来就只在 Windows 上执行。
+
 
