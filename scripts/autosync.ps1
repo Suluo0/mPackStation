@@ -162,7 +162,16 @@ function Invoke-Sync {
 
     $localSha = (& git -C $script:RepoRoot rev-parse HEAD).Trim()
     $remoteSha = (& git -C $script:RepoRoot rev-parse "origin/$Branch").Trim()
-    if ($localSha -eq $remoteSha) { return }
+    if ($localSha -eq $remoteSha) {
+        # -ForceRestart 必须在"无新提交"时也能生效。原先它在下面那个重建判断里，
+        # 而这里已经 return 了，于是「没有新提交但想强制重启」永远打不到 ——
+        # 恰恰是最需要它的场景（手工验证、改了环境变量、想重置进程状态）。
+        if ($ForceRestart) {
+            Write-Log 'INFO' ("无新提交（{0}），-ForceRestart 生效 → 重启服务") -f (Get-Short $localSha)
+            Restart-Services
+        }
+        return
+    }
 
     # 拒绝在有本地改动时拉取：宁可停住也不要覆盖本地改动。
     $dirty = & git -C $script:RepoRoot status --porcelain
