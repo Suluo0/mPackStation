@@ -24,7 +24,7 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 
 $buildProfile = if ($DebugBuild) { 'debug' } else { 'release' }
 $cargoArgs = @('build')
-if (-not $Debug) { $cargoArgs += '--release' }
+if (-not $DebugBuild) { $cargoArgs += '--release' }
 
 if ($TargetDir) {
     New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
