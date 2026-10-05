@@ -305,10 +305,17 @@ fn parse_java_major(version: &str) -> u32 {
 ///
 /// 只处理 bin/ 这一层，不递归全目录：lib/ 下的 .dylib/.so 不需要执行位，
 /// 给它们 chmod 反而会把签名的 bundle 改动得更多。
+///
+/// 平台门必须用编译期属性，不能写成 `if cfg!(windows) { return Ok(()); }`：
+/// 那个宏展开成运行期布尔值，`use std::os::unix::fs::PermissionsExt;` 仍会被
+/// 编译，Windows 上直接 E0433（2026-10-06 首次在 Windows 跑 cargo build 时实测）。
+#[cfg(windows)]
+fn make_bin_executable(_component_dir: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
 fn make_bin_executable(component_dir: &Path) -> Result<()> {
-    if cfg!(windows) {
-        return Ok(());
-    }
     use std::os::unix::fs::PermissionsExt;
     let mut count = 0u32;
     for base in [
