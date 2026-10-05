@@ -252,6 +252,14 @@ if ($Once) {
 Write-Log 'INFO' ("autosync 启动：branch={0}  interval={1}s  repo={2}" -f $Branch, $IntervalSec, $script:RepoRoot)
 while ($true) {
     try {
+        # 每轮先确认服务还活着。只在启动时检查一次是不够的：进程崩了、
+        # 被手工 kill 了、或机器重启后本任务不是第一个起来的（比如端口被
+        # 别的东西占着），"保持 dev 服务可用"这条承诺就失效了 —— 而这正是
+        # 本任务存在的理由（见计划任务描述）。
+        if (-not (Test-ServiceUp)) {
+            Write-Log 'WARN' 'dev 服务未在监听，重新拉起'
+            Start-Services
+        }
         Invoke-Sync
     } catch {
         Write-Log 'ERROR' ("同步异常：{0}" -f $_.Exception.Message)
