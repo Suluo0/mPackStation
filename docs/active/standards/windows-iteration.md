@@ -474,4 +474,74 @@ git 仍报 clean。实测 macOS 侧有 24 个 `.go` + 30 个 `.md` + `scripts/de
 下 `eol=crlf` 未生效。**无害且符合原设计意图**：仓库存 LF、只在 Windows 检出成
 CRLF，而 `.bat` 本来就只在 Windows 上执行。
 
+## 11. Mac 侧反向守护 devsync（2026-10-06 已实施）
+
+§9 的 autosync 只解决了一半：**Mac 推完 → PC 自动跟上**。一旦也开始在 PC 上改代码
+并推送，Mac 侧原来要手动 `git pull`。双端开发要真正成立，得把反向那一半补上。
+
+### 为什么不是「共享一份工作区」
+
+想过用网络盘（PC 侧有 `Z: → \\<Mac>\Evo`）让两端挂同一份源码、各自建依赖。实测否掉：
+
+| 部分 | 源码共享 + 本地编译 |
+|---|---|
+| 后端 Go | ✅ 可以（`GOCACHE` / `GOMODCACHE` 本就在工作区外） |
+| 内核 Rust | ✅ 可以（`CARGO_TARGET_DIR` 可指向本地） |
+| **前端** | ❌ **不行** |
+
+卡死点是 `node_modules` 必须在工作区内、且平台特定。同一路径下实测：
+
+| `apps/web3/node_modules/…` | macOS (arm64) | Windows (x64) |
+|---|---|---|
+| `@esbuild/` | `darwin-arm64` | `win32-x64` |
+| `@rollup/` | `rollup-darwin-arm64` | `rollup-win32-x64-gnu`、`-msvc` |
+| `.bin/vite` | **符号链接** → `../vite/bin/vite.js` | **3 个实体文件** `vite`/`.cmd`/`.ps1` |
+
+一边必须是 symlink、一边必须是 3 个普通文件，无法共存；junction 也不行 ——
+reparse point 只能在 Windows 本地卷上创建，而该路径的实体在 Mac 的 APFS 上。
+
+还有一层：**dev 流程里源码是运行时输入**（后端 `go run` 每次编译、前端 `vite dev`
+运行时读源码 + watch），不是一次性喂给编译器的输入。所以「编译产物本地化」
+救不了源码共享。
+
+结论：**要各自建依赖，就必须各自有工作区。** 两份 checkout 不是重复，而是同一个
+git 仓库的两个视图 —— 「统一源码」本来就是 git 在提供。
+
+### 实现
+
+`scripts/devsync.sh`（轮询，30s）+ `scripts/devsync-install.sh`（装 launchd）。
+
+原则与 autosync 对齐，都是「宁可不动手，也不破坏」：
+
+1. 只用 `--ff-only`，永不产生 merge commit
+2. **工作区脏就跳过** —— Mac 正在写代码是常态，这是保护不是失败
+3. **本地领先远端就跳过**（已偏离）—— 交给人 rebase/merge
+4. `mkdir` 单实例锁（5 分钟陈旧判定），防止 launchd 实例与手工 loop 并发跑 git
+
+不做重建/重启：Mac 是开发端，vite/go 由使用者自己起。
+
+**plist 走运行时生成而非入仓** —— launchd 必须写绝对路径，而绝对路径属机器级信息，
+按信息分层规则不入仓；仓库里只放生成器。
+
+### 实测
+
+| 场景 | 结果 |
+|---|---|
+| 本地有未推送提交 | 正确拦截：`本地有 1 个未推送提交、远端领先 0 —— 已偏离，跳过` |
+| 退回一格后自动拉回 | `git reset --hard HEAD~1` 后 **40s 内**自动 `已拉取 ede71e9 → 1c7e289` |
+| 反向：Mac 连推三个提交 | PC 的 autosync 在 `02:14:16` / `02:14:48` / `02:15:52` 依次跟上，零人工 |
+
+两端自此对称。
+
+### 已知限制：launchd 不能从 agent 会话里注册
+
+`launchctl bootstrap gui/$UID` 恒返回 `5: Input/output error`；`launchctl setenv`
+报 `Not privileged to set domain environment`。用最小 plist 复现过，**排除 plist
+本身问题**（`plutil -lint` OK、权限 644、去 xattr 无效）。`crontab` 同样被 TCC 挡
+（`operation not permitted`，需要 Full Disk Access）。
+
+→ **永久注册必须在用户自己的终端里跑一次** `bash scripts/devsync-install.sh`。
+过渡期用脱离会话的 loop 顶着（`start_new_session=True`，重启后失效）；plist 已就位，
+预期下次登录由 launchd 自动加载。
+
 
