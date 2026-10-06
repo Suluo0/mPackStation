@@ -53,6 +53,12 @@ MSVC 是否够用可以直接问 vswhere（有输出即带 C++ 组件）：
 
 ## 2. 代码放哪：两条路线
 
+**先明确一点：PC 侧的工作副本是 Windows 原生路径**（`D:\workIn\mPackStation`），
+**不经 WSL**。依据：盘符就是 `D:\`；`go version` 报 `windows/amd64`；
+`Get-NpmCommand` 解析的是 `npm.cmd`（Windows 批处理 shim）；服务监听 Windows 的
+`127.0.0.1`；`scripts/` 下没有任何 WSL 相关逻辑。**向 agent 描述这个项目时，直接说
+「代码在 `D:\workIn\mPackStation`」即可**，不需要提 WSL 或 Linux 路径。
+
 | | A. 直接在工作副本上跑 | B. 本地盘再 clone 一份 |
 | --- | --- | --- |
 | 做法 | 在外置/网络卷上的那份代码里直接开发 | 在本地 SSD 上 clone，独立分支 |
@@ -207,6 +213,36 @@ pwsh scripts/dev-reset.ps1 -KeepProjects   # 只重置数据库
 | 代理 | 后端不出网会表现为「平台不可达、搜索 0 结果」 | `dev.ps1` 探测存活后透传 |
 | Prism 工具安装 | 那条路强依赖 `cmd.exe` + `.bat`，仅 Windows 可用 | 与内核链路互不影响 |
 | cmd/bash 混合 | `verify-contract.bat` 会调 git-bash 跑 `.sh` | 需要 git-bash 在 PATH（或用 PowerShell 入口） |
+| **agent 沙箱标 Low IL** | 带沙箱的 agent CLI（如 Codex）会把工作目录标成低完整性级别（`icacls` 可见 `Mandatory Label\Low Mandatory Level:(NW)`）。**该目录下启动的任何程序都继承 Low IL，而 Low 进程写不了 `%TEMP%`（Medium）** —— 表现为 `go build` 报 `Access is denied`、autosync 反复重启也起不来 | `icacls "<目录>" /setintegritylevel (OI)(CI)M /T` 重置，见下方补充 |
+
+#### 补充：完整性级别沙箱（2026-10-06 实测）
+
+**症状**：PC 上后端 `18872` 起不来，autosync 每 3 分钟一轮
+「未在监听 → 重新拉起 → 90s 后仍未见双端口」。`server.error.log` 写的是
+`go: creating work dir: mkdir ...\Temp\go-build…: Access is denied.`
+
+**为什么难查**：两个 `go.exe` 的 SHA256 **完全相同**；显式设 `GOROOT` 指向系统 Go **仍然失败**；
+写 `%TEMP%` 和写 D 盘**都**失败；而 pwsh 自己往同一目录写文件却**成功**。
+排除了二进制、GOROOT、盘符、目录 ACL、磁盘空间、杀软（本机 Defender 实时保护本就是关的）。
+
+**根因**：Windows 下**进程的完整性级别由可执行文件的 IL 决定**。把系统自带的 `cmd.exe`
+复制到 `.tools\` 下运行，它报告 `Low Mandatory Level`；复制到 `%TEMP%` 下运行则报告 `High`
+—— **同一个二进制，只因所在目录不同**。
+
+**快速判定**：把无害的 `cmd.exe` 分别复制到可疑目录和 `%TEMP%`，各跑一次
+`whoami /groups | findstr /i "Mandatory Label"`，比较报告的级别。
+
+**修复**：
+```powershell
+icacls "<出问题的目录>" /setintegritylevel (OI)(CI)M /T
+```
+实测 17,424 个文件全部成功。之后 autosync 自己把服务拉起来了
+（`14:14:57 启动` → `14:15:00 服务已就绪`，3 秒），health 双 200。
+
+**会复发**：只要再用该 agent 在沙箱根目录下工作，标记可能被重新施加。
+长期要么改 agent 的沙箱根目录配置，要么接受每次用完重置一次。
+若只重置了子目录，**上层目录仍是 Low IL** —— 同项目里 `node_modules/`、`target/` 等
+仍在沙箱内，那些环节若出现 access denied，按同一办法扩大范围。
 
 ## 8. 实测记录（2026-10-06，两轮真机执行）
 
